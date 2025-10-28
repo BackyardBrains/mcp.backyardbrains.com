@@ -107,6 +107,18 @@ function jsonLogger(req: IncomingMessage, res: ServerResponse, start: number, ex
   console.log(JSON.stringify(record));
 }
 
+function redactHeaders(headers: http.IncomingHttpHeaders): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === "authorization") {
+      out[key] = "REDACTED";
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 async function handleHealthz(_req: IncomingMessage, res: ServerResponse) {
   sendJson(res, 200, { status: "ok" });
 }
@@ -137,6 +149,20 @@ async function handleMcp(req: IncomingMessage, res: ServerResponse) {
 
   try {
     const bodyText = await readRequestBody(req, 1024 * 1024);
+    if (process.env.MCP_DEBUG === "1") {
+      const preview = bodyText.length > 1000 ? bodyText.slice(0, 1000) + "…" : bodyText;
+      console.log(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          event: "mcp_request",
+          method: req.method,
+          url: req.url,
+          headers: redactHeaders(req.headers),
+          bodyPreview: preview,
+          bodyBytes: Buffer.byteLength(bodyText || ""),
+        })
+      );
+    }
     let body: any = {};
     try {
       body = bodyText ? JSON.parse(bodyText) : {};
@@ -152,19 +178,26 @@ async function handleMcp(req: IncomingMessage, res: ServerResponse) {
     ) {
       const tools = listTools();
       sendJson(res, 200, { tools });
-      jsonLogger(req, res, start);
+      jsonLogger(req, res, start, { mcpMethod: method || "discover" });
       return;
     }
-    if (method === "tools/call" || method === "call_tool") {
+    if (
+      method === "tools/call" ||
+      method === "call_tool" ||
+      method === "actions/call" ||
+      method === "call_action"
+    ) {
       const name = body.params?.name || body.name;
       const args = body.params?.arguments || body.arguments || {};
       const result = await handleMcpCall(name, args);
       sendJson(res, 200, result);
-      jsonLogger(req, res, start);
+      jsonLogger(req, res, start, { mcpMethod: method, toolName: name });
       return;
     }
-    sendJson(res, 400, { error: "Unsupported request" });
-    jsonLogger(req, res, start);
+    // Fallback: respond with discovery instead of 400 to be permissive
+    const tools = listTools();
+    sendJson(res, 200, { tools });
+    jsonLogger(req, res, start, { mcpMethod: method || "discover" });
   } catch (_err) {
     // Be lenient: treat as discovery on parse/runtime errors
     const tools = listTools();
