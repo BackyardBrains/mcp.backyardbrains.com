@@ -93,6 +93,8 @@ def refresh_token_if_needed():
         new_tokens = response.json()
         save_tokens(new_tokens)
 
+app = FastAPI()  # Define app here, after helpers but before routes
+
 @app.get("/xero/auth")
 def xero_auth():
     if not XERO_CLIENT_ID or not XERO_CLIENT_SECRET:
