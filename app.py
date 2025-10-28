@@ -2,11 +2,13 @@ import logging
 import os
 import json
 from typing import Dict, Any
+import base64
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse
 import requests
 import uvicorn
+from cryptography.fernet import Fernet, InvalidToken
 from xero_python.accounting import AccountingApi, Contact, Contacts, BankTransaction, BankTransactions, Journal, Payment, Quote, Account, Organisation
 from xero_python.api_client import ApiClient
 from xero_python.api_client.configuration import Configuration
@@ -21,28 +23,42 @@ XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET")
 XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI", "http://localhost:8000/xero/callback")
 XERO_SCOPES = "offline_access openid profile accounting.transactions.read accounting.contacts.read accounting.journals.read accounting.reports.read"
 
-# Token storage path
-TOKEN_FILE = "tokens.json"
-TENANT_FILE = "tenant_id.txt"
+# Encryption setup
+TOKEN_ENC_KEY = os.environ.get("TOKEN_ENC_KEY")  # Base64-encoded 32-byte key
+TOKEN_STORE_PATH = os.environ.get("TOKEN_STORE_PATH", ".xero_tokens.enc")
+TENANT_FILE = "tenant_id.txt"  # Plain for simplicity; encrypt if needed
 
-app = FastAPI()
+if not TOKEN_ENC_KEY:
+    logger.warning("TOKEN_ENC_KEY not set; tokens will not be encrypted!")
 
-# Server instructions
-server_instructions = """
-This MCP server provides tools to interact with Xero accounting data.
-Use tools like list_invoices, get_balance_sheet, etc.
-Authenticate via /xero/auth if needed.
-"""
+fernet = Fernet(TOKEN_ENC_KEY) if TOKEN_ENC_KEY else None
+
+def encrypt_data(data: bytes) -> bytes:
+    if not fernet:
+        return data
+    return fernet.encrypt(data)
+
+def decrypt_data(encrypted: bytes) -> bytes:
+    if not fernet:
+        return encrypted
+    try:
+        return fernet.decrypt(encrypted)
+    except InvalidToken:
+        raise ValueError("Invalid encryption key or corrupted token file")
 
 def load_tokens():
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, 'r') as f:
-            return json.load(f)
-    return None
+    if not os.path.exists(TOKEN_STORE_PATH):
+        return None
+    with open(TOKEN_STORE_PATH, 'rb') as f:
+        encrypted = f.read()
+    decrypted = decrypt_data(encrypted)
+    return json.loads(decrypted)
 
 def save_tokens(tokens: Dict):
-    with open(TOKEN_FILE, 'w') as f:
-        json.dump(tokens, f)
+    data = json.dumps(tokens).encode('utf-8')
+    encrypted = encrypt_data(data)
+    with open(TOKEN_STORE_PATH, 'wb') as f:
+        f.write(encrypted)
 
 def load_tenant_id():
     if os.path.exists(TENANT_FILE):
