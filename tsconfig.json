@@ -12,6 +12,20 @@
     "types": ["node"],
     "typeRoots": ["./node_modules/@types"]
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "src/**/*.test.ts", "test/**"]
+  "include": [
+    "src/index.ts",
+    "src/http/**/*.ts",
+    "src/mcp/**/*.ts",
+    "src/Utils/**/*.ts",
+    "src/xero/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "src/**/*.test.ts",
+    "test/**",
+    "src/Tools/**",
+    "src/Resources/**",
+    "src/Middlewares/**",
+    "src/XeroMcpServer.ts"
+  ]
 }
