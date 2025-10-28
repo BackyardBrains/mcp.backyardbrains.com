@@ -273,7 +273,7 @@ export function startHttpServer() {
       if (
         req.method === "GET" &&
         (parsed.pathname === "/xero/.well-known/openid-configuration" ||
-          parsed.pathname === "/xero//.well-known/openid-configuration")
+          parsed.pathname === "/xero/.well-known/openid-configuration")
       ) {
         return handleOidcDiscovery(req, res);
       }
