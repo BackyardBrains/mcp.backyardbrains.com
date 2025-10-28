@@ -137,9 +137,19 @@ async function handleMcp(req: IncomingMessage, res: ServerResponse) {
 
   try {
     const bodyText = await readRequestBody(req, 1024 * 1024);
-    const body = bodyText ? JSON.parse(bodyText) : {};
-    const method = body.method || body.type || "";
-    if (method === "tools/list" || method === "discover") {
+    let body: any = {};
+    try {
+      body = bodyText ? JSON.parse(bodyText) : {};
+    } catch (_e) {
+      body = {};
+    }
+    const method = String(body.method || body.type || "").toLowerCase();
+    if (
+      method === "" ||
+      method === "discover" ||
+      method === "tools/list" ||
+      method === "actions/list"
+    ) {
       const tools = listTools();
       sendJson(res, 200, { tools });
       jsonLogger(req, res, start);
@@ -156,7 +166,9 @@ async function handleMcp(req: IncomingMessage, res: ServerResponse) {
     sendJson(res, 400, { error: "Unsupported request" });
     jsonLogger(req, res, start);
   } catch (_err) {
-    sendJson(res, 400, { error: "Invalid JSON" });
+    // Be lenient: treat as discovery on parse/runtime errors
+    const tools = listTools();
+    sendJson(res, 200, { tools });
   }
 }
 
@@ -169,6 +181,19 @@ export function startHttpServer() {
     const start = Date.now();
     try {
       const parsed = url.parse(req.url || "");
+      // Basic HEAD/OPTIONS support to satisfy various HTTP clients
+      if (
+        (req.method === "OPTIONS" || req.method === "HEAD") &&
+        (parsed.pathname === "/xero" ||
+          parsed.pathname === "/xero/" ||
+          parsed.pathname === "/xero/mcp")
+      ) {
+        res.statusCode = req.method === "HEAD" ? 200 : 204;
+        res.setHeader("Allow", "GET,POST,HEAD,OPTIONS");
+        res.end();
+        jsonLogger(req, res, start);
+        return;
+      }
       if (req.method === "GET" && parsed.pathname === "/xero/healthz") {
         return handleHealthz(req, res);
       }
