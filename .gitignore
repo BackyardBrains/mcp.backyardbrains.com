@@ -97,6 +97,8 @@ env/
 env.bak/
 venv.bak/
 
+.xero_tokens.enc
+
 # IDE/editor settings
 .vscode/
 
