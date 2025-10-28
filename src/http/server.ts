@@ -178,8 +178,25 @@ export function startHttpServer() {
       if (req.method === "GET" && parsed.pathname === "/xero/callback") {
         return handleCallback(req, res);
       }
+      // Accept MCP at /xero/mcp (primary)
       if (req.method === "POST" && parsed.pathname === "/xero/mcp") {
         return handleMcp(req, res);
+      }
+      // Also accept POSTs directly to /xero and /xero/ for clients that don't append /mcp
+      if (
+        req.method === "POST" && (parsed.pathname === "/xero" || parsed.pathname === "/xero/")
+      ) {
+        return handleMcp(req, res);
+      }
+      // Friendly index for GET /xero and /xero/
+      if (
+        req.method === "GET" && (parsed.pathname === "/xero" || parsed.pathname === "/xero/")
+      ) {
+        return sendText(
+          res,
+          200,
+          "Xero MCP server is running. POST MCP requests to /xero/mcp or /xero/."
+        );
       }
       return notFound(req, res);
     } finally {
