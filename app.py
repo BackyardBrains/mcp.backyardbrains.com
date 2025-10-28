@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv() 
+
 import logging
 import os
 import json
@@ -147,7 +150,7 @@ def xero_callback(code: str = None, state: str = None):
     return {"message": "Authentication successful. Tenant ID saved."}
 
 # MCP Endpoint
-@app.post("/mcp")
+@app.post("/xero/mcp")
 async def mcp_endpoint(request: Request):
     body = await request.json()
     method = body.get("method", "").lower()
@@ -296,7 +299,7 @@ async def handle_tool_call(name: str, args: Dict):
         return {"content": [{"type": "text", "text": f"Error: {str(e)}"}]}
 
 # Health check
-@app.get("/healthz")
+@app.get("/xero/healthz")
 def healthz():
     return {"status": "ok"}
 
