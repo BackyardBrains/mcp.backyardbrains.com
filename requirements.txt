@@ -4,3 +4,4 @@ xero-python==2.0.0
 requests==2.32.3
 cryptography==43.0.3
 python-dotenv==1.2.1
+python-jose[cryptography]==3.3.0

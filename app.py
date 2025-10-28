@@ -16,6 +16,9 @@ from xero_python.accounting import AccountingApi, Contact, Contacts, BankTransac
 from xero_python.api_client import ApiClient
 from xero_python.api_client.configuration import Configuration
 from urllib.parse import urlencode
+from jose import jwt, JWTError
+from fastapi import Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +39,61 @@ if not TOKEN_ENC_KEY:
     logger.warning("TOKEN_ENC_KEY not set; tokens will not be encrypted!")
 
 fernet = Fernet(TOKEN_ENC_KEY) if TOKEN_ENC_KEY else None
+
+# Auth0 configuration
+AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")  # e.g., "your-tenant.us.auth0.com"
+AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")  # e.g., "https://mcp.backyardbrains.com/xero"
+AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/" if AUTH0_DOMAIN else None
+JWKS_URL = f"{AUTH0_ISSUER}.well-known/jwks.json" if AUTH0_ISSUER else None
+ALGORITHMS = ["RS256"]
+security = HTTPBearer(auto_error=False)
+_jwks_cache = None
+
+def get_jwks():
+    global _jwks_cache
+    if _jwks_cache is None:
+        if not JWKS_URL:
+            raise HTTPException(status_code=500, detail="Auth not configured")
+        resp = requests.get(JWKS_URL, timeout=5)
+        resp.raise_for_status()
+        _jwks_cache = resp.json()
+    return _jwks_cache
+
+def verify_jwt(token: str):
+    try:
+        jwks = get_jwks()
+        unverified_header = jwt.get_unverified_header(token)
+        rsa_key = {}
+        for key in jwks.get("keys", []):
+            if key.get("kid") == unverified_header.get("kid"):
+                rsa_key = {
+                    "kty": key.get("kty"),
+                    "kid": key.get("kid"),
+                    "use": key.get("use"),
+                    "n": key.get("n"),
+                    "e": key.get("e"),
+                }
+                break
+        if not rsa_key:
+            raise HTTPException(status_code=401, detail="Invalid token: key not found")
+        payload = jwt.decode(
+            token,
+            rsa_key,
+            algorithms=ALGORITHMS,
+            audience=AUTH0_AUDIENCE,
+            issuer=AUTH0_ISSUER,
+            options={"verify_at_hash": False}
+        )
+        return payload
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Token validation error: {str(e)}")
+
+def require_auth(creds: HTTPAuthorizationCredentials = Depends(security)):
+    if creds is None or creds.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Authorization header missing or invalid")
+    return verify_jwt(creds.credentials)
 
 def encrypt_data(data: bytes) -> bytes:
     if not fernet:
@@ -222,7 +280,7 @@ def _list_tools_payload():
 
 # MCP Endpoint
 @app.post("/xero/mcp")
-async def mcp_endpoint(request: Request):
+async def mcp_endpoint(request: Request, _=Depends(require_auth)):
     body = await request.json()
 
     # JSON-RPC 2.0 handling (MCP over HTTP)
@@ -267,23 +325,23 @@ async def mcp_endpoint(request: Request):
 
 # Accept base-path POSTs that some clients send to the MCP server root
 @app.post("/xero/")
-async def mcp_root_post(request: Request):
+async def mcp_root_post(request: Request, _=Depends(require_auth)):
     return await mcp_endpoint(request)
 
 # Also accept no-trailing-slash variant
 @app.post("/xero")
-async def mcp_root_post_no_slash(request: Request):
+async def mcp_root_post_no_slash(request: Request, _=Depends(require_auth)):
     return await mcp_endpoint(request)
 
 # Provide a simple GET on the MCP root for basic diagnostics
 @app.get("/xero/")
-def mcp_root_get():
-    return {"status": "ok", "message": "Xero MCP root. POST JSON with method=discover or tools/call."}
+def mcp_root_get(_=Depends(require_auth)):
+    return {"status": "ok", "message": "Xero MCP root. POST JSON with method=initialize/tools.list/tools.call."}
 
 # No-trailing-slash variant
 @app.get("/xero")
-def mcp_root_get_no_slash():
-    return {"status": "ok", "message": "Xero MCP root. POST JSON with method=discover or tools/call."}
+def mcp_root_get_no_slash(_=Depends(require_auth)):
+    return {"status": "ok", "message": "Xero MCP root. POST JSON with method=initialize/tools.list/tools.call."}
 
 async def handle_tool_call(name: str, args: Dict):
     try:
