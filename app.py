@@ -15,6 +15,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from xero_python.accounting import AccountingApi, Contact, Contacts, BankTransaction, BankTransactions, Journal, Payment, Quote, Account, Organisation
 from xero_python.api_client import ApiClient
 from xero_python.api_client.configuration import Configuration
+from urllib.parse import urlencode
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -110,7 +111,7 @@ def xero_auth():
         "redirect_uri": XERO_REDIRECT_URI,
         "state": "123"  # Add proper state handling in production
     }
-    auth_url = "https://login.xero.com/identity/connect/authorize?" + requests.utils.urlencode(params)
+    auth_url = "https://login.xero.com/identity/connect/authorize?" + urlencode(params)
     return RedirectResponse(auth_url)
 
 @app.get("/xero/callback")
