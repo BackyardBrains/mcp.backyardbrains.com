@@ -43,6 +43,7 @@ fernet = Fernet(TOKEN_ENC_KEY) if TOKEN_ENC_KEY else None
 # Auth0 configuration
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")  # e.g., "your-tenant.us.auth0.com"
 AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")  # e.g., "https://mcp.backyardbrains.com/xero"
+AUTH0_CLIENT_ID = os.environ.get("AUTH0_CLIENT_ID")  # accept ID tokens for this client when audience isn't available
 AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/" if AUTH0_DOMAIN else None
 JWKS_URL = f"{AUTH0_ISSUER}.well-known/jwks.json" if AUTH0_ISSUER else None
 ALGORITHMS = ["RS256"]
@@ -76,15 +77,49 @@ def verify_jwt(token: str):
                 break
         if not rsa_key:
             raise HTTPException(status_code=401, detail="Invalid token: key not found")
-        payload = jwt.decode(
-            token,
-            rsa_key,
-            algorithms=ALGORITHMS,
-            audience=AUTH0_AUDIENCE,
-            issuer=AUTH0_ISSUER,
-            options={"verify_at_hash": False}
-        )
-        return payload
+        last_error = None
+        # Try validating as API access token first (with audience)
+        if AUTH0_AUDIENCE:
+            try:
+                payload = jwt.decode(
+                    token,
+                    rsa_key,
+                    algorithms=ALGORITHMS,
+                    audience=AUTH0_AUDIENCE,
+                    issuer=AUTH0_ISSUER,
+                    options={"verify_at_hash": False}
+                )
+                return payload
+            except JWTError as e:
+                last_error = e
+        # Try validating as ID token for our client (aud == client_id)
+        if AUTH0_CLIENT_ID:
+            try:
+                payload = jwt.decode(
+                    token,
+                    rsa_key,
+                    algorithms=ALGORITHMS,
+                    audience=AUTH0_CLIENT_ID,
+                    issuer=AUTH0_ISSUER,
+                    options={"verify_at_hash": False}
+                )
+                return payload
+            except JWTError as e:
+                last_error = e
+        # Fallback: accept tokens with correct issuer and signature, without audience, if azp matches our client
+        try:
+            payload = jwt.decode(
+                token,
+                rsa_key,
+                algorithms=ALGORITHMS,
+                issuer=AUTH0_ISSUER,
+                options={"verify_aud": False, "verify_at_hash": False}
+            )
+            if AUTH0_CLIENT_ID and payload.get("azp") == AUTH0_CLIENT_ID:
+                return payload
+        except JWTError as e:
+            last_error = e
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(last_error) if last_error else 'audience mismatch'}")
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
     except Exception as e:
