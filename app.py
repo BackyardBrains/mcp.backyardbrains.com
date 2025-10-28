@@ -8,7 +8,7 @@ from typing import Dict, Any
 import base64
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 import requests
 import uvicorn
 from cryptography.fernet import Fernet, InvalidToken
@@ -322,6 +322,34 @@ async def mcp_endpoint(request: Request, _=Depends(require_auth)):
         return await handle_tool_call(tool_name, args)
 
     return {"error": "Method not found"}
+
+# ---- OIDC Discovery passthrough for Auth0 (unauthenticated) ----
+@app.get("/xero/.well-known/openid-configuration")
+def oidc_discovery():
+    if not AUTH0_ISSUER:
+        raise HTTPException(status_code=500, detail="Auth0 not configured")
+    url = f"{AUTH0_ISSUER}.well-known/openid-configuration"
+    try:
+        resp = requests.get(url, timeout=5)
+        return JSONResponse(status_code=resp.status_code, content=resp.json())
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Discovery fetch failed: {str(e)}")
+
+# Handle accidental double-slash variant some clients probe
+@app.get("/xero//.well-known/openid-configuration")
+def oidc_discovery_double_slash():
+    return oidc_discovery()
+
+@app.get("/xero/.well-known/jwks.json")
+def oidc_jwks():
+    if not AUTH0_ISSUER:
+        raise HTTPException(status_code=500, detail="Auth0 not configured")
+    url = f"{AUTH0_ISSUER}.well-known/jwks.json"
+    try:
+        resp = requests.get(url, timeout=5)
+        return JSONResponse(status_code=resp.status_code, content=resp.json())
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"JWKS fetch failed: {str(e)}")
 
 # Accept base-path POSTs that some clients send to the MCP server root
 @app.post("/xero/")
