@@ -170,15 +170,29 @@ async function handleMcp(req: IncomingMessage, res: ServerResponse) {
       body = {};
     }
     const method = String(body.method || body.type || "").toLowerCase();
-    if (
-      method === "" ||
-      method === "discover" ||
-      method === "tools/list" ||
-      method === "actions/list"
-    ) {
+    const id = body.id ?? null;
+
+    const sendResult = (result: any) => {
+      sendJson(res, 200, { jsonrpc: "2.0", id, result });
+    };
+    const sendError = (code: number, message: string, data?: any) => {
+      sendJson(res, 200, { jsonrpc: "2.0", id, error: { code, message, data } });
+    };
+    if (method === "initialize") {
+      const requestedVersion = body.params?.protocolVersion || "2025-06-18";
+      const result = {
+        protocolVersion: requestedVersion,
+        capabilities: {},
+        serverInfo: { name: "mcp-xero-http-server", version: "1.3.0" },
+      };
+      sendResult(result);
+      jsonLogger(req, res, start, { mcpMethod: method });
+      return;
+    }
+    if (method === "" || method === "discover" || method === "tools/list" || method === "actions/list") {
       const tools = listTools();
-      sendJson(res, 200, { tools });
-      jsonLogger(req, res, start, { mcpMethod: method || "discover" });
+      sendResult({ tools });
+      jsonLogger(req, res, start, { mcpMethod: method || "tools/list" });
       return;
     }
     if (
@@ -190,18 +204,16 @@ async function handleMcp(req: IncomingMessage, res: ServerResponse) {
       const name = body.params?.name || body.name;
       const args = body.params?.arguments || body.arguments || {};
       const result = await handleMcpCall(name, args);
-      sendJson(res, 200, result);
+      sendResult(result);
       jsonLogger(req, res, start, { mcpMethod: method, toolName: name });
       return;
     }
-    // Fallback: respond with discovery instead of 400 to be permissive
-    const tools = listTools();
-    sendJson(res, 200, { tools });
-    jsonLogger(req, res, start, { mcpMethod: method || "discover" });
+    // JSON-RPC method not found
+    sendError(-32601, "Method not found");
+    jsonLogger(req, res, start, { mcpMethod: method || "unknown" });
   } catch (_err) {
-    // Be lenient: treat as discovery on parse/runtime errors
-    const tools = listTools();
-    sendJson(res, 200, { tools });
+    // On parse/runtime errors, reply with JSON-RPC parse error
+    sendJson(res, 200, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
   }
 }
 
