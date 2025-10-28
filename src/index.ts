@@ -1,8 +1,14 @@
 #!/usr/bin/env node
-import { XeroMcpServer } from "./XeroMcpServer.js";
+import 'dotenv/config';
+import { startHttpServer } from "./http/server.js";
+import { Xero } from "./xero/XeroClient.js";
 
-const server = new XeroMcpServer();
-server.start().catch(error => {
-  console.error('Failed to start server:', error);
+async function main() {
+  await Xero.loadTokensIfPresent();
+  startHttpServer();
+}
+
+main().catch((error) => {
+  console.error("Failed to start server:", error);
   process.exit(1);
 });
