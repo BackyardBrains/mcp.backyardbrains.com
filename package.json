@@ -32,6 +32,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.7.0",
     "dotenv": "^16.4.7",
+    "jose": "^5.9.6",
     "open": "^10.1.0",
     "xero-node": "^10.0.0",
     "zod": "^3.24.2"

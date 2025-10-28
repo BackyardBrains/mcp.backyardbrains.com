@@ -1,6 +1,7 @@
 import http, { IncomingMessage, ServerResponse } from "http";
 import url from "url";
 import { handleMcpCall, listTools } from "../mcp/router.js";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { getConsentUrl, loadPersistedTokens, persistTokens } from "../xero/XeroClient.js";
 
 type JsonValue = any;
@@ -53,16 +54,38 @@ function requireHttps(req: IncomingMessage, res: ServerResponse): boolean {
   return true;
 }
 
-function requireBearerAuth(req: IncomingMessage, res: ServerResponse): boolean {
+async function requireBearerAuth(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const shared = process.env.MCP_SHARED_SECRET;
-  if (!shared) return true;
+  const jwksUrl = process.env.OAUTH_JWKS_URL;
+  const issuer = process.env.OAUTH_ISSUER;
+  const audience = process.env.OAUTH_AUDIENCE;
+  if (!shared && !jwksUrl) return true; // no auth configured
   const header = Array.isArray(req.headers.authorization)
     ? req.headers.authorization[0]
     : req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (token !== shared) {
-    sendJson(res, 401, { error: "Unauthorized" });
-    return false;
+  // Shared secret path
+  if (shared) {
+    if (token !== shared) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return false;
+    }
+    return true;
+  }
+  // JWT verification path (RS256 via JWKS)
+  if (jwksUrl) {
+    try {
+      const JWKS = createRemoteJWKSet(new URL(jwksUrl));
+      const { payload } = await jwtVerify(token, JWKS, {
+        issuer: issuer || undefined,
+        audience: audience || undefined,
+      } as any);
+      // optionally use payload later
+      return true;
+    } catch (_e) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return false;
+    }
   }
   return true;
 }
@@ -144,7 +167,7 @@ async function handleCallback(req: IncomingMessage, res: ServerResponse) {
 async function handleMcp(req: IncomingMessage, res: ServerResponse) {
   const start = Date.now();
   if (!requireHttps(req, res)) return;
-  if (!requireBearerAuth(req, res)) return;
+  if (!(await requireBearerAuth(req, res))) return;
   if (!rateLimit(req, res)) return;
 
   try {
