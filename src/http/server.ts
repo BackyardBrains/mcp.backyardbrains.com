@@ -146,6 +146,26 @@ async function handleHealthz(_req: IncomingMessage, res: ServerResponse) {
   sendJson(res, 200, { status: "ok" });
 }
 
+function handleOidcDiscovery(_req: IncomingMessage, res: ServerResponse) {
+  const issuer = process.env.OAUTH_ISSUER || "";
+  const jwks = process.env.OAUTH_JWKS_URL || (issuer ? new URL(".well-known/jwks.json", issuer).toString() : "");
+  const authorizationEndpoint = issuer ? new URL("authorize", issuer).toString() : "";
+  const tokenEndpoint = issuer ? new URL("oauth/token", issuer).toString() : "";
+  const body = {
+    issuer,
+    authorization_endpoint: authorizationEndpoint,
+    token_endpoint: tokenEndpoint,
+    jwks_uri: jwks,
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code", "client_credentials", "refresh_token"],
+    token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
+    id_token_signing_alg_values_supported: ["RS256"],
+    scopes_supported: ["openid", "profile"],
+    claims_supported: ["sub", "iss", "aud", "exp", "iat"],
+  } as const;
+  sendJson(res, 200, body);
+}
+
 async function handleAuth(_req: IncomingMessage, res: ServerResponse) {
   const url = await getConsentUrl();
   res.statusCode = 302;
@@ -249,6 +269,14 @@ export function startHttpServer() {
     const start = Date.now();
     try {
       const parsed = url.parse(req.url || "");
+      // OIDC discovery for OAuth (ChatGPT probes this)
+      if (
+        req.method === "GET" &&
+        (parsed.pathname === "/xero/.well-known/openid-configuration" ||
+          parsed.pathname === "/xero//.well-known/openid-configuration")
+      ) {
+        return handleOidcDiscovery(req, res);
+      }
       // Basic HEAD/OPTIONS support to satisfy various HTTP clients
       if (
         (req.method === "OPTIONS" || req.method === "HEAD") &&
