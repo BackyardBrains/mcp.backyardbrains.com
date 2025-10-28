@@ -269,20 +269,20 @@ export function startHttpServer() {
     const start = Date.now();
     try {
       const parsed = url.parse(req.url || "");
+      const pathname = (parsed.pathname || "").replace(/\/+/, "/");
       // OIDC discovery for OAuth (ChatGPT probes this)
       if (
         req.method === "GET" &&
-        (parsed.pathname === "/xero/.well-known/openid-configuration" ||
-          parsed.pathname === "/xero/.well-known/openid-configuration")
+        (pathname === "/xero/.well-known/openid-configuration")
       ) {
         return handleOidcDiscovery(req, res);
       }
       // Basic HEAD/OPTIONS support to satisfy various HTTP clients
       if (
         (req.method === "OPTIONS" || req.method === "HEAD") &&
-        (parsed.pathname === "/xero" ||
-          parsed.pathname === "/xero/" ||
-          parsed.pathname === "/xero/mcp")
+        (pathname === "/xero" ||
+          pathname === "/xero/" ||
+          pathname === "/xero/mcp")
       ) {
         res.statusCode = req.method === "HEAD" ? 200 : 204;
         res.setHeader("Allow", "GET,POST,HEAD,OPTIONS");
@@ -290,28 +290,28 @@ export function startHttpServer() {
         jsonLogger(req, res, start);
         return;
       }
-      if (req.method === "GET" && parsed.pathname === "/xero/healthz") {
+      if (req.method === "GET" && pathname === "/xero/healthz") {
         return handleHealthz(req, res);
       }
-      if (req.method === "GET" && parsed.pathname === "/xero/auth") {
+      if (req.method === "GET" && pathname === "/xero/auth") {
         return handleAuth(req, res);
       }
-      if (req.method === "GET" && parsed.pathname === "/xero/callback") {
+      if (req.method === "GET" && pathname === "/xero/callback") {
         return handleCallback(req, res);
       }
       // Accept MCP at /xero/mcp (primary)
-      if (req.method === "POST" && parsed.pathname === "/xero/mcp") {
+      if (req.method === "POST" && pathname === "/xero/mcp") {
         return handleMcp(req, res);
       }
       // Also accept POSTs directly to /xero and /xero/ for clients that don't append /mcp
       if (
-        req.method === "POST" && (parsed.pathname === "/xero" || parsed.pathname === "/xero/")
+        req.method === "POST" && (pathname === "/xero" || pathname === "/xero/")
       ) {
         return handleMcp(req, res);
       }
       // Friendly index for GET /xero and /xero/
       if (
-        req.method === "GET" && (parsed.pathname === "/xero" || parsed.pathname === "/xero/")
+        req.method === "GET" && (pathname === "/xero" || pathname === "/xero/")
       ) {
         return sendText(
           res,
