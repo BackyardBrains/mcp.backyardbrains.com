@@ -149,15 +149,18 @@ def xero_callback(code: str = None, state: str = None):
     
     return {"message": "Authentication successful. Tenant ID saved."}
 
-# MCP Endpoint
-@app.post("/xero/mcp")
-async def mcp_endpoint(request: Request):
-    body = await request.json()
-    method = body.get("method", "").lower()
-    
-    if method in ["", "discover", "tools/list"]:
-        return {
-            "tools": [
+def _rpc_result(rpc_id: Any, result: Dict[str, Any]):
+    return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
+
+def _rpc_error(rpc_id: Any, code: int, message: str, data: Any = None):
+    err = {"code": code, "message": message}
+    if data is not None:
+        err["data"] = data
+    return {"jsonrpc": "2.0", "id": rpc_id, "error": err}
+
+def _list_tools_payload():
+    return {
+        "tools": [
                 {
                     "name": "xero.list_invoices",
                     "description": "Retrieves sales invoices or purchase bills",
@@ -224,14 +227,52 @@ async def mcp_endpoint(request: Request):
                     "input_schema": {"type": "object", "properties": {}},
                     "output": {"content": [{"type": "text", "text": "string"}]}
                 },
-            ]
-        }
-    
-    elif method in ["tools/call", "call_tool"]:
+        ]
+    }
+
+# MCP Endpoint
+@app.post("/xero/mcp")
+async def mcp_endpoint(request: Request):
+    body = await request.json()
+
+    # JSON-RPC 2.0 handling (MCP over HTTP)
+    if isinstance(body, dict) and body.get("jsonrpc") == "2.0" and isinstance(body.get("method"), str):
+        rpc_id = body.get("id")
+        method = body.get("method")
+        params = body.get("params", {})
+        logger.info(f"MCP JSON-RPC method: {method}")
+
+        if method == "initialize":
+            result = {
+                "protocolVersion": "2024-11-05",
+                "serverInfo": {"name": "xero-mcp", "version": "1.0.0"},
+                "capabilities": {
+                    "tools": {}
+                }
+            }
+            return _rpc_result(rpc_id, result)
+
+        if method in ("tools/list", "tools.list"):
+            return _rpc_result(rpc_id, _list_tools_payload())
+
+        if method in ("tools/call", "tools.call", "call_tool"):
+            tool_name = params.get("name") or params.get("tool")
+            args = params.get("arguments") or params.get("args") or {}
+            tool_result = await handle_tool_call(tool_name, args)
+            return _rpc_result(rpc_id, tool_result)
+
+        return _rpc_error(rpc_id, -32601, "Method not found")
+
+    # Legacy/simple handling (non JSON-RPC)
+    method = str(body.get("method", "")).lower()
+    if method in ["", "discover", "tools/list"]:
+        return _list_tools_payload()
+
+    if method in ["tools/call", "call_tool"]:
         tool_name = body.get("params", {}).get("name")
         args = body.get("params", {}).get("arguments", {})
         return await handle_tool_call(tool_name, args)
-    
+
     return {"error": "Method not found"}
 
 # Accept base-path POSTs that some clients send to the MCP server root
