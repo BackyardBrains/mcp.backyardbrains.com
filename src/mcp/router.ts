@@ -14,7 +14,10 @@ export async function handleMcpCall(name: string, args: any) {
   };
   try {
     if (!Xero.isAuthenticated()) {
-      return { content: [{ type: "text", text: "You must authenticate with Xero first" }] } as any;
+      return { content: [{ type: "text", text: "You must authenticate with Xero first. Visit /xero/auth to connect, then retry." }] } as any;
+    }
+    if (!Xero.activeTenantId()) {
+      return { content: [{ type: "text", text: "No active Xero tenant. Visit /xero/auth to select your organization, then retry." }] } as any;
     }
     const tool = McpToolsFactory.findToolByName(request.params.name);
     if (!tool) {
