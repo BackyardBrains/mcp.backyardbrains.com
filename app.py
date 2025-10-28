@@ -234,6 +234,26 @@ async def mcp_endpoint(request: Request):
     
     return {"error": "Method not found"}
 
+# Accept base-path POSTs that some clients send to the MCP server root
+@app.post("/xero/")
+async def mcp_root_post(request: Request):
+    return await mcp_endpoint(request)
+
+# Also accept no-trailing-slash variant
+@app.post("/xero")
+async def mcp_root_post_no_slash(request: Request):
+    return await mcp_endpoint(request)
+
+# Provide a simple GET on the MCP root for basic diagnostics
+@app.get("/xero/")
+def mcp_root_get():
+    return {"status": "ok", "message": "Xero MCP root. POST JSON with method=discover or tools/call."}
+
+# No-trailing-slash variant
+@app.get("/xero")
+def mcp_root_get_no_slash():
+    return {"status": "ok", "message": "Xero MCP root. POST JSON with method=discover or tools/call."}
+
 async def handle_tool_call(name: str, args: Dict):
     try:
         refresh_token_if_needed()
