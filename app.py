@@ -162,72 +162,61 @@ def _rpc_error(rpc_id: Any, code: int, message: str, data: Any = None):
 def _list_tools_payload():
     return {
         "tools": [
-                {
-                    "name": "xero.list_invoices",
-                    "description": "Retrieves sales invoices or purchase bills",
-                    "input_schema": {"type": "object", "properties": {}},
-                    "output": {"content": [{"type": "text", "text": "string"}]}
-                },
-                {
-                    "name": "xero.get_balance_sheet",
-                    "description": "Retrieves report for balancesheet",
-                    "input_schema": {"type": "object", "properties": {}},
-                    "output": {"content": [{"type": "text", "text": "string"}]}
-                },
-                {
-                    "name": "xero.list_contacts",
-                    "description": "Retrieves all contacts (customers/suppliers)",
-                    "input_schema": {"type": "object", "properties": {}},
-                    "output": {"content": [{"type": "text", "text": "string"}]}
-                },
-                {
-                    "name": "xero.create_contacts",
-                    "description": "Creates one or more contacts",
-                    "input_schema": {"type": "object", "properties": {"contacts": {"type": "array"}}},
-                    "output": {"content": [{"type": "text", "text": "string"}]}
-                },
-                {
-                    "name": "xero.list_bank_transactions",
-                    "description": "Retrieves bank transactions",
-                    "input_schema": {"type": "object", "properties": {}},
-                    "output": {"content": [{"type": "text", "text": "string"}]}
-                },
-                {
-                    "name": "xero.create_bank_transactions",
-                    "description": "Creates one or more bank transactions",
-                    "input_schema": {"type": "object", "properties": {"bank_transactions": {"type": "array"}}},
-                    "output": {"content": [{"type": "text", "text": "string"}]}
-                },
-                {
-                    "name": "xero.list_accounts",
-                    "description": "Retrieves the full chart of accounts",
-                    "input_schema": {"type": "object", "properties": {}},
-                    "output": {"content": [{"type": "text", "text": "string"}]}
-                },
-                {
-                    "name": "xero.list_journals",
-                    "description": "Retrieves journals",
-                    "input_schema": {"type": "object", "properties": {}},
-                    "output": {"content": [{"type": "text", "text": "string"}]}
-                },
-                {
-                    "name": "xero.list_organisations",
-                    "description": "Retrieves Xero organisation details",
-                    "input_schema": {"type": "object", "properties": {}},
-                    "output": {"content": [{"type": "text", "text": "string"}]}
-                },
-                {
-                    "name": "xero.list_payments",
-                    "description": "Retrieves payments",
-                    "input_schema": {"type": "object", "properties": {}},
-                    "output": {"content": [{"type": "text", "text": "string"}]}
-                },
-                {
-                    "name": "xero.list_quotes",
-                    "description": "Retrieves quotes",
-                    "input_schema": {"type": "object", "properties": {}},
-                    "output": {"content": [{"type": "text", "text": "string"}]}
-                },
+            {
+                "name": "xero.list_invoices",
+                "description": "Retrieves sales invoices or purchase bills",
+                "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "xero.get_balance_sheet",
+                "description": "Retrieves report for balancesheet",
+                "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "xero.list_contacts",
+                "description": "Retrieves all contacts (customers/suppliers)",
+                "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "xero.create_contacts",
+                "description": "Creates one or more contacts",
+                "inputSchema": {"type": "object", "properties": {"contacts": {"type": "array"}}}
+            },
+            {
+                "name": "xero.list_bank_transactions",
+                "description": "Retrieves bank transactions",
+                "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "xero.create_bank_transactions",
+                "description": "Creates one or more bank transactions",
+                "inputSchema": {"type": "object", "properties": {"bank_transactions": {"type": "array"}}}
+            },
+            {
+                "name": "xero.list_accounts",
+                "description": "Retrieves the full chart of accounts",
+                "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "xero.list_journals",
+                "description": "Retrieves journals",
+                "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "xero.list_organisations",
+                "description": "Retrieves Xero organisation details",
+                "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "xero.list_payments",
+                "description": "Retrieves payments",
+                "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "xero.list_quotes",
+                "description": "Retrieves quotes",
+                "inputSchema": {"type": "object", "properties": {}}
+            }
         ]
     }
 
