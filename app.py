@@ -496,6 +496,58 @@ async def token_proxy(request: Request):
             raise HTTPException(status_code=response.status_code, detail="Token exchange failed")
         return response.json()
 
+def _token_getter():
+    # Return the token dict you stored from /xero/callback
+    return load_tokens() or {}
+
+def _token_saver(token):
+    """
+    Xero SDK calls this after refresh. It passes a dict in modern versions.
+    Persist exactly what you get so future calls use the newest refresh_token.
+    """
+    # In some versions token may be an OAuth2Token; normalize to dict
+    try:
+        if isinstance(token, OAuth2Token):
+            # Prefer internal dict if present
+            token = getattr(token, "token", {
+                "access_token": getattr(token, "access_token", None),
+                "refresh_token": getattr(token, "refresh_token", None),
+                "expires_at": getattr(token, "expires_at", None),
+                "scope": getattr(token, "scope", None),
+                "token_type": getattr(token, "token_type", "Bearer"),
+            })
+    except Exception:
+        pass
+    save_tokens(token)
+
+def get_xero_client():
+    cfg = Configuration(
+        oauth2_token=OAuth2Token(client_id=XERO_CLIENT_ID, client_secret=XERO_CLIENT_SECRET),
+        debug=False,
+    )
+    api_client = ApiClient(configuration=cfg)
+
+    # Register persistence callbacks (required for refresh)
+    @api_client.oauth2_token_getter
+    def _getter():
+        return _token_getter()
+
+    @api_client.oauth2_token_saver
+    def _saver(token):
+        _token_saver(token)
+
+    # Preload the current token set onto the client
+    tok = load_tokens()
+    if tok:
+        try:
+            # Modern SDK expects a dict
+            api_client.set_oauth2_token(tok)
+        except TypeError:
+            # Older docs showed passing the raw access_token string
+            api_client.set_oauth2_token(tok["access_token"])
+
+    return api_client
+
 async def handle_tool_call(name: str, args: Dict):
     try:
         refresh_token_if_needed()
