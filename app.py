@@ -62,6 +62,15 @@ def _parse_iso_date(date_str: str):
     except Exception:
         return None
 
+def _parse_iso_datetime(dt_str: str):
+    try:
+        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    except Exception:
+        d = _parse_iso_date(dt_str)
+        if d:
+            return datetime(d.year, d.month, d.day)
+        return None
+
 def _xero_where_date_range(date_from: Any = None, date_to: Any = None) -> str:
     parts = []
     if date_from:
@@ -74,6 +83,20 @@ def _xero_where_date_range(date_from: Any = None, date_to: Any = None) -> str:
             date_to = _parse_iso_date(date_to)
         if isinstance(date_to, (date, datetime)):
             parts.append(f"Date <= DateTime({date_to.year},{date_to.month},{date_to.day})")
+    return " && ".join(parts)
+
+def _xero_where_date_field(field: str, date_from: Any = None, date_to: Any = None) -> str:
+    parts = []
+    if date_from:
+        if isinstance(date_from, str):
+            date_from = _parse_iso_date(date_from)
+        if isinstance(date_from, (date, datetime)):
+            parts.append(f"{field} >= DateTime({date_from.year},{date_from.month},{date_from.day})")
+    if date_to:
+        if isinstance(date_to, str):
+            date_to = _parse_iso_date(date_to)
+        if isinstance(date_to, (date, datetime)):
+            parts.append(f"{field} <= DateTime({date_to.year},{date_to.month},{date_to.day})")
     return " && ".join(parts)
 
 def _xero_where_contact(contact_id: str | None) -> str:
@@ -390,8 +413,19 @@ def _list_tools_payload():
             },
             {
                 "name": "xero.list_contacts",
-                "description": "Retrieves all contacts (customers/suppliers)",
-                "inputSchema": {"type": "object", "properties": {}},
+                "description": "Retrieve contacts with filters (avoid downloading everything).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "searchTerm": {"type": "string", "description": "Search across name/email/etc."},
+                        "page": {"type": "integer", "minimum": 1},
+                        "modifiedSince": {"type": "string", "description": "Only contacts updated since this ISO datetime"},
+                        "includeArchived": {"type": "boolean"},
+                        "summaryOnly": {"type": "boolean"},
+                        "isCustomer": {"type": "boolean"},
+                        "isSupplier": {"type": "boolean"}
+                    }
+                },
                 "securitySchemes": [
                     { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
@@ -406,8 +440,17 @@ def _list_tools_payload():
             },
             {
                 "name": "xero.list_bank_transactions",
-                "description": "Retrieves bank transactions",
-                "inputSchema": {"type": "object", "properties": {}},
+                "description": "Retrieve bank transactions with filters.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dateFrom": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+                        "dateTo": {"type": "string", "description": "End date (YYYY-MM-DD)"},
+                        "accountId": {"type": "string", "description": "Bank AccountID (UUID)"},
+                        "order": {"type": "string", "description": "Order clause"},
+                        "page": {"type": "integer", "minimum": 1}
+                    }
+                },
                 "securitySchemes": [
                     { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
@@ -430,8 +473,16 @@ def _list_tools_payload():
             },
             {
                 "name": "xero.list_journals",
-                "description": "Retrieves journals",
-                "inputSchema": {"type": "object", "properties": {}},
+                "description": "Retrieve journals with date filters.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dateFrom": {"type": "string", "description": "JournalDate start (YYYY-MM-DD)"},
+                        "dateTo": {"type": "string", "description": "JournalDate end (YYYY-MM-DD)"},
+                        "order": {"type": "string"},
+                        "page": {"type": "integer", "minimum": 1}
+                    }
+                },
                 "securitySchemes": [
                     { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
@@ -858,7 +909,35 @@ async def handle_tool_call(name: str, args: Dict):
             )
             return {"content": [{"type": "text", "text": safe_dumps([rep.to_dict() for rep in balance_sheet.reports])}]}
         elif name == "xero.list_contacts":
-            contacts = accounting_api.get_contacts(tenant_id)
+            search_term = _get_arg(args, "searchTerm", "search_term")
+            page = _get_arg(args, "page")
+            modified_since = _get_arg(args, "modifiedSince", "modified_since")
+            include_archived = _get_arg(args, "includeArchived", "include_archived")
+            summary_only = _get_arg(args, "summaryOnly", "summary_only")
+            is_customer = _get_arg(args, "isCustomer", "is_customer")
+            is_supplier = _get_arg(args, "isSupplier", "is_supplier")
+
+            # If-Modified-Since header value
+            ims = None
+            if isinstance(modified_since, str):
+                ims = _parse_iso_datetime(modified_since)
+
+            where_clauses = []
+            if isinstance(is_customer, bool):
+                where_clauses.append(f"IsCustomer=={str(is_customer).lower()}")
+            if isinstance(is_supplier, bool):
+                where_clauses.append(f"IsSupplier=={str(is_supplier).lower()}")
+            where = " && ".join(where_clauses) if where_clauses else None
+
+            contacts = accounting_api.get_contacts(
+                tenant_id,
+                if_modified_since=ims,
+                where=where,
+                page=page,
+                include_archived=include_archived,
+                summary_only=summary_only,
+                search_term=search_term
+            )
             return {"content": [{"type": "text", "text": safe_dumps([c.to_dict() for c in contacts.contacts])}]}
         elif name == "xero.create_contacts":
             contacts_data = args.get('contacts', [])
@@ -866,7 +945,23 @@ async def handle_tool_call(name: str, args: Dict):
             created = accounting_api.create_contacts(tenant_id, contacts_obj)
             return {"content": [{"type": "text", "text": safe_dumps([c.to_dict() for c in created.contacts])}]}
         elif name == "xero.list_bank_transactions":
-            transactions = accounting_api.get_bank_transactions(tenant_id)
+            bt_date_from = _get_arg(args, "dateFrom", "date_from")
+            bt_date_to = _get_arg(args, "dateTo", "date_to")
+            bt_account_id = _get_arg(args, "accountId", "account_id")
+            bt_order = _get_arg(args, "order")
+            bt_page = _get_arg(args, "page")
+
+            where = _join_where(
+                _xero_where_date_field("Date", bt_date_from, bt_date_to),
+                (f'BankAccount.AccountID==Guid("{bt_account_id}")' if bt_account_id else "")
+            )
+
+            transactions = accounting_api.get_bank_transactions(
+                tenant_id,
+                where=where,
+                order=bt_order,
+                page=bt_page
+            )
             return {"content": [{"type": "text", "text": safe_dumps([t.to_dict() for t in transactions.bank_transactions])}]}
         elif name == "xero.create_bank_transactions":
             bank_transactions_data = args.get('bank_transactions', [])
@@ -877,7 +972,18 @@ async def handle_tool_call(name: str, args: Dict):
             accounts = accounting_api.get_accounts(tenant_id)
             return {"content": [{"type": "text", "text": safe_dumps([a.to_dict() for a in accounts.accounts])}]}
         elif name == "xero.list_journals":
-            journals = accounting_api.get_journals(tenant_id)
+            j_date_from = _get_arg(args, "dateFrom", "date_from")
+            j_date_to = _get_arg(args, "dateTo", "date_to")
+            j_order = _get_arg(args, "order")
+            j_page = _get_arg(args, "page")
+
+            where = _xero_where_date_field("JournalDate", j_date_from, j_date_to)
+            journals = accounting_api.get_journals(
+                tenant_id,
+                where=where if where else None,
+                order=j_order,
+                page=j_page
+            )
             return {"content": [{"type": "text", "text": safe_dumps([j.to_dict() for j in journals.journals])}]}
         elif name == "xero.list_organisations":
             organisations = accounting_api.get_organisations(tenant_id)
