@@ -755,12 +755,14 @@ async def handle_tool_call(name: str, args: Dict):
                 ("(" + " || ".join([f'Status=="{s}"' for s in statuses]) + ")") if isinstance(statuses, list) and statuses else ""
             )
 
-            invoices = accounting_api.get_invoices(
-                tenant_id,
-                where=where,
-                order=order,
-                page=page
-            )
+            inv_kwargs = {}
+            if where:
+                inv_kwargs["where"] = where
+            if order:
+                inv_kwargs["order"] = order
+            if page:
+                inv_kwargs["page"] = page
+            invoices = accounting_api.get_invoices(tenant_id, **inv_kwargs)
 
             inv_objs = invoices.invoices or []
 
@@ -921,16 +923,23 @@ async def handle_tool_call(name: str, args: Dict):
                 d = _parse_iso_date(bs_date)
                 bs_date = d.isoformat() if d else None
 
-            balance_sheet = accounting_api.get_report_balance_sheet(
-                tenant_id,
-                date=bs_date,
-                periods=bs_periods,
-                timeframe=bs_timeframe,
-                tracking_category_id=bs_tc,
-                tracking_option_id=bs_to,
-                standard_layout=bs_std,
-                payments_only=bs_pay
-            )
+            bs_kwargs = {}
+            if bs_date is not None:
+                bs_kwargs["date"] = bs_date
+            if bs_periods is not None:
+                bs_kwargs["periods"] = bs_periods
+            if bs_timeframe is not None:
+                bs_kwargs["timeframe"] = bs_timeframe
+            if bs_tc is not None:
+                bs_kwargs["tracking_category_id"] = bs_tc
+            if bs_to is not None:
+                bs_kwargs["tracking_option_id"] = bs_to
+            if bs_std is not None:
+                bs_kwargs["standard_layout"] = bs_std
+            if bs_pay is not None:
+                bs_kwargs["payments_only"] = bs_pay
+
+            balance_sheet = accounting_api.get_report_balance_sheet(tenant_id, **bs_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([rep.to_dict() for rep in balance_sheet.reports])}]}
         elif name == "xero.list_contacts":
             search_term = _get_arg(args, "searchTerm", "search_term")
@@ -953,15 +962,21 @@ async def handle_tool_call(name: str, args: Dict):
                 where_clauses.append(f"IsSupplier=={str(is_supplier).lower()}")
             where = " && ".join(where_clauses) if where_clauses else None
 
-            contacts = accounting_api.get_contacts(
-                tenant_id,
-                if_modified_since=ims,
-                where=where,
-                page=page,
-                include_archived=include_archived,
-                summary_only=summary_only,
-                search_term=search_term
-            )
+            c_kwargs = {}
+            if ims is not None:
+                c_kwargs["if_modified_since"] = ims
+            if where:
+                c_kwargs["where"] = where
+            if page:
+                c_kwargs["page"] = page
+            if include_archived is not None:
+                c_kwargs["include_archived"] = include_archived
+            if summary_only is not None:
+                c_kwargs["summary_only"] = summary_only
+            if search_term:
+                c_kwargs["search_term"] = search_term
+
+            contacts = accounting_api.get_contacts(tenant_id, **c_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([c.to_dict() for c in contacts.contacts])}]}
         elif name == "xero.create_contacts":
             contacts_data = args.get('contacts', [])
@@ -980,12 +995,15 @@ async def handle_tool_call(name: str, args: Dict):
                 (f'BankAccount.AccountID==Guid("{bt_account_id}")' if bt_account_id else "")
             )
 
-            transactions = accounting_api.get_bank_transactions(
-                tenant_id,
-                where=where,
-                order=bt_order,
-                page=bt_page
-            )
+            bt_kwargs = {}
+            if where:
+                bt_kwargs["where"] = where
+            if bt_order:
+                bt_kwargs["order"] = bt_order
+            if bt_page:
+                bt_kwargs["page"] = bt_page
+
+            transactions = accounting_api.get_bank_transactions(tenant_id, **bt_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([t.to_dict() for t in transactions.bank_transactions])}]}
         elif name == "xero.create_bank_transactions":
             bank_transactions_data = args.get('bank_transactions', [])
@@ -1002,12 +1020,14 @@ async def handle_tool_call(name: str, args: Dict):
             j_page = _get_arg(args, "page")
 
             where = _xero_where_date_field("JournalDate", j_date_from, j_date_to)
-            journals = accounting_api.get_journals(
-                tenant_id,
-                where=where if where else None,
-                order=j_order,
-                page=j_page
-            )
+            j_kwargs = {}
+            if where:
+                j_kwargs["where"] = where
+            if j_order:
+                j_kwargs["order"] = j_order
+            if j_page:
+                j_kwargs["page"] = j_page
+            journals = accounting_api.get_journals(tenant_id, **j_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([j.to_dict() for j in journals.journals])}]}
         elif name == "xero.list_organisations":
             organisations = accounting_api.get_organisations(tenant_id)
@@ -1033,13 +1053,17 @@ async def handle_tool_call(name: str, args: Dict):
                 (f"IsReconciled=={str(bool(ps_is_reconciled)).lower()}" if isinstance(ps_is_reconciled, bool) else "")
             )
 
-            payments = accounting_api.get_payments(
-                tenant_id,
-                if_modified_since=ims,
-                where=where,
-                order=ps_order,
-                page=ps_page
-            )
+            pay_kwargs = {}
+            if ims is not None:
+                pay_kwargs["if_modified_since"] = ims
+            if where:
+                pay_kwargs["where"] = where
+            if ps_order:
+                pay_kwargs["order"] = ps_order
+            if ps_page:
+                pay_kwargs["page"] = ps_page
+
+            payments = accounting_api.get_payments(tenant_id, **pay_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([p.to_dict() for p in payments.payments])}]}
         elif name == "xero.list_quotes":
             q_date_from = _get_arg(args, "dateFrom", "date_from")
@@ -1055,15 +1079,18 @@ async def handle_tool_call(name: str, args: Dict):
                 _xero_where_date_field("Date", q_date_from, q_date_to),
                 _xero_where_date_field("ExpiryDate", q_exp_from, q_exp_to),
                 (f'Contact.ContactID==Guid("{q_contact_id}")' if q_contact_id else ""),
-                ("(" + " || ".join([f'"Status"=="{s}"' for s in q_statuses]) + ")") if isinstance(q_statuses, list) and q_statuses else ""
+                ("(" + " || ".join([f'Status=="{s}"' for s in q_statuses]) + ")") if isinstance(q_statuses, list) and q_statuses else ""
             )
 
-            quotes = accounting_api.get_quotes(
-                tenant_id,
-                where=where,
-                order=q_order,
-                page=q_page
-            )
+            q_kwargs = {}
+            if where:
+                q_kwargs["where"] = where
+            if q_order:
+                q_kwargs["order"] = q_order
+            if q_page:
+                q_kwargs["page"] = q_page
+
+            quotes = accounting_api.get_quotes(tenant_id, **q_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([q.to_dict() for q in quotes.quotes])}]}
         return {"content": [{"type": "text", "text": f"Tool {name} not implemented"}]}
     except Exception as e:
