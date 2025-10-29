@@ -24,6 +24,7 @@ import httpx
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
+from enum import Enum
 
 def _json_default(o):
     if isinstance(o, (datetime, date)):
@@ -32,6 +33,9 @@ def _json_default(o):
         return float(o)
     if isinstance(o, UUID):
         return str(o)
+    if isinstance(o, Enum):
+        # Prefer value if it's simple, otherwise name
+        return o.value if isinstance(o.value, (str, int, float, bool, type(None))) else o.name
     to_dict = getattr(o, "to_dict", None)
     if callable(to_dict):
         return to_dict()
@@ -182,7 +186,7 @@ def load_tokens():
     return json.loads(decrypted)
 
 def save_tokens(tokens: Dict):
-    data = json.dumps(tokens).encode('utf-8')
+    data = safe_dumps(tokens).encode('utf-8')
     encrypted = encrypt_data(data)
     with open(TOKEN_STORE_PATH, 'wb') as f:
         f.write(encrypted)
