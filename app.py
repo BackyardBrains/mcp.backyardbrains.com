@@ -186,6 +186,14 @@ def load_tokens():
     return json.loads(decrypted)
 
 def save_tokens(tokens: Dict):
+    # Ensure an absolute expiry timestamp is present to avoid eager refreshes
+    try:
+        if tokens and "expires_at" not in tokens and "expires_in" in tokens:
+            # Compute approximate wall-clock expiry; add small safety margin
+            import time
+            tokens = {**tokens, "expires_at": int(time.time()) + int(tokens["expires_in"]) - 60}
+    except Exception:
+        pass
     data = safe_dumps(tokens).encode('utf-8')
     encrypted = encrypt_data(data)
     with open(TOKEN_STORE_PATH, 'wb') as f:
@@ -544,19 +552,25 @@ def _token_saver(token):
         pass
     save_tokens(token)
 
+_xero_api_client = None
+
 def get_xero_client():
+    global _xero_api_client
+    if _xero_api_client is not None:
+        return _xero_api_client
+
     cfg = Configuration(
         oauth2_token=OAuth2Token(client_id=XERO_CLIENT_ID, client_secret=XERO_CLIENT_SECRET),
         debug=False,
     )
-    api_client = ApiClient(configuration=cfg)
+    client = ApiClient(configuration=cfg)
 
     # Register persistence callbacks (required for refresh)
-    @api_client.oauth2_token_getter
+    @client.oauth2_token_getter
     def _getter():
         return _token_getter()
 
-    @api_client.oauth2_token_saver
+    @client.oauth2_token_saver
     def _saver(token):
         _token_saver(token)
 
@@ -564,17 +578,15 @@ def get_xero_client():
     tok = load_tokens()
     if tok:
         try:
-            # Modern SDK expects a dict
-            api_client.set_oauth2_token(tok)
+            client.set_oauth2_token(tok)
         except TypeError:
-            # Older docs showed passing the raw access_token string
-            api_client.set_oauth2_token(tok["access_token"])
+            client.set_oauth2_token(tok["access_token"])
 
-    return api_client
+    _xero_api_client = client
+    return _xero_api_client
 
 async def handle_tool_call(name: str, args: Dict):
     try:
-        refresh_token_if_needed()
         api_client = get_xero_client()
         tenant_id = load_tenant_id()
         if not tenant_id:
