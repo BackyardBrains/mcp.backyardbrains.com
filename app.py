@@ -125,7 +125,17 @@ def verify_jwt(token: str):
 
 def require_auth(creds: HTTPAuthorizationCredentials = Depends(security)):
     if creds is None or creds.scheme.lower() != "bearer":
-        raise HTTPException(status_code=401, detail="Authorization header missing or invalid")
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization required",
+            headers={
+                "WWW-Authenticate": (
+                    'Bearer '
+                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/xero", '
+                    'scope="xero.read"'
+                )
+            },
+        )
     return verify_jwt(creds.credentials)
 
 def encrypt_data(data: bytes) -> bytes:
@@ -256,57 +266,90 @@ def _list_tools_payload():
             {
                 "name": "xero.list_invoices",
                 "description": "Retrieves sales invoices or purchase bills",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["xero:read"] }
+                ]
             },
             {
                 "name": "xero.get_balance_sheet",
                 "description": "Retrieves report for balancesheet",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["xero:read"] }
+                ]
             },
             {
                 "name": "xero.list_contacts",
                 "description": "Retrieves all contacts (customers/suppliers)",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["xero:read"] }
+                ]
             },
             {
                 "name": "xero.create_contacts",
                 "description": "Creates one or more contacts",
-                "inputSchema": {"type": "object", "properties": {"contacts": {"type": "array"}}}
+                "inputSchema": {"type": "object", "properties": {"contacts": {"type": "array"}}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["xero:write"] }
+                ]
             },
             {
                 "name": "xero.list_bank_transactions",
                 "description": "Retrieves bank transactions",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["xero:read"] }
+                ]
             },
             {
                 "name": "xero.create_bank_transactions",
                 "description": "Creates one or more bank transactions",
-                "inputSchema": {"type": "object", "properties": {"bank_transactions": {"type": "array"}}}
+                "inputSchema": {"type": "object", "properties": {"bank_transactions": {"type": "array"}}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["xero:write"] }
+                ]
             },
             {
                 "name": "xero.list_accounts",
                 "description": "Retrieves the full chart of accounts",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["xero:read"] }
+                ]
             },
             {
                 "name": "xero.list_journals",
                 "description": "Retrieves journals",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["xero:read"] }
+                ]
             },
             {
                 "name": "xero.list_organisations",
                 "description": "Retrieves Xero organisation details",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["xero:read"] }
+                ]
             },
             {
                 "name": "xero.list_payments",
                 "description": "Retrieves payments",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["xero:read"] }
+                ]
             },
             {
                 "name": "xero.list_quotes",
                 "description": "Retrieves quotes",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["xero:read"] }
+                ]
             }
         ]
     }
@@ -349,6 +392,23 @@ async def mcp_endpoint(request: Request, _=Depends(require_auth)):
     return {"error": "Method not found"}
 
 # ---- OIDC Discovery passthrough for Auth0 (unauthenticated) ----
+
+# --- Protected Resource Metadata (RFC 9728) ---
+PRM = {
+    "resource": "https://mcp.backyardbrains.com/xero",
+    # Advertise ONLY what you actually added in Auth0 step #1:
+    "scopes_supported": ["xero.read"],  # add "xero.write" if you created it
+    "authorization_servers": [f"https://{AUTH0_DOMAIN}"]
+}
+
+@app.get("/.well-known/oauth-protected-resource")
+def prm_root():
+    return JSONResponse(PRM)
+
+@app.get("/.well-known/oauth-protected-resource/xero")
+def prm_for_xero():
+    return JSONResponse(PRM)
+
 @app.get("/xero/.well-known/openid-configuration")
 def oidc_discovery():
     if not AUTH0_ISSUER:
@@ -364,6 +424,8 @@ def oidc_discovery():
 @app.get("/xero//.well-known/openid-configuration")
 def oidc_discovery_double_slash():
     return oidc_discovery()
+
+
 
 @app.get("/xero/.well-known/jwks.json")
 def oidc_jwks():
