@@ -12,6 +12,7 @@ import uvicorn
 from cryptography.fernet import Fernet, InvalidToken
 from xero_python.accounting import AccountingApi, Contact, Contacts, BankTransaction, BankTransactions, Journal, Payment, Quote, Account, Organisation
 from xero_python.api_client import ApiClient
+from xero_python.api_client.oauth2 import OAuth2Token
 from xero_python.api_client.configuration import Configuration
 from urllib.parse import urlencode
 from jose import jwt, JWTError
@@ -176,12 +177,20 @@ def save_tenant_id(tenant_id: str):
         f.write(tenant_id)
 
 def get_xero_client():
-    config = Configuration()
-    config.api_base_url = "https://api.xero.com"
-    api_client = ApiClient(configuration=config)
+    cfg = Configuration(
+        oauth2_token=OAuth2Token(
+            client_id=XERO_CLIENT_ID,
+            client_secret=XERO_CLIENT_SECRET,
+        )
+    )
+    api_client = ApiClient(configuration=cfg)
+
     tokens = load_tokens()
-    if tokens:
-        api_client.set_oauth_token(tokens['access_token'])
+    if tokens and "access_token" in tokens:
+        # <-- this is the correct method name
+        api_client.set_oauth2_token(tokens["access_token"])
+    else:
+        logger.warning("No Xero tokens found in TOKEN_STORE_PATH")
     return api_client
 
 def refresh_token_if_needed():
@@ -268,7 +277,7 @@ def _list_tools_payload():
                 "description": "Retrieves sales invoices or purchase bills",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["xero:read"] }
+                    { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
             },
             {
@@ -276,7 +285,7 @@ def _list_tools_payload():
                 "description": "Retrieves report for balancesheet",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["xero:read"] }
+                    { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
             },
             {
@@ -284,7 +293,7 @@ def _list_tools_payload():
                 "description": "Retrieves all contacts (customers/suppliers)",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["xero:read"] }
+                    { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
             },
             {
@@ -292,7 +301,7 @@ def _list_tools_payload():
                 "description": "Creates one or more contacts",
                 "inputSchema": {"type": "object", "properties": {"contacts": {"type": "array"}}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["xero:write"] }
+                    { "type": "oauth2", "scopes": ["write:xero"] }
                 ]
             },
             {
@@ -300,7 +309,7 @@ def _list_tools_payload():
                 "description": "Retrieves bank transactions",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["xero:read"] }
+                    { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
             },
             {
@@ -308,7 +317,7 @@ def _list_tools_payload():
                 "description": "Creates one or more bank transactions",
                 "inputSchema": {"type": "object", "properties": {"bank_transactions": {"type": "array"}}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["xero:write"] }
+                    { "type": "oauth2", "scopes": ["write:xero"] }
                 ]
             },
             {
@@ -316,7 +325,7 @@ def _list_tools_payload():
                 "description": "Retrieves the full chart of accounts",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["xero:read"] }
+                    { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
             },
             {
@@ -324,7 +333,7 @@ def _list_tools_payload():
                 "description": "Retrieves journals",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["xero:read"] }
+                    { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
             },
             {
@@ -332,7 +341,7 @@ def _list_tools_payload():
                 "description": "Retrieves Xero organisation details",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["xero:read"] }
+                    { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
             },
             {
@@ -340,7 +349,7 @@ def _list_tools_payload():
                 "description": "Retrieves payments",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["xero:read"] }
+                    { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
             },
             {
@@ -348,7 +357,7 @@ def _list_tools_payload():
                 "description": "Retrieves quotes",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["xero:read"] }
+                    { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
             }
         ]
@@ -395,10 +404,10 @@ async def mcp_endpoint(request: Request, _=Depends(require_auth)):
 
 # --- Protected Resource Metadata (RFC 9728) ---
 PRM = {
-    "resource": "https://mcp.backyardbrains.com/xero",
-    # Advertise ONLY what you actually added in Auth0 step #1:
-    "scopes_supported": ["xero.read"],  # add "xero.write" if you created it
-    "authorization_servers": [f"https://{AUTH0_DOMAIN}"]
+    "resource": "https://mcp.backyardbrains.com/xero/", 
+    "authorization_servers": [f"https://{AUTH0_DOMAIN}/"],  # issuer has trailing slash
+    "scopes_supported": ["read:xero", "write:xero"],
+    "bearer_methods_supported": ["header"],
 }
 
 @app.get("/.well-known/oauth-protected-resource")
