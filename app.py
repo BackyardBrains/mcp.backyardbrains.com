@@ -413,7 +413,7 @@ def _list_tools_payload():
             },
             {
                 "name": "xero.list_contacts",
-                "description": "Retrieve contacts with filters (avoid downloading everything).",
+                "description": "Retrieve contacts with optional filters and pagination.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -497,16 +497,40 @@ def _list_tools_payload():
             },
             {
                 "name": "xero.list_payments",
-                "description": "Retrieves payments",
-                "inputSchema": {"type": "object", "properties": {}},
+                "description": "Retrieve payments with optional filters.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "modifiedSince": {"type": "string", "description": "Only payments updated since this ISO datetime"},
+                        "dateFrom": {"type": "string", "description": "Payment date start (YYYY-MM-DD)"},
+                        "dateTo": {"type": "string", "description": "Payment date end (YYYY-MM-DD)"},
+                        "invoiceId": {"type": "string", "description": "InvoiceID to filter (UUID)"},
+                        "accountId": {"type": "string", "description": "AccountID to filter (UUID)"},
+                        "isReconciled": {"type": "boolean"},
+                        "order": {"type": "string"},
+                        "page": {"type": "integer", "minimum": 1}
+                    }
+                },
                 "securitySchemes": [
                     { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
             },
             {
                 "name": "xero.list_quotes",
-                "description": "Retrieves quotes",
-                "inputSchema": {"type": "object", "properties": {}},
+                "description": "Retrieve quotes with optional filters.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dateFrom": {"type": "string", "description": "Quote date start (YYYY-MM-DD)"},
+                        "dateTo": {"type": "string", "description": "Quote date end (YYYY-MM-DD)"},
+                        "expiryDateFrom": {"type": "string", "description": "Expiry date start (YYYY-MM-DD)"},
+                        "expiryDateTo": {"type": "string", "description": "Expiry date end (YYYY-MM-DD)"},
+                        "contactId": {"type": "string", "description": "ContactID (UUID)"},
+                        "statuses": {"type": "array", "items": {"type": "string"}},
+                        "order": {"type": "string"},
+                        "page": {"type": "integer", "minimum": 1}
+                    }
+                },
                 "securitySchemes": [
                     { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
@@ -989,10 +1013,57 @@ async def handle_tool_call(name: str, args: Dict):
             organisations = accounting_api.get_organisations(tenant_id)
             return {"content": [{"type": "text", "text": safe_dumps([o.to_dict() for o in organisations.organisations])}]}
         elif name == "xero.list_payments":
-            payments = accounting_api.get_payments(tenant_id)
+            ps_modified_since = _get_arg(args, "modifiedSince", "modified_since")
+            ps_date_from = _get_arg(args, "dateFrom", "date_from")
+            ps_date_to = _get_arg(args, "dateTo", "date_to")
+            ps_invoice_id = _get_arg(args, "invoiceId", "invoice_id")
+            ps_account_id = _get_arg(args, "accountId", "account_id")
+            ps_is_reconciled = _get_arg(args, "isReconciled", "is_reconciled")
+            ps_order = _get_arg(args, "order")
+            ps_page = _get_arg(args, "page")
+
+            ims = None
+            if isinstance(ps_modified_since, str):
+                ims = _parse_iso_datetime(ps_modified_since)
+
+            where = _join_where(
+                _xero_where_date_field("Date", ps_date_from, ps_date_to),
+                (f'Invoice.InvoiceID==Guid("{ps_invoice_id}")' if ps_invoice_id else ""),
+                (f'Account.AccountID==Guid("{ps_account_id}")' if ps_account_id else ""),
+                (f"IsReconciled=={str(bool(ps_is_reconciled)).lower()}" if isinstance(ps_is_reconciled, bool) else "")
+            )
+
+            payments = accounting_api.get_payments(
+                tenant_id,
+                if_modified_since=ims,
+                where=where,
+                order=ps_order,
+                page=ps_page
+            )
             return {"content": [{"type": "text", "text": safe_dumps([p.to_dict() for p in payments.payments])}]}
         elif name == "xero.list_quotes":
-            quotes = accounting_api.get_quotes(tenant_id)
+            q_date_from = _get_arg(args, "dateFrom", "date_from")
+            q_date_to = _get_arg(args, "dateTo", "date_to")
+            q_exp_from = _get_arg(args, "expiryDateFrom", "expiry_date_from")
+            q_exp_to = _get_arg(args, "expiryDateTo", "expiry_date_to")
+            q_contact_id = _get_arg(args, "contactId", "contact_id")
+            q_statuses = _get_arg(args, "statuses")
+            q_order = _get_arg(args, "order")
+            q_page = _get_arg(args, "page")
+
+            where = _join_where(
+                _xero_where_date_field("Date", q_date_from, q_date_to),
+                _xero_where_date_field("ExpiryDate", q_exp_from, q_exp_to),
+                (f'Contact.ContactID==Guid("{q_contact_id}")' if q_contact_id else ""),
+                ("(" + " || ".join([f'"Status"=="{s}"' for s in q_statuses]) + ")") if isinstance(q_statuses, list) and q_statuses else ""
+            )
+
+            quotes = accounting_api.get_quotes(
+                tenant_id,
+                where=where,
+                order=q_order,
+                page=q_page
+            )
             return {"content": [{"type": "text", "text": safe_dumps([q.to_dict() for q in quotes.quotes])}]}
         return {"content": [{"type": "text", "text": f"Tool {name} not implemented"}]}
     except Exception as e:
