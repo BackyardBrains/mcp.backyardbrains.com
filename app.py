@@ -44,6 +44,47 @@ def _json_default(o):
 def safe_dumps(obj) -> str:
     return json.dumps(obj, default=_json_default, ensure_ascii=False)
 
+# ---- Argument helpers ----
+def _get_arg(args: Dict[str, Any], *names, default=None):
+    for name in names:
+        if name in args:
+            return args[name]
+        # also try snake/camel variants
+        alt = name.replace("_", "")
+        for k in args.keys():
+            if k.replace("_", "").lower() == alt.lower():
+                return args[k]
+    return default
+
+def _parse_iso_date(date_str: str):
+    try:
+        return datetime.fromisoformat(date_str).date()
+    except Exception:
+        return None
+
+def _xero_where_date_range(date_from: Any = None, date_to: Any = None) -> str:
+    parts = []
+    if date_from:
+        if isinstance(date_from, str):
+            date_from = _parse_iso_date(date_from)
+        if isinstance(date_from, (date, datetime)):
+            parts.append(f"Date >= DateTime({date_from.year},{date_from.month},{date_from.day})")
+    if date_to:
+        if isinstance(date_to, str):
+            date_to = _parse_iso_date(date_to)
+        if isinstance(date_to, (date, datetime)):
+            parts.append(f"Date <= DateTime({date_to.year},{date_to.month},{date_to.day})")
+    return " && ".join(parts)
+
+def _xero_where_contact(contact_id: str | None) -> str:
+    if contact_id:
+        return f'Contact.ContactID==Guid("{contact_id}")'
+    return ""
+
+def _join_where(*clauses: str) -> str | None:
+    parts = [c for c in clauses if c]
+    return " && ".join(parts) if parts else None
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -307,16 +348,42 @@ def _list_tools_payload():
         "tools": [
             {
                 "name": "xero.list_invoices",
-                "description": "Retrieves sales invoices or purchase bills",
-                "inputSchema": {"type": "object", "properties": {}},
+                "description": "List or summarize invoices with filters (date, contact, status) and grouping.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dateFrom": {"type": "string", "description": "ISO date start (YYYY-MM-DD)"},
+                        "dateTo": {"type": "string", "description": "ISO date end (YYYY-MM-DD)"},
+                        "contactId": {"type": "string", "description": "Xero ContactID (UUID)"},
+                        "statuses": {"type": "array", "items": {"type": "string"}, "description": "Invoice statuses (e.g., AUTHORISED, PAID)"},
+                        "order": {"type": "string", "description": "Order clause, e.g. Date DESC"},
+                        "page": {"type": "integer", "minimum": 1, "description": "Page number (Xero pagination)"},
+                        "summarizeBy": {"type": "string", "enum": ["product", "quarter", "month", "year"], "description": "DEPRECATED: use groupBy for multiple dimensions"},
+                        "groupBy": {"type": "array", "items": {"type": "string", "enum": ["product", "country", "customer", "status", "month", "quarter", "year"]}, "description": "Group results by one or more dimensions"},
+                        "metrics": {"type": "array", "items": {"type": "string", "enum": ["countInvoices", "quantity", "subtotal", "tax", "total", "amountDue"]}, "description": "Metrics to compute per group"},
+                        "itemCodes": {"type": "array", "items": {"type": "string"}, "description": "Only include line items with these item codes"},
+                        "includeLineItems": {"type": "boolean", "description": "Return full line items in results (when not summarizing)"}
+                    }
+                },
                 "securitySchemes": [
                     { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
             },
             {
                 "name": "xero.get_balance_sheet",
-                "description": "Retrieves report for balancesheet",
-                "inputSchema": {"type": "object", "properties": {}},
+                "description": "Retrieve Balance Sheet with optional parameters.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "date": {"type": "string", "description": "Report date (YYYY-MM-DD)"},
+                        "periods": {"type": "integer", "description": "Number of periods"},
+                        "timeframe": {"type": "string", "enum": ["MONTH", "QUARTER", "YEAR"], "description": "Period granularity"},
+                        "trackingCategoryID": {"type": "string", "description": "Tracking Category ID (UUID)"},
+                        "trackingOptionID": {"type": "string", "description": "Tracking Option ID (UUID)"},
+                        "standardLayout": {"type": "boolean"},
+                        "paymentsOnly": {"type": "boolean"}
+                    }
+                },
                 "securitySchemes": [
                     { "type": "oauth2", "scopes": ["read:xero"] }
                 ]
@@ -594,10 +661,201 @@ async def handle_tool_call(name: str, args: Dict):
         accounting_api = AccountingApi(api_client)
        
         if name == "xero.list_invoices":
-            invoices = accounting_api.get_invoices(tenant_id)
-            return {"content": [{"type": "text", "text": safe_dumps([inv.to_dict() for inv in invoices.invoices])}]}
+            # Parse filters
+            date_from = _get_arg(args, "dateFrom", "date_from")
+            date_to = _get_arg(args, "dateTo", "date_to")
+            contact_id = _get_arg(args, "contactId", "contact_id")
+            statuses = _get_arg(args, "statuses")
+            order = _get_arg(args, "order")
+            page = _get_arg(args, "page")
+            summarize_by = _get_arg(args, "summarizeBy", "summarize_by")
+            group_by = _get_arg(args, "groupBy", "group_by")
+            metrics = _get_arg(args, "metrics")
+            item_codes = _get_arg(args, "itemCodes", "item_codes")
+            include_line_items = bool(_get_arg(args, "includeLineItems", "include_line_items", default=True))
+
+            where = _join_where(
+                _xero_where_date_range(date_from, date_to),
+                _xero_where_contact(contact_id),
+                ("(" + " || ".join([f'Status=="{s}"' for s in statuses]) + ")") if isinstance(statuses, list) and statuses else ""
+            )
+
+            invoices = accounting_api.get_invoices(
+                tenant_id,
+                where=where,
+                order=order,
+                page=page
+            )
+
+            inv_objs = invoices.invoices or []
+
+            # Normalize grouping/metrics
+            if group_by is None and summarize_by:
+                group_by = [summarize_by]
+            if isinstance(group_by, str):
+                group_by = [group_by]
+            if not isinstance(group_by, list):
+                group_by = []
+            if not metrics:
+                # default metrics
+                metrics = ["total"] + (["quantity"] if "product" in group_by else [])
+
+            # If no grouping requested, return raw list
+            if not group_by:
+                if include_line_items:
+                    return {"content": [{"type": "text", "text": safe_dumps([inv.to_dict() for inv in inv_objs])}]}
+                else:
+                    slim = []
+                    for inv in inv_objs:
+                        d = inv.to_dict()
+                        d.pop("line_items", None)
+                        slim.append(d)
+                    return {"content": [{"type": "text", "text": safe_dumps(slim)}]}
+
+            # Summaries with grouping
+            # Consider only sales invoices (ACCREC)
+            sales = [inv for inv in inv_objs if getattr(inv, "type", None) == "ACCREC"]
+
+            def _date_parts(dval: datetime | date | None):
+                if not dval:
+                    return None, None, None
+                if isinstance(dval, datetime):
+                    dval = dval.date()
+                y, m = dval.year, dval.month
+                q = (m - 1)//3 + 1
+                return y, m, q
+
+            def _invoice_country(inv) -> str | None:
+                try:
+                    c = getattr(inv, "contact", None)
+                    if not c:
+                        return None
+                    # Prefer addresses if available
+                    addrs = getattr(c, "addresses", None) or []
+                    for addr in addrs:
+                        t = getattr(addr, "address_type", None)
+                        if t in ("STREET", "POBOX"):
+                            country = getattr(addr, "country", None)
+                            if country:
+                                return country
+                    # Fallback: some models may expose country directly
+                    return getattr(c, "country", None)
+                except Exception:
+                    return None
+
+            def _group_key_for_invoice(inv):
+                y, m, q = _date_parts(getattr(inv, "date", None))
+                mapping = {
+                    "customer": getattr(getattr(inv, "contact", None), "name", None),
+                    "status": getattr(inv, "status", None),
+                    "year": f"{y}" if y else None,
+                    "month": f"{y}-{m:02d}" if y and m else None,
+                    "quarter": f"{y}-Q{q}" if y and q else None,
+                    "country": _invoice_country(inv),
+                }
+                return {k: mapping.get(k) for k in group_by if k != "product"}
+
+            def _group_key_for_line_item(inv, li):
+                base = _group_key_for_invoice(inv)
+                if "product" in group_by:
+                    prod = getattr(li, "item_code", None) or getattr(li, "description", "UNKNOWN")
+                    base = dict(base)
+                    base["product"] = prod
+                return base
+
+            # Aggregation buckets
+            buckets = {}
+
+            def _ensure_bucket(key_dict):
+                key_tuple = tuple((k, key_dict.get(k)) for k in group_by)
+                if key_tuple not in buckets:
+                    buckets[key_tuple] = {
+                        "group": {k: key_dict.get(k) for k in group_by},
+                        "metrics": {m: 0.0 for m in metrics},
+                        "_invoice_ids": set() if "countInvoices" in metrics else None,
+                    }
+                return buckets[key_tuple]
+
+            if "product" in group_by:
+                # Line-item-level aggregation
+                for inv in sales:
+                    inv_id = getattr(inv, "invoice_id", None) or getattr(inv, "invoice_number", None)
+                    for li in getattr(inv, "line_items", []) or []:
+                        if item_codes:
+                            code = getattr(li, "item_code", None)
+                            if code not in item_codes:
+                                # allow matching by description too if codes don't match
+                                desc = getattr(li, "description", None) or ""
+                                if not any(str(code_or_name).lower() in desc.lower() for code_or_name in item_codes):
+                                    continue
+                        key = _group_key_for_line_item(inv, li)
+                        b = _ensure_bucket(key)
+                        # Metrics
+                        if "quantity" in metrics:
+                            b["metrics"]["quantity"] += float(getattr(li, "quantity", 0) or 0)
+                        if "total" in metrics:
+                            b["metrics"]["total"] += float(getattr(li, "line_amount", 0) or 0)
+                        if "subtotal" in metrics:
+                            b["metrics"]["subtotal"] += float(getattr(li, "line_amount", 0) or 0)
+                        if "tax" in metrics:
+                            # Line item tax not always present; skip or estimate 0
+                            b["metrics"]["tax"] += float(getattr(li, "tax_amount", 0) or 0)
+                        if "amountDue" in metrics:
+                            # Not meaningful at line level; skip
+                            pass
+                        if "countInvoices" in metrics and b.get("_invoice_ids") is not None and inv_id is not None:
+                            b["_invoice_ids"].add(inv_id)
+            else:
+                # Invoice-level aggregation
+                for inv in sales:
+                    key = _group_key_for_invoice(inv)
+                    b = _ensure_bucket(key)
+                    if "countInvoices" in metrics:
+                        b["metrics"]["countInvoices"] += 1
+                    if "total" in metrics:
+                        b["metrics"]["total"] += float(getattr(inv, "total", 0) or 0)
+                    if "subtotal" in metrics:
+                        b["metrics"]["subtotal"] += float(getattr(inv, "sub_total", 0) or 0)
+                    if "tax" in metrics:
+                        b["metrics"]["tax"] += float(getattr(inv, "total_tax", 0) or 0)
+                    if "amountDue" in metrics:
+                        b["metrics"]["amountDue"] += float(getattr(inv, "amount_due", 0) or 0)
+
+            # Finalize invoice counts
+            rows = []
+            for _, entry in buckets.items():
+                if entry.get("_invoice_ids") is not None and "countInvoices" in metrics:
+                    entry["metrics"]["countInvoices"] = float(len(entry["_invoice_ids"]))
+                    entry.pop("_invoice_ids", None)
+                rows.append({"group": entry["group"], "metrics": entry["metrics"]})
+
+            result = {"groupBy": group_by, "metrics": metrics, "rows": rows}
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
         elif name == "xero.get_balance_sheet":
-            balance_sheet = accounting_api.get_report_balance_sheet(tenant_id)
+            # Optional parameters
+            bs_date = _get_arg(args, "date")
+            bs_periods = _get_arg(args, "periods")
+            bs_timeframe = _get_arg(args, "timeframe")
+            bs_tc = _get_arg(args, "trackingCategoryID", "tracking_category_id")
+            bs_to = _get_arg(args, "trackingOptionID", "tracking_option_id")
+            bs_std = _get_arg(args, "standardLayout", "standard_layout")
+            bs_pay = _get_arg(args, "paymentsOnly", "payments_only")
+
+            # Convert date if provided
+            if isinstance(bs_date, str):
+                d = _parse_iso_date(bs_date)
+                bs_date = d.isoformat() if d else None
+
+            balance_sheet = accounting_api.get_report_balance_sheet(
+                tenant_id,
+                date=bs_date,
+                periods=bs_periods,
+                timeframe=bs_timeframe,
+                tracking_category_id=bs_tc,
+                tracking_option_id=bs_to,
+                standard_layout=bs_std,
+                payments_only=bs_pay
+            )
             return {"content": [{"type": "text", "text": safe_dumps([rep.to_dict() for rep in balance_sheet.reports])}]}
         elif name == "xero.list_contacts":
             contacts = accounting_api.get_contacts(tenant_id)
