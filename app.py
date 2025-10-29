@@ -20,6 +20,26 @@ from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import httpx
 
+# ---- Safe JSON serialization helpers ----
+from datetime import date, datetime
+from decimal import Decimal
+from uuid import UUID
+
+def _json_default(o):
+    if isinstance(o, (datetime, date)):
+        return o.isoformat()
+    if isinstance(o, Decimal):
+        return float(o)
+    if isinstance(o, UUID):
+        return str(o)
+    to_dict = getattr(o, "to_dict", None)
+    if callable(to_dict):
+        return to_dict()
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+def safe_dumps(obj) -> str:
+    return json.dumps(obj, default=_json_default, ensure_ascii=False)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -559,41 +579,41 @@ async def handle_tool_call(name: str, args: Dict):
        
         if name == "xero.list_invoices":
             invoices = accounting_api.get_invoices(tenant_id)
-            return {"content": [{"type": "text", "text": json.dumps([inv.to_dict() for inv in invoices.invoices])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([inv.to_dict() for inv in invoices.invoices])}]}
         elif name == "xero.get_balance_sheet":
             balance_sheet = accounting_api.get_report_balance_sheet(tenant_id)
-            return {"content": [{"type": "text", "text": json.dumps([rep.to_dict() for rep in balance_sheet.reports])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([rep.to_dict() for rep in balance_sheet.reports])}]}
         elif name == "xero.list_contacts":
             contacts = accounting_api.get_contacts(tenant_id)
-            return {"content": [{"type": "text", "text": json.dumps([c.to_dict() for c in contacts.contacts])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([c.to_dict() for c in contacts.contacts])}]}
         elif name == "xero.create_contacts":
             contacts_data = args.get('contacts', [])
             contacts_obj = Contacts(contacts=[Contact(**data) for data in contacts_data])
             created = accounting_api.create_contacts(tenant_id, contacts_obj)
-            return {"content": [{"type": "text", "text": json.dumps([c.to_dict() for c in created.contacts])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([c.to_dict() for c in created.contacts])}]}
         elif name == "xero.list_bank_transactions":
             transactions = accounting_api.get_bank_transactions(tenant_id)
-            return {"content": [{"type": "text", "text": json.dumps([t.to_dict() for t in transactions.bank_transactions])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([t.to_dict() for t in transactions.bank_transactions])}]}
         elif name == "xero.create_bank_transactions":
             bank_transactions_data = args.get('bank_transactions', [])
             bank_transactions_obj = BankTransactions(bank_transactions=[BankTransaction(**data) for data in bank_transactions_data])
             created = accounting_api.create_bank_transactions(tenant_id, bank_transactions_obj)
-            return {"content": [{"type": "text", "text": json.dumps([t.to_dict() for t in created.bank_transactions])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([t.to_dict() for t in created.bank_transactions])}]}
         elif name == "xero.list_accounts":
             accounts = accounting_api.get_accounts(tenant_id)
-            return {"content": [{"type": "text", "text": json.dumps([a.to_dict() for a in accounts.accounts])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([a.to_dict() for a in accounts.accounts])}]}
         elif name == "xero.list_journals":
             journals = accounting_api.get_journals(tenant_id)
-            return {"content": [{"type": "text", "text": json.dumps([j.to_dict() for j in journals.journals])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([j.to_dict() for j in journals.journals])}]}
         elif name == "xero.list_organisations":
             organisations = accounting_api.get_organisations(tenant_id)
-            return {"content": [{"type": "text", "text": json.dumps([o.to_dict() for o in organisations.organisations])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([o.to_dict() for o in organisations.organisations])}]}
         elif name == "xero.list_payments":
             payments = accounting_api.get_payments(tenant_id)
-            return {"content": [{"type": "text", "text": json.dumps([p.to_dict() for p in payments.payments])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([p.to_dict() for p in payments.payments])}]}
         elif name == "xero.list_quotes":
             quotes = accounting_api.get_quotes(tenant_id)
-            return {"content": [{"type": "text", "text": json.dumps([q.to_dict() for q in quotes.quotes])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([q.to_dict() for q in quotes.quotes])}]}
         return {"content": [{"type": "text", "text": f"Tool {name} not implemented"}]}
     except Exception as e:
         logger.error(f"Tool error: {str(e)}")
