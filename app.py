@@ -131,12 +131,13 @@ def require_auth(creds: HTTPAuthorizationCredentials = Depends(security)):
             detail="Authorization required",
             headers={
                 "WWW-Authenticate": (
-                    'Bearer '
-                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/xero", '
-                    'scope="xero.read"'
+                'Bearer '
+                'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/xero/", '
+                'scope="read:xero"'
                 )
             },
         )
+
     return verify_jwt(creds.credentials)
 
 def encrypt_data(data: bytes) -> bytes:
@@ -418,6 +419,10 @@ def prm_root():
 def prm_for_xero():
     return JSONResponse(PRM)
 
+@app.get("/.well-known/oauth-protected-resource/xero/")
+def prm_for_xero_slash():
+    return JSONResponse(PRM)
+
 @app.get("/xero/.well-known/openid-configuration")
 def oidc_discovery():
     if not AUTH0_ISSUER:
@@ -433,8 +438,6 @@ def oidc_discovery():
 @app.get("/xero//.well-known/openid-configuration")
 def oidc_discovery_double_slash():
     return oidc_discovery()
-
-
 
 @app.get("/xero/.well-known/jwks.json")
 def oidc_jwks():
