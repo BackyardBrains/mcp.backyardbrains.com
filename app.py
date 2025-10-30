@@ -542,13 +542,14 @@ def _list_tools_payload():
             },
             {
                 "name": "xero.get_sales_by_country",
-                "description": "Get sales revenue and invoice counts by customer country for a date range. Perfect for geographic analysis.",
+                "description": "Get sales revenue and invoice counts by customer country for a date range. Filters for sales revenue accounts only (default: account 4000). Perfect for geographic analysis.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "dateFrom": {"type": "string", "description": "Start date (YYYY-MM-DD) - e.g., '2025-07-01' for Q3 2025"},
                         "dateTo": {"type": "string", "description": "End date (YYYY-MM-DD) - e.g., '2025-09-30' for Q3 2025"},
-                        "groupByTime": {"type": "string", "enum": ["month", "quarter", "year"], "description": "Also group by time period (optional)"}
+                        "groupByTime": {"type": "string", "enum": ["month", "quarter", "year"], "description": "Also group by time period (optional)"},
+                        "accountCodes": {"type": "array", "items": {"type": "string"}, "description": "Account codes to include (default: ['4000'] for sales revenue)"}
                     }
                 },
                 "securitySchemes": [
@@ -787,6 +788,7 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
     group_by = _get_arg(args, "groupBy", "group_by")
     metrics = _get_arg(args, "metrics")
     item_codes = _get_arg(args, "itemCodes", "item_codes")
+    account_codes = _get_arg(args, "accountCodes", "account_codes")
     include_line_items = bool(_get_arg(args, "includeLineItems", "include_line_items", default=True))
 
     where = _join_where(
@@ -971,20 +973,21 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
     buckets = {}
 
     def _ensure_bucket(key_dict):
-        key_tuple = tuple((k, key_dict.get(k)) for k in group_by)
-        if key_tuple not in buckets:
-            buckets[key_tuple] = {
-                "group": {k: key_dict.get(k) for k in group_by},
-                "metrics": {m: 0.0 for m in metrics},
-                "_invoice_ids": set() if "countInvoices" in metrics and "product" in group_by else None,
-            }
-        return buckets[key_tuple]
+                key_tuple = tuple((k, key_dict.get(k)) for k in group_by)
+                if key_tuple not in buckets:
+                    buckets[key_tuple] = {
+                        "group": {k: key_dict.get(k) for k in group_by},
+                        "metrics": {m: 0.0 for m in metrics},
+                        "_invoice_ids": set() if "countInvoices" in metrics and ("product" in group_by or account_codes) else None,
+                    }
+                return buckets[key_tuple]
 
-    if "product" in group_by:
-        # Line-item-level aggregation
+    if "product" in group_by or account_codes:
+        # Line-item-level aggregation (used for product grouping or account code filtering)
         for inv in sales:
             line_items = getattr(inv, "line_items", []) or []
             for li in line_items:
+                # Filter by item codes if specified
                 if item_codes:
                     code = getattr(li, "item_code", None)
                     if code not in item_codes:
@@ -992,6 +995,13 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
                         desc = getattr(li, "description", None) or ""
                         if not any(str(code_or_name).lower() in desc.lower() for code_or_name in item_codes):
                             continue
+
+                # Filter by account codes if specified (for sales revenue filtering)
+                if account_codes:
+                    account_code = getattr(li, "account_code", None)
+                    if account_code not in account_codes:
+                        continue
+
                 key = _group_key_for_line_item(inv, li)
                 b = _ensure_bucket(key)
                 # Metrics
@@ -1248,20 +1258,25 @@ async def handle_tool_call(name: str, args: Dict):
             date_from = _get_arg(args, "dateFrom", "date_from")
             date_to = _get_arg(args, "dateTo", "date_to")
             group_by_time = _get_arg(args, "groupByTime", "group_by_time")
+            account_codes = _get_arg(args, "accountCodes", "account_codes")
+            # Default to sales revenue account 4000 if not specified
+            if not account_codes:
+                account_codes = ["4000"]
 
             # Build group_by list
             group_by = ["country"]
             if group_by_time:
                 group_by.append(group_by_time)
 
-            # Use the common invoice processing logic with country grouping
-            # For country sales, we focus on revenue and invoice counts, not individual product quantities
+            # Use line-item level aggregation to filter by account codes
+            # This ensures we only include sales revenue, not all income
             country_args = {
                 "dateFrom": date_from,
                 "dateTo": date_to,
                 "groupBy": group_by,
                 "metrics": ["total", "countInvoices"],
                 "statuses": ["AUTHORISED", "PAID", "DRAFT", "SUBMITTED"],  # Include more statuses
+                "accountCodes": account_codes,  # Filter by sales revenue accounts
             }
 
             return await _process_invoices_with_grouping(accounting_api, tenant_id, country_args)
