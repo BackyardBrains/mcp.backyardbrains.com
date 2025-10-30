@@ -764,6 +764,8 @@ async def handle_tool_call(name: str, args: Dict):
                 inv_kwargs["order"] = order
             if page:
                 inv_kwargs["page"] = page
+            # Ensure line items are included for product-level aggregation
+            inv_kwargs["summary_only"] = False
             invoices = accounting_api.get_invoices(tenant_id, **inv_kwargs)
 
             inv_objs = invoices.invoices or []
