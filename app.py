@@ -273,22 +273,7 @@ def save_tenant_id(tenant_id: str):
     with open(TENANT_FILE, 'w') as f:
         f.write(tenant_id)
 
-def get_xero_client():
-    cfg = Configuration(
-        oauth2_token=OAuth2Token(
-            client_id=XERO_CLIENT_ID,
-            client_secret=XERO_CLIENT_SECRET,
-        )
-    )
-    api_client = ApiClient(configuration=cfg)
-
-    tokens = load_tokens()
-    if tokens and "access_token" in tokens:
-        # <-- this is the correct method name
-        api_client.set_oauth2_token(tokens["access_token"])
-    else:
-        logger.warning("No Xero tokens found in TOKEN_STORE_PATH")
-    return api_client
+## removed duplicate get_xero_client (see singleton version below)
 
 def refresh_token_if_needed():
     tokens = load_tokens()
@@ -652,7 +637,8 @@ AUTH0_TOKEN_URL = f"https://{AUTH0_DOMAIN}/oauth/token"
 async def authorize_proxy(request: Request):
     # Append audience to the query params from ChatGPT
     query_params = dict(request.query_params)
-    query_params["audience"] = AUTH0_AUDIENCE
+    if AUTH0_AUDIENCE:
+        query_params["audience"] = AUTH0_AUDIENCE
     auth_url = f"{AUTH0_AUTHORIZE_URL}?{urlencode(query_params)}"
     return RedirectResponse(url=auth_url)
 
