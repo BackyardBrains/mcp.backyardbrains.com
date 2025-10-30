@@ -25,6 +25,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 from enum import Enum
+import random
 
 def _json_default(o):
     if isinstance(o, (datetime, date)):
@@ -108,6 +109,29 @@ def _join_where(*clauses: str) -> str | None:
     parts = [c for c in clauses if c]
     return " && ".join(parts) if parts else None
 
+def _invoice_country(inv) -> str | None:
+    try:
+        c = getattr(inv, "contact", None)
+        if not c:
+            return None
+
+        # Check if contact has country directly (as user suggested)
+        country = getattr(c, "country", None)
+        if country and country.strip():
+            return country.strip()
+
+        # Fallback: check addresses if no direct country on contact
+        addrs = getattr(c, "addresses", None) or []
+        for addr in addrs:
+            country = getattr(addr, "country", None)
+            if country and country.strip():
+                return country.strip()
+
+        # No country found
+        return None
+    except Exception:
+        return None
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -115,8 +139,8 @@ logger = logging.getLogger(__name__)
 # Environment variables
 XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID")
 XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET")
-XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI", "http://localhost:8000/xero/callback")
-XERO_SCOPES = "offline_access openid profile accounting.transactions.read accounting.contacts.read accounting.journals.read accounting.reports.read accounting.settings.read accounting.attachments.read"
+XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI")
+XERO_SCOPES = os.environ.get("XERO_SCOPES")
 
 # Encryption setup
 TOKEN_ENC_KEY = os.environ.get("TOKEN_ENC_KEY") # Base64-encoded 32-byte key
@@ -640,6 +664,12 @@ def oidc_jwks():
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"JWKS fetch failed: {str(e)}")
 
+# Test MCP endpoint without authentication (for testing only)
+@app.post("/xero/test-mcp")
+async def test_mcp_endpoint(request: Request):
+    """Test MCP endpoint without authentication for debugging"""
+    return await mcp_endpoint(request)
+
 # Accept base-path POSTs that some clients send to the MCP server root
 @app.post("/xero/")
 async def mcp_root_post(request: Request, _=Depends(require_auth)):
@@ -787,6 +817,36 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
         statuses = [getattr(inv, "status", "UNKNOWN") for inv in sales_invoices]
         logger.info(f"Sales invoice statuses: {set(statuses)}")
 
+    # Get full contact details for all unique contacts in the invoices
+    contact_ids = list(set(
+        getattr(getattr(inv, "contact", None), "contact_id", None)
+        for inv in sales_invoices
+        if getattr(inv, "contact", None)
+    ))
+    contact_ids = [cid for cid in contact_ids if cid]  # Remove None values
+
+    # Fetch full contact details
+    full_contacts = {}
+    if contact_ids:
+        try:
+            # Xero API might have limits on number of IDs, so let's fetch in batches
+            batch_size = 50  # Reasonable batch size
+            for i in range(0, len(contact_ids), batch_size):
+                batch_ids = contact_ids[i:i + batch_size]
+                try:
+                    contacts_response = accounting_api.get_contacts(
+                        tenant_id,
+                        i_ds=batch_ids,
+                        summary_only=False
+                    )
+                    for contact in contacts_response.contacts or []:
+                        full_contacts[contact.contact_id] = contact
+                except Exception as batch_error:
+                    logger.warning(f"Failed to fetch contact batch {i//batch_size + 1}: {batch_error}")
+        except Exception as e:
+            logger.warning(f"Could not fetch full contact details: {e}")
+            # Continue without full contacts - use embedded data only
+
     # Normalize grouping/metrics
     if group_by is None and summarize_by:
         group_by = [summarize_by]
@@ -814,6 +874,30 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
     # Consider only sales invoices (ACCREC)
     sales = [inv for inv in inv_objs if getattr(inv, "type", None) == "ACCREC"]
 
+    # For product grouping, we need full invoice details with line items
+    # The filtered get_invoices call doesn't include line items, so fetch them individually
+    if "product" in group_by:
+        full_invoices = {}
+        invoice_ids = [getattr(inv, "invoice_id", None) for inv in sales if getattr(inv, "invoice_id", None)]
+
+        # Fetch invoices in batches to avoid API limits
+        batch_size = 10
+        for i in range(0, len(invoice_ids), batch_size):
+            batch_ids = invoice_ids[i:i + batch_size]
+            try:
+                batch_invoices = accounting_api.get_invoices(
+                    tenant_id,
+                    i_ds=batch_ids,
+                    summary_only=False
+                )
+                for inv in batch_invoices.invoices or []:
+                    full_invoices[inv.invoice_id] = inv
+            except Exception as e:
+                logger.warning(f"Error fetching invoice batch {i//batch_size + 1}: {e}")
+
+        # Replace sales list with full invoice details
+        sales = [full_invoices.get(getattr(inv, "invoice_id"), inv) for inv in sales]
+
     def _date_parts(dval: datetime | date | None):
         if not dval:
             return None, None, None
@@ -829,7 +913,24 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
             if not c:
                 return None
 
-            # Check if contact has country directly (as user suggested)
+            contact_id = getattr(c, "contact_id", None)
+
+            # Try to get full contact details first
+            full_contact = full_contacts.get(contact_id) if contact_id else None
+            if full_contact:
+                # Check if full contact has country directly
+                country = getattr(full_contact, "country", None)
+                if country and country.strip():
+                    return country.strip()
+
+                # Check addresses in full contact
+                addrs = getattr(full_contact, "addresses", None) or []
+                for addr in addrs:
+                    country = getattr(addr, "country", None)
+                    if country and country.strip():
+                        return country.strip()
+
+            # Fallback to invoice-embedded contact data
             country = getattr(c, "country", None)
             if country and country.strip():
                 return country.strip()
@@ -882,8 +983,8 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
     if "product" in group_by:
         # Line-item-level aggregation
         for inv in sales:
-            inv_id = getattr(inv, "invoice_id", None) or getattr(inv, "invoice_number", None)
-            for li in getattr(inv, "line_items", []) or []:
+            line_items = getattr(inv, "line_items", []) or []
+            for li in line_items:
                 if item_codes:
                     code = getattr(li, "item_code", None)
                     if code not in item_codes:
@@ -906,8 +1007,8 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
                 if "amountDue" in metrics:
                     # Not meaningful at line level; skip
                     pass
-                if "countInvoices" in metrics and b.get("_invoice_ids") is not None and inv_id is not None:
-                    b["_invoice_ids"].add(inv_id)
+                if "countInvoices" in metrics and b.get("_invoice_ids") is not None and getattr(inv, "invoice_id", None) is not None:
+                    b["_invoice_ids"].add(getattr(inv, "invoice_id", None))
     else:
         # Invoice-level aggregation
         for inv in sales:
@@ -1200,6 +1301,116 @@ async def handle_tool_call(name: str, args: Dict):
 @app.get("/xero/healthz")
 def healthz():
     return {"status": "ok"}
+
+# Test endpoint for debugging country info (temporary)
+@app.get("/xero/test_country_data")
+async def test_country_data():
+    """Test endpoint to examine country data in invoices for Q3 2025"""
+    try:
+        api_client = get_xero_client()
+        tok = load_tokens()
+        if tok:
+            try:
+                api_client.set_oauth2_token(tok)
+            except TypeError:
+                api_client.set_oauth2_token(tok["access_token"])
+
+        tenant_id = load_tenant_id()
+        if not tenant_id:
+            return {"error": "No tenant ID configured"}
+
+        accounting_api = AccountingApi(api_client)
+
+        # Get invoices for Q3 2025
+        where = 'Date >= DateTime(2025,7,1) && Date <= DateTime(2025,9,30) && Type=="ACCREC"'
+        invoices = accounting_api.get_invoices(tenant_id, where=where, summary_only=False)
+
+        inv_objs = invoices.invoices or []
+        sales_invoices = [inv for inv in inv_objs if getattr(inv, "type", None) == "ACCREC"]
+
+        # Get full contact details for country extraction
+        contact_ids = list(set(
+            getattr(getattr(inv, "contact", None), "contact_id", None)
+            for inv in sales_invoices
+            if getattr(inv, "contact", None)
+        ))
+        contact_ids = [cid for cid in contact_ids if cid]  # Remove None values
+
+        # Fetch full contact details
+        full_contacts = {}
+        if contact_ids:
+            try:
+                contacts_response = accounting_api.get_contacts(
+                    tenant_id,
+                    i_ds=contact_ids,  # Get specific contacts by ID
+                    summary_only=False  # Get full details
+                )
+                for contact in contacts_response.contacts or []:
+                    full_contacts[contact.contact_id] = contact
+                print(f"Fetched full details for {len(full_contacts)} contacts")
+            except Exception as e:
+                print(f"Warning: Could not fetch full contact details: {e}")
+
+        # Analyze country data
+        country_analysis = []
+        for inv in sales_invoices[:10]:  # Limit to first 10 for debugging
+            inv_dict = inv.to_dict()
+            contact = getattr(inv, "contact", None)
+            contact_id = getattr(contact, "contact_id", None) if contact else None
+
+            # Try to get full contact details
+            full_contact = full_contacts.get(contact_id) if contact_id else None
+
+            country_info = {
+                "invoice_id": getattr(inv, "invoice_id", None),
+                "invoice_number": getattr(inv, "invoice_number", None),
+                "date": getattr(inv, "date", None),
+                "total": getattr(inv, "total", None),
+                "contact_name": getattr(contact, "name", None) if contact else None,
+                "contact_country": getattr(contact, "country", None) if contact else None,
+                "has_full_contact": full_contact is not None,
+                "addresses": []
+            }
+
+            # Check addresses from full contact if available
+            if full_contact:
+                addresses = getattr(full_contact, "addresses", None) or []
+                for addr in addresses:
+                    addr_info = {
+                        "address_type": getattr(addr, "address_type", None),
+                        "country": getattr(addr, "country", None),
+                        "city": getattr(addr, "city", None),
+                        "region": getattr(addr, "region", None)
+                    }
+                    country_info["addresses"].append(addr_info)
+                    # Also check direct country on full contact
+                    if not country_info["contact_country"]:
+                        country_info["contact_country"] = getattr(full_contact, "country", None)
+            elif contact:
+                # Fallback to invoice-embedded contact
+                addresses = getattr(contact, "addresses", None) or []
+                for addr in addresses:
+                    addr_info = {
+                        "address_type": getattr(addr, "address_type", None),
+                        "country": getattr(addr, "country", None),
+                        "city": getattr(addr, "city", None),
+                        "region": getattr(addr, "region", None)
+                    }
+                    country_info["addresses"].append(addr_info)
+
+            country_analysis.append(country_info)
+
+        return {
+            "total_sales_invoices": len(sales_invoices),
+            "sample_invoices_with_country_info": country_analysis,
+            "countries_found": list(set(
+                c["contact_country"] for c in country_analysis
+                if c["contact_country"] and c["contact_country"].strip()
+            ))
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
 
 
 # Run the server

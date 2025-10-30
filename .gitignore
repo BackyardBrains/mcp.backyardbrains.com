@@ -99,6 +99,7 @@ venv.bak/
 
 .xero_tokens.enc
 current_project.txt
+tenant_id.txt
 
 # IDE/editor settings
 .vscode/
