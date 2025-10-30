@@ -501,6 +501,22 @@ def _list_tools_payload():
                 ]
             },
             {
+                "name": "xero.get_sales_by_product",
+                "description": "Get sales and quantity sold by product for a date range. Perfect for analyzing product performance.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dateFrom": {"type": "string", "description": "Start date (YYYY-MM-DD) - e.g., '2025-07-01' for Q3 2025"},
+                        "dateTo": {"type": "string", "description": "End date (YYYY-MM-DD) - e.g., '2025-09-30' for Q3 2025"},
+                        "itemCodes": {"type": "array", "items": {"type": "string"}, "description": "Specific item codes to include (optional)"},
+                        "groupByTime": {"type": "string", "enum": ["month", "quarter", "year"], "description": "Also group by time period (optional)"}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["read:xero"] }
+                ]
+            },
+            {
                 "name": "xero.list_quotes",
                 "description": "Retrieve quotes with optional filters.",
                 "inputSchema": {
@@ -1069,6 +1085,30 @@ async def handle_tool_call(name: str, args: Dict):
 
             payments = accounting_api.get_payments(tenant_id, **pay_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([p.to_dict() for p in payments.payments])}]}
+        elif name == "xero.get_sales_by_product":
+            # Dedicated tool for sales by product analysis
+            date_from = _get_arg(args, "dateFrom", "date_from")
+            date_to = _get_arg(args, "dateTo", "date_to")
+            item_codes = _get_arg(args, "itemCodes", "item_codes")
+            group_by_time = _get_arg(args, "groupByTime", "group_by_time")
+
+            # Build group_by list
+            group_by = ["product"]
+            if group_by_time:
+                group_by.append(group_by_time)
+
+            # Use the existing list_invoices logic with product grouping
+            sales_args = {
+                "dateFrom": date_from,
+                "dateTo": date_to,
+                "groupBy": group_by,
+                "metrics": ["quantity", "total", "countInvoices"],
+                "statuses": ["AUTHORISED", "PAID"],  # Only include completed sales
+                "itemCodes": item_codes
+            }
+
+            # Call the list_invoices tool internally
+            return await handle_tool_call("xero.list_invoices", sales_args)
         elif name == "xero.list_quotes":
             q_date_from = _get_arg(args, "dateFrom", "date_from")
             q_date_to = _get_arg(args, "dateTo", "date_to")
