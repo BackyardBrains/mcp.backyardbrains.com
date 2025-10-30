@@ -715,7 +715,23 @@ def get_xero_client():
 
 async def handle_tool_call(name: str, args: Dict):
     try:
+        # Proactively refresh if the stored token is expired
+        try:
+            import time
+            tokens = load_tokens()
+            if tokens and int(tokens.get("expires_at", 0)) <= int(time.time()):
+                refresh_token_if_needed()
+        except Exception as e:
+            logger.warning(f"Token refresh check failed: {e}")
+
         api_client = get_xero_client()
+        # Ensure the client holds the latest tokens (in case a refresh just occurred)
+        tok = load_tokens()
+        if tok:
+            try:
+                api_client.set_oauth2_token(tok)
+            except TypeError:
+                api_client.set_oauth2_token(tok["access_token"])
         tenant_id = load_tenant_id()
         if not tenant_id:
             return {"content": [{"type": "text", "text": "No tenant ID configured. Authenticate first."}]}
