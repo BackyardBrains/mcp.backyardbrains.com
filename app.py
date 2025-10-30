@@ -116,7 +116,7 @@ logger = logging.getLogger(__name__)
 XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID")
 XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET")
 XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI", "http://localhost:8000/xero/callback")
-XERO_SCOPES = "offline_access openid profile accounting.transactions.read accounting.contacts.read accounting.journals.read accounting.reports.read"
+XERO_SCOPES = "offline_access openid profile accounting.transactions.read accounting.contacts.read accounting.journals.read accounting.reports.read accounting.settings.read accounting.attachments.read"
 
 # Encryption setup
 TOKEN_ENC_KEY = os.environ.get("TOKEN_ENC_KEY") # Base64-encoded 32-byte key
