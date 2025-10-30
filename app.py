@@ -517,6 +517,21 @@ def _list_tools_payload():
                 ]
             },
             {
+                "name": "xero.get_sales_by_country",
+                "description": "Get sales revenue and invoice counts by customer country for a date range. Perfect for geographic analysis.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dateFrom": {"type": "string", "description": "Start date (YYYY-MM-DD) - e.g., '2025-07-01' for Q3 2025"},
+                        "dateTo": {"type": "string", "description": "End date (YYYY-MM-DD) - e.g., '2025-09-30' for Q3 2025"},
+                        "groupByTime": {"type": "string", "enum": ["month", "quarter", "year"], "description": "Also group by time period (optional)"}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["read:xero"] }
+                ]
+            },
+            {
                 "name": "xero.list_quotes",
                 "description": "Retrieve quotes with optional filters.",
                 "inputSchema": {
@@ -729,6 +744,192 @@ def get_xero_client():
     _xero_api_client = client
     return _xero_api_client
 
+async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict) -> Dict:
+    """Common invoice processing logic with grouping and aggregation."""
+    # Parse filters
+    date_from = _get_arg(args, "dateFrom", "date_from")
+    date_to = _get_arg(args, "dateTo", "date_to")
+    contact_id = _get_arg(args, "contactId", "contact_id")
+    statuses = _get_arg(args, "statuses")
+    order = _get_arg(args, "order")
+    page = _get_arg(args, "page")
+    summarize_by = _get_arg(args, "summarizeBy", "summarize_by")
+    group_by = _get_arg(args, "groupBy", "group_by")
+    metrics = _get_arg(args, "metrics")
+    item_codes = _get_arg(args, "itemCodes", "item_codes")
+    include_line_items = bool(_get_arg(args, "includeLineItems", "include_line_items", default=True))
+
+    where = _join_where(
+        _xero_where_date_range(date_from, date_to),
+        _xero_where_contact(contact_id),
+        ("(" + " || ".join([f'Status=="{s}"' for s in statuses]) + ")") if isinstance(statuses, list) and statuses else ""
+    )
+
+    inv_kwargs = {}
+    if where:
+        inv_kwargs["where"] = where
+    if order:
+        inv_kwargs["order"] = order
+    if page:
+        inv_kwargs["page"] = page
+    # Ensure line items are included for product-level aggregation
+    inv_kwargs["summary_only"] = False
+    logger.info(f"Fetching invoices with filters: {inv_kwargs}")
+    invoices = accounting_api.get_invoices(tenant_id, **inv_kwargs)
+
+    inv_objs = invoices.invoices or []
+    logger.info(f"Found {len(inv_objs)} total invoices")
+
+    # Log invoice types and statuses for debugging
+    sales_invoices = [inv for inv in inv_objs if getattr(inv, "type", None) == "ACCREC"]
+    logger.info(f"Found {len(sales_invoices)} sales invoices (ACCREC)")
+    if sales_invoices:
+        statuses = [getattr(inv, "status", "UNKNOWN") for inv in sales_invoices]
+        logger.info(f"Sales invoice statuses: {set(statuses)}")
+
+    # Normalize grouping/metrics
+    if group_by is None and summarize_by:
+        group_by = [summarize_by]
+    if isinstance(group_by, str):
+        group_by = [group_by]
+    if not isinstance(group_by, list):
+        group_by = []
+    if not metrics:
+        # default metrics
+        metrics = ["total"] + (["quantity"] if "product" in group_by else [])
+
+    # If no grouping requested, return raw list
+    if not group_by:
+        if include_line_items:
+            return {"content": [{"type": "text", "text": safe_dumps([inv.to_dict() for inv in inv_objs])}]}
+        else:
+            slim = []
+            for inv in inv_objs:
+                d = inv.to_dict()
+                d.pop("line_items", None)
+                slim.append(d)
+            return {"content": [{"type": "text", "text": safe_dumps(slim)}]}
+
+    # Summaries with grouping
+    # Consider only sales invoices (ACCREC)
+    sales = [inv for inv in inv_objs if getattr(inv, "type", None) == "ACCREC"]
+
+    def _date_parts(dval: datetime | date | None):
+        if not dval:
+            return None, None, None
+        if isinstance(dval, datetime):
+            dval = dval.date()
+        y, m = dval.year, dval.month
+        q = (m - 1)//3 + 1
+        return y, m, q
+
+    def _invoice_country(inv) -> str | None:
+        try:
+            c = getattr(inv, "contact", None)
+            if not c:
+                return None
+            # Prefer addresses if available
+            addrs = getattr(c, "addresses", None) or []
+            for addr in addrs:
+                t = getattr(addr, "address_type", None)
+                if t in ("STREET", "POBOX"):
+                    country = getattr(addr, "country", None)
+                    if country:
+                        return country
+            # Fallback: some models may expose country directly
+            return getattr(c, "country", None)
+        except Exception:
+            return None
+
+    def _group_key_for_invoice(inv):
+        y, m, q = _date_parts(getattr(inv, "date", None))
+        mapping = {
+            "customer": getattr(getattr(inv, "contact", None), "name", None),
+            "status": getattr(inv, "status", None),
+            "year": f"{y}" if y else None,
+            "month": f"{y}-{m:02d}" if y and m else None,
+            "quarter": f"{y}-Q{q}" if y and q else None,
+            "country": _invoice_country(inv),
+        }
+        return {k: mapping.get(k) for k in group_by if k != "product"}
+
+    def _group_key_for_line_item(inv, li):
+        base = _group_key_for_invoice(inv)
+        if "product" in group_by:
+            prod = getattr(li, "item_code", None) or getattr(li, "description", "UNKNOWN")
+            base = dict(base)
+            base["product"] = prod
+        return base
+
+    # Aggregation buckets
+    buckets = {}
+
+    def _ensure_bucket(key_dict):
+        key_tuple = tuple((k, key_dict.get(k)) for k in group_by)
+        if key_tuple not in buckets:
+            buckets[key_tuple] = {
+                "group": {k: key_dict.get(k) for k in group_by},
+                "metrics": {m: 0.0 for m in metrics},
+                "_invoice_ids": set() if "countInvoices" in metrics and "product" in group_by else None,
+            }
+        return buckets[key_tuple]
+
+    if "product" in group_by:
+        # Line-item-level aggregation
+        for inv in sales:
+            inv_id = getattr(inv, "invoice_id", None) or getattr(inv, "invoice_number", None)
+            for li in getattr(inv, "line_items", []) or []:
+                if item_codes:
+                    code = getattr(li, "item_code", None)
+                    if code not in item_codes:
+                        # allow matching by description too if codes don't match
+                        desc = getattr(li, "description", None) or ""
+                        if not any(str(code_or_name).lower() in desc.lower() for code_or_name in item_codes):
+                            continue
+                key = _group_key_for_line_item(inv, li)
+                b = _ensure_bucket(key)
+                # Metrics
+                if "quantity" in metrics:
+                    b["metrics"]["quantity"] += float(getattr(li, "quantity", 0) or 0)
+                if "total" in metrics:
+                    b["metrics"]["total"] += float(getattr(li, "line_amount", 0) or 0)
+                if "subtotal" in metrics:
+                    b["metrics"]["subtotal"] += float(getattr(li, "line_amount", 0) or 0)
+                if "tax" in metrics:
+                    # Line item tax not always present; skip or estimate 0
+                    b["metrics"]["tax"] += float(getattr(li, "tax_amount", 0) or 0)
+                if "amountDue" in metrics:
+                    # Not meaningful at line level; skip
+                    pass
+                if "countInvoices" in metrics and b.get("_invoice_ids") is not None and inv_id is not None:
+                    b["_invoice_ids"].add(inv_id)
+    else:
+        # Invoice-level aggregation
+        for inv in sales:
+            key = _group_key_for_invoice(inv)
+            b = _ensure_bucket(key)
+            if "countInvoices" in metrics:
+                b["metrics"]["countInvoices"] += 1
+            if "total" in metrics:
+                b["metrics"]["total"] += float(getattr(inv, "total", 0) or 0)
+            if "subtotal" in metrics:
+                b["metrics"]["subtotal"] += float(getattr(inv, "sub_total", 0) or 0)
+            if "tax" in metrics:
+                b["metrics"]["tax"] += float(getattr(inv, "total_tax", 0) or 0)
+            if "amountDue" in metrics:
+                b["metrics"]["amountDue"] += float(getattr(inv, "amount_due", 0) or 0)
+
+    # Finalize invoice counts
+    rows = []
+    for _, entry in buckets.items():
+        if entry.get("_invoice_ids") is not None and "countInvoices" in metrics:
+            entry["metrics"]["countInvoices"] = float(len(entry["_invoice_ids"]))
+            entry.pop("_invoice_ids", None)
+        rows.append({"group": entry["group"], "metrics": entry["metrics"]})
+
+    result = {"groupBy": group_by, "metrics": metrics, "rows": rows}
+    return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+
 async def handle_tool_call(name: str, args: Dict):
     try:
         # Proactively refresh if the stored token is expired
@@ -752,182 +953,9 @@ async def handle_tool_call(name: str, args: Dict):
         if not tenant_id:
             return {"content": [{"type": "text", "text": "No tenant ID configured. Authenticate first."}]}
         accounting_api = AccountingApi(api_client)
-       
+
         if name == "xero.list_invoices":
-            # Parse filters
-            date_from = _get_arg(args, "dateFrom", "date_from")
-            date_to = _get_arg(args, "dateTo", "date_to")
-            contact_id = _get_arg(args, "contactId", "contact_id")
-            statuses = _get_arg(args, "statuses")
-            order = _get_arg(args, "order")
-            page = _get_arg(args, "page")
-            summarize_by = _get_arg(args, "summarizeBy", "summarize_by")
-            group_by = _get_arg(args, "groupBy", "group_by")
-            metrics = _get_arg(args, "metrics")
-            item_codes = _get_arg(args, "itemCodes", "item_codes")
-            include_line_items = bool(_get_arg(args, "includeLineItems", "include_line_items", default=True))
-
-            where = _join_where(
-                _xero_where_date_range(date_from, date_to),
-                _xero_where_contact(contact_id),
-                ("(" + " || ".join([f'Status=="{s}"' for s in statuses]) + ")") if isinstance(statuses, list) and statuses else ""
-            )
-
-            inv_kwargs = {}
-            if where:
-                inv_kwargs["where"] = where
-            if order:
-                inv_kwargs["order"] = order
-            if page:
-                inv_kwargs["page"] = page
-            # Ensure line items are included for product-level aggregation
-            inv_kwargs["summary_only"] = False
-            invoices = accounting_api.get_invoices(tenant_id, **inv_kwargs)
-
-            inv_objs = invoices.invoices or []
-
-            # Normalize grouping/metrics
-            if group_by is None and summarize_by:
-                group_by = [summarize_by]
-            if isinstance(group_by, str):
-                group_by = [group_by]
-            if not isinstance(group_by, list):
-                group_by = []
-            if not metrics:
-                # default metrics
-                metrics = ["total"] + (["quantity"] if "product" in group_by else [])
-
-            # If no grouping requested, return raw list
-            if not group_by:
-                if include_line_items:
-                    return {"content": [{"type": "text", "text": safe_dumps([inv.to_dict() for inv in inv_objs])}]}
-                else:
-                    slim = []
-                    for inv in inv_objs:
-                        d = inv.to_dict()
-                        d.pop("line_items", None)
-                        slim.append(d)
-                    return {"content": [{"type": "text", "text": safe_dumps(slim)}]}
-
-            # Summaries with grouping
-            # Consider only sales invoices (ACCREC)
-            sales = [inv for inv in inv_objs if getattr(inv, "type", None) == "ACCREC"]
-
-            def _date_parts(dval: datetime | date | None):
-                if not dval:
-                    return None, None, None
-                if isinstance(dval, datetime):
-                    dval = dval.date()
-                y, m = dval.year, dval.month
-                q = (m - 1)//3 + 1
-                return y, m, q
-
-            def _invoice_country(inv) -> str | None:
-                try:
-                    c = getattr(inv, "contact", None)
-                    if not c:
-                        return None
-                    # Prefer addresses if available
-                    addrs = getattr(c, "addresses", None) or []
-                    for addr in addrs:
-                        t = getattr(addr, "address_type", None)
-                        if t in ("STREET", "POBOX"):
-                            country = getattr(addr, "country", None)
-                            if country:
-                                return country
-                    # Fallback: some models may expose country directly
-                    return getattr(c, "country", None)
-                except Exception:
-                    return None
-
-            def _group_key_for_invoice(inv):
-                y, m, q = _date_parts(getattr(inv, "date", None))
-                mapping = {
-                    "customer": getattr(getattr(inv, "contact", None), "name", None),
-                    "status": getattr(inv, "status", None),
-                    "year": f"{y}" if y else None,
-                    "month": f"{y}-{m:02d}" if y and m else None,
-                    "quarter": f"{y}-Q{q}" if y and q else None,
-                    "country": _invoice_country(inv),
-                }
-                return {k: mapping.get(k) for k in group_by if k != "product"}
-
-            def _group_key_for_line_item(inv, li):
-                base = _group_key_for_invoice(inv)
-                if "product" in group_by:
-                    prod = getattr(li, "item_code", None) or getattr(li, "description", "UNKNOWN")
-                    base = dict(base)
-                    base["product"] = prod
-                return base
-
-            # Aggregation buckets
-            buckets = {}
-
-            def _ensure_bucket(key_dict):
-                key_tuple = tuple((k, key_dict.get(k)) for k in group_by)
-                if key_tuple not in buckets:
-                    buckets[key_tuple] = {
-                        "group": {k: key_dict.get(k) for k in group_by},
-                        "metrics": {m: 0.0 for m in metrics},
-                        "_invoice_ids": set() if "countInvoices" in metrics else None,
-                    }
-                return buckets[key_tuple]
-
-            if "product" in group_by:
-                # Line-item-level aggregation
-                for inv in sales:
-                    inv_id = getattr(inv, "invoice_id", None) or getattr(inv, "invoice_number", None)
-                    for li in getattr(inv, "line_items", []) or []:
-                        if item_codes:
-                            code = getattr(li, "item_code", None)
-                            if code not in item_codes:
-                                # allow matching by description too if codes don't match
-                                desc = getattr(li, "description", None) or ""
-                                if not any(str(code_or_name).lower() in desc.lower() for code_or_name in item_codes):
-                                    continue
-                        key = _group_key_for_line_item(inv, li)
-                        b = _ensure_bucket(key)
-                        # Metrics
-                        if "quantity" in metrics:
-                            b["metrics"]["quantity"] += float(getattr(li, "quantity", 0) or 0)
-                        if "total" in metrics:
-                            b["metrics"]["total"] += float(getattr(li, "line_amount", 0) or 0)
-                        if "subtotal" in metrics:
-                            b["metrics"]["subtotal"] += float(getattr(li, "line_amount", 0) or 0)
-                        if "tax" in metrics:
-                            # Line item tax not always present; skip or estimate 0
-                            b["metrics"]["tax"] += float(getattr(li, "tax_amount", 0) or 0)
-                        if "amountDue" in metrics:
-                            # Not meaningful at line level; skip
-                            pass
-                        if "countInvoices" in metrics and b.get("_invoice_ids") is not None and inv_id is not None:
-                            b["_invoice_ids"].add(inv_id)
-            else:
-                # Invoice-level aggregation
-                for inv in sales:
-                    key = _group_key_for_invoice(inv)
-                    b = _ensure_bucket(key)
-                    if "countInvoices" in metrics:
-                        b["metrics"]["countInvoices"] += 1
-                    if "total" in metrics:
-                        b["metrics"]["total"] += float(getattr(inv, "total", 0) or 0)
-                    if "subtotal" in metrics:
-                        b["metrics"]["subtotal"] += float(getattr(inv, "sub_total", 0) or 0)
-                    if "tax" in metrics:
-                        b["metrics"]["tax"] += float(getattr(inv, "total_tax", 0) or 0)
-                    if "amountDue" in metrics:
-                        b["metrics"]["amountDue"] += float(getattr(inv, "amount_due", 0) or 0)
-
-            # Finalize invoice counts
-            rows = []
-            for _, entry in buckets.items():
-                if entry.get("_invoice_ids") is not None and "countInvoices" in metrics:
-                    entry["metrics"]["countInvoices"] = float(len(entry["_invoice_ids"]))
-                    entry.pop("_invoice_ids", None)
-                rows.append({"group": entry["group"], "metrics": entry["metrics"]})
-
-            result = {"groupBy": group_by, "metrics": metrics, "rows": rows}
-            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+            return await _process_invoices_with_grouping(accounting_api, tenant_id, args)
         elif name == "xero.get_balance_sheet":
             # Optional parameters
             bs_date = _get_arg(args, "date")
@@ -1097,18 +1125,40 @@ async def handle_tool_call(name: str, args: Dict):
             if group_by_time:
                 group_by.append(group_by_time)
 
-            # Use the existing list_invoices logic with product grouping
+            # Use the common invoice processing logic with product grouping
+            # Include more statuses to ensure we get sales data
             sales_args = {
                 "dateFrom": date_from,
                 "dateTo": date_to,
                 "groupBy": group_by,
                 "metrics": ["quantity", "total", "countInvoices"],
-                "statuses": ["AUTHORISED", "PAID"],  # Only include completed sales
+                "statuses": ["AUTHORISED", "PAID", "DRAFT", "SUBMITTED"],  # Include more statuses
                 "itemCodes": item_codes
             }
 
-            # Call the list_invoices tool internally
-            return await handle_tool_call("xero.list_invoices", sales_args)
+            return await _process_invoices_with_grouping(accounting_api, tenant_id, sales_args)
+        elif name == "xero.get_sales_by_country":
+            # Dedicated tool for sales by country analysis
+            date_from = _get_arg(args, "dateFrom", "date_from")
+            date_to = _get_arg(args, "dateTo", "date_to")
+            group_by_time = _get_arg(args, "groupByTime", "group_by_time")
+
+            # Build group_by list
+            group_by = ["country"]
+            if group_by_time:
+                group_by.append(group_by_time)
+
+            # Use the common invoice processing logic with country grouping
+            # For country sales, we focus on revenue and invoice counts, not individual product quantities
+            country_args = {
+                "dateFrom": date_from,
+                "dateTo": date_to,
+                "groupBy": group_by,
+                "metrics": ["total", "countInvoices"],
+                "statuses": ["AUTHORISED", "PAID", "DRAFT", "SUBMITTED"],  # Include more statuses
+            }
+
+            return await _process_invoices_with_grouping(accounting_api, tenant_id, country_args)
         elif name == "xero.list_quotes":
             q_date_from = _get_arg(args, "dateFrom", "date_from")
             q_date_to = _get_arg(args, "dateTo", "date_to")
@@ -1145,6 +1195,7 @@ async def handle_tool_call(name: str, args: Dict):
 @app.get("/xero/healthz")
 def healthz():
     return {"status": "ok"}
+
 
 # Run the server
 if __name__ == "__main__":
