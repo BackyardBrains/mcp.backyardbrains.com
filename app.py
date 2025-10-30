@@ -828,16 +828,21 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
             c = getattr(inv, "contact", None)
             if not c:
                 return None
-            # Prefer addresses if available
+
+            # Check if contact has country directly (as user suggested)
+            country = getattr(c, "country", None)
+            if country and country.strip():
+                return country.strip()
+
+            # Fallback: check addresses if no direct country on contact
             addrs = getattr(c, "addresses", None) or []
             for addr in addrs:
-                t = getattr(addr, "address_type", None)
-                if t in ("STREET", "POBOX"):
-                    country = getattr(addr, "country", None)
-                    if country:
-                        return country
-            # Fallback: some models may expose country directly
-            return getattr(c, "country", None)
+                country = getattr(addr, "country", None)
+                if country and country.strip():
+                    return country.strip()
+
+            # No country found
+            return None
         except Exception:
             return None
 
