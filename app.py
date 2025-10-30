@@ -526,14 +526,15 @@ def _list_tools_payload():
             },
             {
                 "name": "xero.get_sales_by_product",
-                "description": "Get sales and quantity sold by product for a date range. Perfect for analyzing product performance.",
+                "description": "Get sales and quantity sold by product for a date range. Filters for sales revenue accounts only (default: account 4000). Perfect for analyzing product performance.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "dateFrom": {"type": "string", "description": "Start date (YYYY-MM-DD) - e.g., '2025-07-01' for Q3 2025"},
                         "dateTo": {"type": "string", "description": "End date (YYYY-MM-DD) - e.g., '2025-09-30' for Q3 2025"},
                         "itemCodes": {"type": "array", "items": {"type": "string"}, "description": "Specific item codes to include (optional)"},
-                        "groupByTime": {"type": "string", "enum": ["month", "quarter", "year"], "description": "Also group by time period (optional)"}
+                        "groupByTime": {"type": "string", "enum": ["month", "quarter", "year"], "description": "Also group by time period (optional)"},
+                        "accountCodes": {"type": "array", "items": {"type": "string"}, "description": "Account codes to include (default: ['4000'] for sales revenue)"}
                     }
                 },
                 "securitySchemes": [
@@ -964,7 +965,16 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
     def _group_key_for_line_item(inv, li):
         base = _group_key_for_invoice(inv)
         if "product" in group_by:
-            prod = getattr(li, "item_code", None) or getattr(li, "description", "UNKNOWN")
+            item_code = getattr(li, "item_code", None)
+            description = getattr(li, "description", None)
+            if item_code and description:
+                prod = f"{item_code} - {description}"
+            elif item_code:
+                prod = item_code
+            elif description:
+                prod = description
+            else:
+                prod = "UNKNOWN"
             base = dict(base)
             base["product"] = prod
         return base
@@ -1235,6 +1245,10 @@ async def handle_tool_call(name: str, args: Dict):
             date_to = _get_arg(args, "dateTo", "date_to")
             item_codes = _get_arg(args, "itemCodes", "item_codes")
             group_by_time = _get_arg(args, "groupByTime", "group_by_time")
+            account_codes = _get_arg(args, "accountCodes", "account_codes")
+            # Default to sales revenue account 4000 if not specified
+            if not account_codes:
+                account_codes = ["4000"]
 
             # Build group_by list
             group_by = ["product"]
@@ -1249,7 +1263,8 @@ async def handle_tool_call(name: str, args: Dict):
                 "groupBy": group_by,
                 "metrics": ["quantity", "total", "countInvoices"],
                 "statuses": ["AUTHORISED", "PAID", "DRAFT", "SUBMITTED"],  # Include more statuses
-                "itemCodes": item_codes
+                "itemCodes": item_codes,
+                "accountCodes": account_codes,  # Filter by sales revenue accounts
             }
 
             return await _process_invoices_with_grouping(accounting_api, tenant_id, sales_args)
