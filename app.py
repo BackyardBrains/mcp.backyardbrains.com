@@ -1012,6 +1012,13 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
                     if account_code not in account_codes:
                         continue
 
+                # For product grouping, only include line items with valid item codes
+                # This matches Xero's behavior where Sales by Item report only shows items with codes
+                if "product" in group_by:
+                    item_code = getattr(li, "item_code", None)
+                    if not item_code or not str(item_code).strip():
+                        continue
+
                 key = _group_key_for_line_item(inv, li)
                 b = _ensure_bucket(key)
                 # Metrics
