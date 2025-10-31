@@ -945,9 +945,11 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
                 if country and country.strip():
                     return country.strip()
 
-            # No country found
+            # No country found - log for debugging
+            logger.warning(f"No country found for invoice {getattr(inv, 'invoice_id', 'UNKNOWN')} contact {getattr(c, 'name', 'UNKNOWN')}")
             return None
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Error extracting country for invoice {getattr(inv, 'invoice_id', 'UNKNOWN')}: {e}")
             return None
 
     def _group_key_for_invoice(inv):
@@ -992,8 +994,8 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
                     }
                 return buckets[key_tuple]
 
-    if "product" in group_by or account_codes:
-        # Line-item-level aggregation (used for product grouping or account code filtering)
+    if "product" in group_by:
+        # Line-item-level aggregation (used for product grouping)
         for inv in sales:
             line_items = getattr(inv, "line_items", []) or []
             for li in line_items:
@@ -1059,6 +1061,13 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
             entry["metrics"]["countInvoices"] = float(len(entry["_invoice_ids"]))
             entry.pop("_invoice_ids", None)
         rows.append({"group": entry["group"], "metrics": entry["metrics"]})
+
+    # Debug logging
+    logger.info(f"Grouping by {group_by} resulted in {len(rows)} rows")
+    if "country" in group_by and len(rows) == 0:
+        logger.warning("No rows found for country grouping - checking bucket keys")
+        bucket_keys = list(buckets.keys())
+        logger.warning(f"Bucket keys: {bucket_keys[:5]}...")  # Show first 5
 
     result = {"groupBy": group_by, "metrics": metrics, "rows": rows}
     return {"content": [{"type": "text", "text": safe_dumps(result)}]}
@@ -1281,25 +1290,26 @@ async def handle_tool_call(name: str, args: Dict):
             date_to = _get_arg(args, "dateTo", "date_to")
             group_by_time = _get_arg(args, "groupByTime", "group_by_time")
             account_codes = _get_arg(args, "accountCodes", "account_codes")
-            # Default to sales revenue account 4000 if not specified
-            if not account_codes:
-                account_codes = ["4000"]
+            # For country analysis, don't filter by account codes by default
+            # since country is a contact attribute, not line item attribute
 
             # Build group_by list
             group_by = ["country"]
             if group_by_time:
                 group_by.append(group_by_time)
 
-            # Use line-item level aggregation to filter by account codes
-            # This ensures we only include sales revenue, not all income
+            # Use invoice-level aggregation for country grouping
             country_args = {
                 "dateFrom": date_from,
                 "dateTo": date_to,
                 "groupBy": group_by,
                 "metrics": ["total", "countInvoices"],
                 "statuses": ["AUTHORISED", "PAID", "DRAFT", "SUBMITTED"],  # Include more statuses
-                "accountCodes": account_codes,  # Filter by sales revenue accounts
             }
+
+            # Only add account codes if explicitly specified
+            if account_codes:
+                country_args["accountCodes"] = account_codes
 
             return await _process_invoices_with_grouping(accounting_api, tenant_id, country_args)
         elif name == "xero.list_quotes":
