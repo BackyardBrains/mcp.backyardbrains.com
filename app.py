@@ -1290,6 +1290,14 @@ async def handle_tool_call(name: str, args: Dict):
             date_to = _get_arg(args, "dateTo", "date_to")
             group_by_time = _get_arg(args, "groupByTime", "group_by_time")
             account_codes = _get_arg(args, "accountCodes", "account_codes")
+
+            # Set default date range if none provided (last 90 days)
+            if not date_from and not date_to:
+                from datetime import datetime, timedelta
+                today = datetime.now().date()
+                date_from = (today - timedelta(days=90)).isoformat()
+                date_to = today.isoformat()
+
             # For country analysis, don't filter by account codes by default
             # since country is a contact attribute, not line item attribute
 
