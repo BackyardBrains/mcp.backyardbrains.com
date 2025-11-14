@@ -245,7 +245,7 @@ def require_auth(creds: HTTPAuthorizationCredentials = Depends(security)):
                 "WWW-Authenticate": (
                 'Bearer '
                 'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/xero/", '
-                'scope="read:xero"'
+                'scope="mcp:read:xero"'
                 )
             },
         )
@@ -398,7 +398,7 @@ def _list_tools_payload():
                     }
                 },
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["read:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
             {
@@ -417,7 +417,7 @@ def _list_tools_payload():
                     }
                 },
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["read:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
             {
@@ -436,7 +436,7 @@ def _list_tools_payload():
                     }
                 },
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["read:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
             {
@@ -444,7 +444,7 @@ def _list_tools_payload():
                 "description": "Creates one or more contacts",
                 "inputSchema": {"type": "object", "properties": {"contacts": {"type": "array"}}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["write:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:write:xero"] }
                 ]
             },
             {
@@ -461,7 +461,7 @@ def _list_tools_payload():
                     }
                 },
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["read:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
             {
@@ -469,7 +469,7 @@ def _list_tools_payload():
                 "description": "Creates one or more bank transactions",
                 "inputSchema": {"type": "object", "properties": {"bank_transactions": {"type": "array"}}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["write:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:write:xero"] }
                 ]
             },
             {
@@ -477,7 +477,7 @@ def _list_tools_payload():
                 "description": "Retrieves the full chart of accounts",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["read:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
             {
@@ -493,7 +493,7 @@ def _list_tools_payload():
                     }
                 },
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["read:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
             {
@@ -501,7 +501,7 @@ def _list_tools_payload():
                 "description": "Retrieves Xero organisation details",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["read:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
             {
@@ -521,7 +521,7 @@ def _list_tools_payload():
                     }
                 },
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["read:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
             {
@@ -538,7 +538,7 @@ def _list_tools_payload():
                     }
                 },
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["read:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
             {
@@ -554,7 +554,7 @@ def _list_tools_payload():
                     }
                 },
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["read:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
             {
@@ -574,7 +574,7 @@ def _list_tools_payload():
                     }
                 },
                 "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["read:xero"] }
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             }
         ]
@@ -623,7 +623,7 @@ async def mcp_endpoint(request: Request, _=Depends(require_auth)):
 PRM = {
     "resource": "https://mcp.backyardbrains.com/xero/", 
     "authorization_servers": [f"https://{AUTH0_DOMAIN}/"],  # issuer has trailing slash
-    "scopes_supported": ["read:xero", "write:xero"],
+    "scopes_supported": ["mcp:read:xero", "mcp:write:xero"],
     "bearer_methods_supported": ["header"],
 }
 
