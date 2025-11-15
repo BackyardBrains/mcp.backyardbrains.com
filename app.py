@@ -3,7 +3,7 @@ load_dotenv()
 import logging
 import os
 import json
-from typing import Dict, Any, Set
+from typing import Dict, Any, Set, List, Tuple
 import base64
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -29,6 +29,7 @@ from decimal import Decimal
 from uuid import UUID
 from enum import Enum
 import random
+import re
 
 def _json_default(o):
     if isinstance(o, (datetime, date)):
@@ -47,6 +48,410 @@ def _json_default(o):
 
 def safe_dumps(obj) -> str:
     return json.dumps(obj, default=_json_default, ensure_ascii=False)
+
+
+def _as_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return float(value)
+        except Exception:
+            return None
+    if isinstance(value, str):
+        cleaned = re.sub(r"[^0-9.\-]", "", value)
+        if not cleaned or cleaned in {"-", ".", "-.", ".-"}:
+            return None
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+    return None
+
+
+def _cell_to_dict(cell) -> Dict[str, Any]:
+    data = {
+        "value": getattr(cell, "value", None),
+    }
+    text = getattr(cell, "text", None)
+    if text is not None and text != data["value"]:
+        data["text"] = text
+    formula = getattr(cell, "formula", None)
+    if formula:
+        data["formula"] = formula
+    attrs = getattr(cell, "attributes", None)
+    if attrs:
+        attr_map = {}
+        for attr in attrs:
+            name = getattr(attr, "name", None)
+            value = getattr(attr, "value", None)
+            if name:
+                attr_map[name.lower()] = value
+        if attr_map:
+            data["attributes"] = attr_map
+    numeric = _as_float(data.get("value"))
+    if numeric is not None:
+        data["numericValue"] = numeric
+    return data
+
+
+def _row_to_dict(row) -> Dict[str, Any]:
+    return {
+        "rowType": getattr(row, "row_type", None),
+        "title": getattr(row, "title", None),
+        "cells": [_cell_to_dict(cell) for cell in (getattr(row, "cells", None) or [])],
+        "rows": [_row_to_dict(child) for child in (getattr(row, "rows", None) or [])],
+    }
+
+
+def _report_to_dict(report) -> Dict[str, Any]:
+    if report is None:
+        return {}
+    columns = []
+    for idx, col in enumerate(getattr(report, "columns", None) or []):
+        columns.append(
+            {
+                "title": getattr(col, "title", None) or getattr(col, "column_type", None) or f"Column {idx}",
+                "columnType": getattr(col, "column_type", None),
+            }
+        )
+    return {
+        "reportName": getattr(report, "report_name", None),
+        "reportTitle": getattr(report, "report_title", None),
+        "reportType": getattr(report, "report_type", None),
+        "reportDate": getattr(report, "report_date", None),
+        "columns": columns,
+        "rows": [_row_to_dict(row) for row in (getattr(report, "rows", None) or [])],
+        "summary": getattr(report, "summary", None).to_dict() if getattr(report, "summary", None) else None,
+    }
+
+
+def _extract_contact_summary(contact) -> Dict[str, Any]:
+    if contact is None:
+        return {}
+    data = {
+        "contactId": getattr(contact, "contact_id", None),
+        "name": getattr(contact, "name", None),
+        "firstName": getattr(contact, "first_name", None),
+        "lastName": getattr(contact, "last_name", None),
+        "emailAddress": getattr(contact, "email_address", None),
+        "salesPerson": getattr(contact, "sales_person", None),
+        "isCustomer": getattr(contact, "is_customer", None),
+        "isSupplier": getattr(contact, "is_supplier", None),
+    }
+    addresses = []
+    for addr in getattr(contact, "addresses", None) or []:
+        addr_info = {
+            "type": getattr(addr, "address_type", None),
+            "city": getattr(addr, "city", None),
+            "region": getattr(addr, "region", None),
+            "country": getattr(addr, "country", None),
+        }
+        addresses.append(addr_info)
+    if addresses:
+        data["addresses"] = addresses
+        # Prefer the first address with a region/country for grouping convenience
+        for addr in addresses:
+            if addr.get("region"):
+                data.setdefault("region", addr["region"])
+            if addr.get("country"):
+                data.setdefault("country", addr["country"])
+    direct_country = getattr(contact, "country", None)
+    if direct_country:
+        data.setdefault("country", direct_country)
+    return {k: v for k, v in data.items() if v not in (None, [], "")}
+
+
+def _fetch_contacts_map(accounting_api, tenant_id: str, contact_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    contact_ids = [cid for cid in contact_ids if cid]
+    if not contact_ids:
+        return {}
+    results: Dict[str, Dict[str, Any]] = {}
+    batch_size = 50
+    for idx in range(0, len(contact_ids), batch_size):
+        batch = contact_ids[idx : idx + batch_size]
+        try:
+            resp = accounting_api.get_contacts(
+                tenant_id,
+                i_ds=batch,
+                summary_only=False,
+            )
+            for contact in getattr(resp, "contacts", None) or []:
+                summary = _extract_contact_summary(contact)
+                cid = summary.get("contactId")
+                if cid:
+                    results[cid] = summary
+        except Exception as exc:
+            logger.warning("Failed to fetch contact batch %s-%s: %s", idx, idx + batch_size, exc)
+    return results
+
+
+def _summarize_aged_report(report, group_by: List[str] | None, accounting_api, tenant_id: str) -> Dict[str, Any]:
+    report_dict = _report_to_dict(report)
+    columns = report_dict.get("columns", [])
+    column_titles = [col.get("title") or f"Column {idx}" for idx, col in enumerate(columns)]
+
+    # Build flat rows with numeric values
+    entries = []
+    contact_ids: Set[str] = set()
+    for row in report_dict.get("rows", []):
+        if row.get("rowType") != "Row":
+            continue
+        cells = row.get("cells", [])
+        if not cells:
+            continue
+        entry: Dict[str, Any] = {
+            "columns": {},
+            "numericColumns": {},
+        }
+        for idx, cell in enumerate(cells):
+            col_name = column_titles[idx] if idx < len(column_titles) else f"Column {idx}"
+            entry["columns"][col_name] = cell.get("text") if "text" in cell else cell.get("value")
+            numeric = cell.get("numericValue")
+            if numeric is not None:
+                entry["numericColumns"][col_name] = numeric
+            attrs = cell.get("attributes") or {}
+            contact_id = attrs.get("contactid")
+            if contact_id:
+                entry["contactId"] = contact_id
+                contact_ids.add(contact_id)
+        # Provide defaults for name fields
+        entry["contactName"] = entry["columns"].get(column_titles[0] if column_titles else "Name")
+        entries.append(entry)
+
+    contact_map: Dict[str, Dict[str, Any]] = {}
+    if group_by:
+        contact_map = _fetch_contacts_map(accounting_api, tenant_id, list(contact_ids))
+
+    groups: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    group_by = [g for g in (group_by or []) if g]
+    for entry in entries:
+        if not group_by:
+            break
+        contact_info = contact_map.get(entry.get("contactId"), {})
+        keys: List[Any] = []
+        for dimension in group_by:
+            dim_lower = dimension.lower()
+            if dim_lower in {"contact", "contactname"}:
+                keys.append(contact_info.get("name") or entry.get("contactName") or "Unknown")
+            elif dim_lower in {"region", "salesregion"}:
+                keys.append(contact_info.get("region") or contact_info.get("country") or "Unspecified")
+            elif dim_lower in {"country"}:
+                keys.append(contact_info.get("country") or "Unspecified")
+            elif dim_lower in {"salesperson", "sales_person"}:
+                keys.append(contact_info.get("salesPerson") or "Unassigned")
+            else:
+                keys.append(contact_info.get(dim_lower) or entry.get(dim_lower) or "Unknown")
+        key = tuple(keys)
+        bucket = groups.setdefault(
+            key,
+            {
+                "group": {dim: value for dim, value in zip(group_by, keys)},
+                "metrics": {},
+            },
+        )
+        for col_name, numeric in entry.get("numericColumns", {}).items():
+            if numeric is None:
+                continue
+            bucket["metrics"][col_name] = bucket["metrics"].get(col_name, 0.0) + float(numeric)
+
+    result = {
+        "report": report_dict,
+        "entries": entries,
+    }
+    if groups:
+        # Convert groups dict to list and round to 2 decimal places for readability
+        group_rows = []
+        for data in groups.values():
+            metrics = {k: round(v, 2) for k, v in data["metrics"].items()}
+            group_rows.append({"group": data["group"], "metrics": metrics})
+        result["groupedTotals"] = group_rows
+    return result
+
+
+def _serialize_tracking_categories(categories) -> List[Dict[str, Any]]:
+    output = []
+    for cat in getattr(categories, "tracking_categories", None) or []:
+        options = []
+        for opt in getattr(cat, "tracking_options", None) or []:
+            options.append(
+                {
+                    "trackingOptionId": getattr(opt, "tracking_option_id", None),
+                    "name": getattr(opt, "name", None),
+                    "status": getattr(opt, "status", None),
+                }
+            )
+        output.append(
+            {
+                "trackingCategoryId": getattr(cat, "tracking_category_id", None),
+                "name": getattr(cat, "name", None),
+                "status": getattr(cat, "status", None),
+                "options": options,
+            }
+        )
+    return output
+
+
+def _build_tracking_maps(categories) -> Dict[str, Dict[str, Any]]:
+    mapping: Dict[str, Dict[str, Any]] = {}
+    for cat in getattr(categories, "tracking_categories", None) or []:
+        options = {}
+        for opt in getattr(cat, "tracking_options", None) or []:
+            opt_id = getattr(opt, "tracking_option_id", None)
+            if opt_id:
+                options[opt_id] = {
+                    "name": getattr(opt, "name", None),
+                    "status": getattr(opt, "status", None),
+                }
+        cat_id = getattr(cat, "tracking_category_id", None)
+        if cat_id:
+            mapping[cat_id] = {
+                "name": getattr(cat, "name", None),
+                "options": options,
+            }
+    return mapping
+
+
+def _summarize_tracking_profitability(
+    accounting_api,
+    tenant_id: str,
+    category_id: str,
+    option_filter: List[str] | None,
+    date_from: Any,
+    date_to: Any,
+    invoice_types: List[str] | None,
+    include_unassigned: bool = False,
+) -> Dict[str, Any]:
+    where_clauses = []
+    date_clause = _xero_where_date_range(date_from, date_to)
+    if date_clause:
+        where_clauses.append(date_clause)
+    types = [t for t in (invoice_types or []) if t]
+    if types:
+        type_clause = "(" + " || ".join([f'Type=="{t}"' for t in types]) + ")"
+        where_clauses.append(type_clause)
+    else:
+        where_clauses.append('(Type=="ACCREC" || Type=="ACCPAY")')
+    where_expr = " && ".join([clause for clause in where_clauses if clause])
+
+    kwargs = {"summary_only": False}
+    if where_expr:
+        kwargs["where"] = where_expr
+
+    invoices: List[Any] = []
+    page = 1
+    while True:
+        batch = accounting_api.get_invoices(tenant_id, page=page, **kwargs)
+        inv_list = getattr(batch, "invoices", None) or []
+        invoices.extend(inv_list)
+        if len(inv_list) < 100:
+            break
+        page += 1
+
+    categories = accounting_api.get_tracking_categories(tenant_id)
+    cat_map = _build_tracking_maps(categories)
+    option_lookup = cat_map.get(category_id, {}).get("options", {})
+
+    summary: Dict[str, Dict[str, Any]] = {}
+    for inv in invoices:
+        inv_type = getattr(inv, "type", None)
+        multiplier = 1.0
+        if inv_type == "ACCPAY":
+            multiplier = -1.0
+        invoice_id = getattr(inv, "invoice_id", None)
+        for line in getattr(inv, "line_items", None) or []:
+            tracking_matches = []
+            for track in getattr(line, "tracking", None) or []:
+                if getattr(track, "tracking_category_id", None) == category_id:
+                    tracking_matches.append(track)
+            if option_filter:
+                tracking_matches = [t for t in tracking_matches if getattr(t, "tracking_option_id", None) in option_filter]
+            if not tracking_matches:
+                if include_unassigned:
+                    tracking_matches = [None]
+                else:
+                    continue
+            for match in tracking_matches:
+                option_id = getattr(match, "tracking_option_id", None) if match else None
+                key = option_id or "__unassigned__"
+                bucket = summary.setdefault(
+                    key,
+                    {
+                        "trackingOptionId": option_id,
+                        "lineAmount": 0.0,
+                        "taxAmount": 0.0,
+                        "total": 0.0,
+                        "invoiceIds": set(),
+                    },
+                )
+                amount = getattr(line, "line_amount", None) or 0
+                tax_amount = getattr(line, "tax_amount", None) or 0
+                bucket["lineAmount"] += multiplier * float(amount)
+                bucket["taxAmount"] += multiplier * float(tax_amount)
+                bucket["total"] = bucket["lineAmount"] + bucket["taxAmount"]
+                if invoice_id:
+                    bucket["invoiceIds"].add(invoice_id)
+
+    rows = []
+    for key, bucket in summary.items():
+        invoice_ids = bucket.pop("invoiceIds", set())
+        option_details = option_lookup.get(bucket.get("trackingOptionId")) if bucket.get("trackingOptionId") else None
+        rows.append(
+            {
+                **bucket,
+                "trackingOptionName": option_details.get("name") if option_details else ("Unassigned" if key == "__unassigned__" else None),
+                "invoiceCount": len(invoice_ids),
+            }
+        )
+
+    rows.sort(key=lambda r: r.get("total", 0.0), reverse=True)
+
+    return {
+        "trackingCategoryId": category_id,
+        "trackingCategoryName": cat_map.get(category_id, {}).get("name"),
+        "fromDate": date_from,
+        "toDate": date_to,
+        "rows": [
+            {
+                **row,
+                "lineAmount": round(row.get("lineAmount", 0.0), 2),
+                "taxAmount": round(row.get("taxAmount", 0.0), 2),
+                "total": round(row.get("total", 0.0), 2),
+            }
+            for row in rows
+        ],
+    }
+
+
+def _fetch_report_by_resource(accounting_api, tenant_id: str, resource: str, query: Dict[str, Any] | None = None):
+    query_params: List[Tuple[str, Any]] = []
+    if query:
+        for key, value in query.items():
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                query_params.append((key, str(value).lower()))
+            else:
+                query_params.append((key, value))
+    header_params = {
+        "xero-tenant-id": tenant_id,
+        "Accept": accounting_api.api_client.select_header_accept(["application/json"]),
+    }
+    return accounting_api.api_client.call_api(
+        accounting_api.get_resource_url(resource),
+        "GET",
+        {},
+        query_params,
+        header_params,
+        body=None,
+        post_params=[],
+        files={},
+        response_type="ReportWithRows",
+        response_model_finder=accounting_api.get_model_finder(),
+        auth_settings=["OAuth2"],
+        _return_http_data_only=True,
+        _preload_content=True,
+    )
 
 # ---- Argument helpers ----
 def _get_arg(args: Dict[str, Any], *names, default=None):
@@ -424,6 +829,61 @@ def _list_tools_payload():
                 ]
             },
             {
+                "name": "xero.get_profit_and_loss",
+                "description": "Retrieve Profit & Loss (Income Statement) with comparative and tracking options.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "fromDate": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+                        "toDate": {"type": "string", "description": "End date (YYYY-MM-DD)"},
+                        "periods": {"type": "integer", "description": "Number of comparative periods"},
+                        "timeframe": {"type": "string", "enum": ["MONTH", "QUARTER", "YEAR"], "description": "Comparative timeframe"},
+                        "trackingCategoryID": {"type": "string", "description": "Primary tracking category ID"},
+                        "trackingOptionID": {"type": "string", "description": "Primary tracking option ID"},
+                        "trackingCategoryID2": {"type": "string", "description": "Secondary tracking category ID"},
+                        "trackingOptionID2": {"type": "string", "description": "Secondary tracking option ID"},
+                        "standardLayout": {"type": "boolean", "description": "Use standard layout"},
+                        "paymentsOnly": {"type": "boolean", "description": "Cash basis (payments only)"}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
+            },
+            {
+                "name": "xero.get_cash_summary",
+                "description": "Retrieve Cash Summary report for near-term cash position and movements.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "fromDate": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+                        "toDate": {"type": "string", "description": "End date (YYYY-MM-DD)"},
+                        "periods": {"type": "integer", "description": "Number of comparative periods"},
+                        "timeframe": {"type": "string", "enum": ["MONTH", "QUARTER", "YEAR"], "description": "Comparative timeframe"}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
+            },
+            {
+                "name": "xero.get_cashflow",
+                "description": "Retrieve Cashflow report (if enabled) for historical cash movements.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "date": {"type": "string", "description": "Report date (YYYY-MM-DD)"},
+                        "periods": {"type": "integer", "description": "Number of comparative periods"},
+                        "timeframe": {"type": "string", "enum": ["MONTH", "QUARTER", "YEAR"], "description": "Comparative timeframe"},
+                        "fromDate": {"type": "string", "description": "Optional start date override"},
+                        "toDate": {"type": "string", "description": "Optional end date override"}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
+            },
+            {
                 "name": "xero.list_contacts",
                 "description": "Retrieve contacts with optional filters and pagination.",
                 "inputSchema": {
@@ -521,6 +981,79 @@ def _list_tools_payload():
                         "isReconciled": {"type": "boolean"},
                         "order": {"type": "string"},
                         "page": {"type": "integer", "minimum": 1}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
+            },
+            {
+                "name": "xero.get_aged_receivables",
+                "description": "Retrieve aged receivables by contact with optional grouping.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "date": {"type": "string", "description": "Report date (YYYY-MM-DD)"},
+                        "periods": {"type": "integer", "description": "Number of comparative periods"},
+                        "timeframe": {"type": "string", "enum": ["MONTH", "QUARTER", "YEAR"], "description": "Comparative timeframe"},
+                        "groupBy": {
+                            "type": "array",
+                            "items": {"type": "string", "enum": ["contact", "region", "country", "salesperson"]},
+                            "description": "Optional grouping dimensions"
+                        }
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
+            },
+            {
+                "name": "xero.get_aged_payables",
+                "description": "Retrieve aged payables by contact with optional grouping.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "date": {"type": "string", "description": "Report date (YYYY-MM-DD)"},
+                        "periods": {"type": "integer", "description": "Number of comparative periods"},
+                        "timeframe": {"type": "string", "enum": ["MONTH", "QUARTER", "YEAR"], "description": "Comparative timeframe"},
+                        "groupBy": {
+                            "type": "array",
+                            "items": {"type": "string", "enum": ["contact", "region", "country", "salesperson"]},
+                            "description": "Optional grouping dimensions"
+                        }
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
+            },
+            {
+                "name": "xero.list_tracking_categories",
+                "description": "List tracking categories and available options.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "includeArchived": {"type": "boolean", "description": "Include archived categories"},
+                        "order": {"type": "string", "description": "Order clause"}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
+            },
+            {
+                "name": "xero.get_tracking_profitability",
+                "description": "Aggregate revenue/expense by tracking option using invoice line items.",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["trackingCategoryID"],
+                    "properties": {
+                        "trackingCategoryID": {"type": "string", "description": "Tracking category ID (UUID)"},
+                        "trackingOptionIDs": {"type": "array", "items": {"type": "string"}, "description": "Specific tracking option IDs to include"},
+                        "dateFrom": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+                        "dateTo": {"type": "string", "description": "End date (YYYY-MM-DD)"},
+                        "invoiceTypes": {"type": "array", "items": {"type": "string", "enum": ["ACCREC", "ACCPAY"]}, "description": "Invoice types to include"},
+                        "includeUnassigned": {"type": "boolean", "description": "Include lines without a matching tracking option"}
                     }
                 },
                 "securitySchemes": [
@@ -1195,6 +1728,105 @@ async def handle_tool_call(name: str, args: Dict):
 
             balance_sheet = accounting_api.get_report_balance_sheet(tenant_id, **bs_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([rep.to_dict() for rep in balance_sheet.reports])}]}
+        elif name == "xero.get_profit_and_loss":
+            pl_from = _get_arg(args, "fromDate", "from_date")
+            pl_to = _get_arg(args, "toDate", "to_date")
+            pl_periods = _get_arg(args, "periods")
+            pl_timeframe = _get_arg(args, "timeframe")
+            pl_tc1 = _get_arg(args, "trackingCategoryID", "tracking_category_id")
+            pl_to1 = _get_arg(args, "trackingOptionID", "tracking_option_id")
+            pl_tc2 = _get_arg(args, "trackingCategoryID2", "tracking_category_id2")
+            pl_to2 = _get_arg(args, "trackingOptionID2", "tracking_option_id2")
+            pl_std = _get_arg(args, "standardLayout", "standard_layout")
+            pl_pay = _get_arg(args, "paymentsOnly", "payments_only")
+
+            if isinstance(pl_from, str):
+                d = _parse_iso_date(pl_from)
+                pl_from = d.isoformat() if d else pl_from
+            if isinstance(pl_to, str):
+                d = _parse_iso_date(pl_to)
+                pl_to = d.isoformat() if d else pl_to
+
+            pl_kwargs = {}
+            if pl_from is not None:
+                pl_kwargs["from_date"] = pl_from
+            if pl_to is not None:
+                pl_kwargs["to_date"] = pl_to
+            if pl_periods is not None:
+                pl_kwargs["periods"] = pl_periods
+            if pl_timeframe is not None:
+                pl_kwargs["timeframe"] = pl_timeframe
+            if pl_tc1 is not None:
+                pl_kwargs["tracking_category_id"] = pl_tc1
+            if pl_tc2 is not None:
+                pl_kwargs["tracking_category_id2"] = pl_tc2
+            if pl_to1 is not None:
+                pl_kwargs["tracking_option_id"] = pl_to1
+            if pl_to2 is not None:
+                pl_kwargs["tracking_option_id2"] = pl_to2
+            if pl_std is not None:
+                pl_kwargs["standard_layout"] = pl_std
+            if pl_pay is not None:
+                pl_kwargs["payments_only"] = pl_pay
+
+            pl_report = accounting_api.get_report_profit_and_loss(tenant_id, **pl_kwargs)
+            return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(pl_report))}]}
+        elif name == "xero.get_cash_summary":
+            cs_from = _get_arg(args, "fromDate", "from_date")
+            cs_to = _get_arg(args, "toDate", "to_date")
+            cs_periods = _get_arg(args, "periods")
+            cs_timeframe = _get_arg(args, "timeframe")
+
+            if isinstance(cs_from, str):
+                d = _parse_iso_date(cs_from)
+                cs_from = d.isoformat() if d else cs_from
+            if isinstance(cs_to, str):
+                d = _parse_iso_date(cs_to)
+                cs_to = d.isoformat() if d else cs_to
+
+            query = {}
+            if cs_from is not None:
+                query["fromDate"] = cs_from
+            if cs_to is not None:
+                query["toDate"] = cs_to
+            if cs_periods is not None:
+                query["periods"] = cs_periods
+            if cs_timeframe is not None:
+                query["timeframe"] = cs_timeframe
+
+            cash_summary = _fetch_report_by_resource(accounting_api, tenant_id, "/Reports/CashSummary", query)
+            return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(cash_summary))}]}
+        elif name == "xero.get_cashflow":
+            cf_date = _get_arg(args, "date")
+            cf_periods = _get_arg(args, "periods")
+            cf_timeframe = _get_arg(args, "timeframe")
+            cf_from = _get_arg(args, "fromDate", "from_date")
+            cf_to = _get_arg(args, "toDate", "to_date")
+
+            if isinstance(cf_date, str):
+                d = _parse_iso_date(cf_date)
+                cf_date = d.isoformat() if d else cf_date
+            if isinstance(cf_from, str):
+                d = _parse_iso_date(cf_from)
+                cf_from = d.isoformat() if d else cf_from
+            if isinstance(cf_to, str):
+                d = _parse_iso_date(cf_to)
+                cf_to = d.isoformat() if d else cf_to
+
+            query = {}
+            if cf_date is not None:
+                query["date"] = cf_date
+            if cf_from is not None:
+                query["fromDate"] = cf_from
+            if cf_to is not None:
+                query["toDate"] = cf_to
+            if cf_periods is not None:
+                query["periods"] = cf_periods
+            if cf_timeframe is not None:
+                query["timeframe"] = cf_timeframe
+
+            cashflow = _fetch_report_by_resource(accounting_api, tenant_id, "/Reports/Cashflow", query)
+            return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(cashflow))}]}
         elif name == "xero.list_contacts":
             search_term = _get_arg(args, "searchTerm", "search_term")
             page = _get_arg(args, "page")
@@ -1319,6 +1951,80 @@ async def handle_tool_call(name: str, args: Dict):
 
             payments = accounting_api.get_payments(tenant_id, **pay_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([p.to_dict() for p in payments.payments])}]}
+        elif name == "xero.get_aged_receivables":
+            ar_date = _get_arg(args, "date")
+            ar_periods = _get_arg(args, "periods")
+            ar_timeframe = _get_arg(args, "timeframe")
+            group_by = _get_arg(args, "groupBy", "group_by")
+            if isinstance(ar_date, str):
+                d = _parse_iso_date(ar_date)
+                ar_date = d.isoformat() if d else ar_date
+            ar_kwargs = {}
+            if ar_date is not None:
+                ar_kwargs["date"] = ar_date
+            if ar_periods is not None:
+                ar_kwargs["periods"] = ar_periods
+            if ar_timeframe is not None:
+                ar_kwargs["timeframe"] = ar_timeframe
+            report = accounting_api.get_report_aged_receivables_by_contact(tenant_id, **ar_kwargs)
+            if isinstance(group_by, str):
+                group_by = [group_by]
+            result = _summarize_aged_report(report, group_by if isinstance(group_by, list) else None, accounting_api, tenant_id)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "xero.get_aged_payables":
+            ap_date = _get_arg(args, "date")
+            ap_periods = _get_arg(args, "periods")
+            ap_timeframe = _get_arg(args, "timeframe")
+            group_by = _get_arg(args, "groupBy", "group_by")
+            if isinstance(ap_date, str):
+                d = _parse_iso_date(ap_date)
+                ap_date = d.isoformat() if d else ap_date
+            ap_kwargs = {}
+            if ap_date is not None:
+                ap_kwargs["date"] = ap_date
+            if ap_periods is not None:
+                ap_kwargs["periods"] = ap_periods
+            if ap_timeframe is not None:
+                ap_kwargs["timeframe"] = ap_timeframe
+            report = accounting_api.get_report_aged_payables_by_contact(tenant_id, **ap_kwargs)
+            if isinstance(group_by, str):
+                group_by = [group_by]
+            result = _summarize_aged_report(report, group_by if isinstance(group_by, list) else None, accounting_api, tenant_id)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "xero.list_tracking_categories":
+            include_archived = _get_arg(args, "includeArchived", "include_archived")
+            order = _get_arg(args, "order")
+            tc_kwargs = {}
+            if include_archived is not None:
+                tc_kwargs["include_archived"] = include_archived
+            if order:
+                tc_kwargs["order"] = order
+            categories = accounting_api.get_tracking_categories(tenant_id, **tc_kwargs)
+            return {"content": [{"type": "text", "text": safe_dumps(_serialize_tracking_categories(categories))}]}
+        elif name == "xero.get_tracking_profitability":
+            category_id = _get_arg(args, "trackingCategoryID", "tracking_category_id")
+            if not category_id:
+                raise HTTPException(status_code=400, detail="trackingCategoryID is required")
+            option_ids = _get_arg(args, "trackingOptionIDs", "tracking_option_ids")
+            if isinstance(option_ids, str):
+                option_ids = [option_ids]
+            date_from = _get_arg(args, "dateFrom", "date_from")
+            date_to = _get_arg(args, "dateTo", "date_to")
+            invoice_types = _get_arg(args, "invoiceTypes", "invoice_types")
+            if isinstance(invoice_types, str):
+                invoice_types = [invoice_types]
+            include_unassigned = bool(_get_arg(args, "includeUnassigned", "include_unassigned", default=False))
+            summary = _summarize_tracking_profitability(
+                accounting_api,
+                tenant_id,
+                category_id,
+                option_ids if isinstance(option_ids, list) else None,
+                date_from,
+                date_to,
+                invoice_types if isinstance(invoice_types, list) else None,
+                include_unassigned=include_unassigned,
+            )
+            return {"content": [{"type": "text", "text": safe_dumps(summary)}]}
         elif name == "xero.get_sales_by_product":
             # Dedicated tool for sales by product analysis
             date_from = _get_arg(args, "dateFrom", "date_from")
