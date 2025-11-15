@@ -1770,7 +1770,7 @@ async def handle_tool_call(name: str, args: Dict):
                 pl_kwargs["payments_only"] = pl_pay
 
             pl_report = accounting_api.get_report_profit_and_loss(tenant_id, **pl_kwargs)
-            return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(pl_report))}]}
+            return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(pl_report.reports[0]))}]}
         elif name == "xero.get_cash_summary":
             cs_from = _get_arg(args, "fromDate", "from_date")
             cs_to = _get_arg(args, "toDate", "to_date")
