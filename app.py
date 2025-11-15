@@ -3,7 +3,7 @@ load_dotenv()
 import logging
 import os
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Set
 import base64
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -19,6 +19,9 @@ from jose import jwt, JWTError
 from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import httpx
+
+# Machine Coordination Protocol defaults
+MCP_PROTOCOL_VERSION = "2024-11-05"
 
 # ---- Safe JSON serialization helpers ----
 from datetime import date, datetime
@@ -581,6 +584,40 @@ def _list_tools_payload():
     }
 
 # MCP Endpoint
+MCP_BASE_URL = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
+
+
+@app.get("/.well-known/mcp.json")
+def mcp_manifest():
+    """Public MCP discovery manifest used by OpenAI/Anthropic clients."""
+    manifest = {
+        "name": "Backyard Brains Xero MCP",
+        "version": "1.0.0",
+        "description": "Machine Coordination Protocol server exposing Backyard Brains Xero data tools.",
+        "protocol": MCP_PROTOCOL_VERSION,
+        "capabilities": {
+            "tools": {
+                "list": {},
+                "call": {},
+            }
+        },
+        "endpoints": {
+            "http": {
+                "url": f"{MCP_BASE_URL}/xero/mcp"
+            }
+        },
+        "authentication": {
+            "type": "oauth2",
+            "authorizationUrl": f"{MCP_BASE_URL}/xero/authorize",
+            "tokenUrl": f"{MCP_BASE_URL}/xero/token",
+            "scopes": PRM.get("scopes_supported", []),
+            **({"audience": AUTH0_AUDIENCE} if AUTH0_AUDIENCE else {}),
+        },
+        "resources": [],
+    }
+    return JSONResponse(manifest)
+
+
 @app.post("/xero/mcp")
 async def mcp_endpoint(request: Request, _=Depends(require_auth)):
     body = await request.json()
@@ -592,10 +629,13 @@ async def mcp_endpoint(request: Request, _=Depends(require_auth)):
         logger.info(f"MCP JSON-RPC method: {method}")
         if method == "initialize":
             result = {
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": MCP_PROTOCOL_VERSION,
                 "serverInfo": {"name": "xero-mcp", "version": "1.0.0"},
                 "capabilities": {
-                    "tools": {}
+                    "tools": {
+                        "list": {},
+                        "call": {},
+                    }
                 }
             }
             return _rpc_result(rpc_id, result)
@@ -620,6 +660,7 @@ async def mcp_endpoint(request: Request, _=Depends(require_auth)):
 # ---- OIDC Discovery passthrough for Auth0 (unauthenticated) ----
 
 # --- Protected Resource Metadata (RFC 9728) ---
+
 PRM = {
     "resource": "https://mcp.backyardbrains.com/xero/", 
     "authorization_servers": [f"https://{AUTH0_DOMAIN}/"],  # issuer has trailing slash
@@ -1072,7 +1113,21 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
     result = {"groupBy": group_by, "metrics": metrics, "rows": rows}
     return {"content": [{"type": "text", "text": safe_dumps(result)}]}
 
+_KNOWN_TOOL_NAMES: Set[str] = {tool["name"] for tool in _list_tools_payload()["tools"]}
+
+
 async def handle_tool_call(name: str, args: Dict):
+    if not name or name not in _KNOWN_TOOL_NAMES:
+        return {
+            "isError": True,
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Unknown tool '{name}'. Available tools: {sorted(_KNOWN_TOOL_NAMES)}"
+                }
+            ],
+            "metadata": {"reason": "unknownTool"}
+        }
     try:
         # Proactively refresh if the stored token is expired
         try:
@@ -1093,7 +1148,16 @@ async def handle_tool_call(name: str, args: Dict):
                 api_client.set_oauth2_token(tok["access_token"])
         tenant_id = load_tenant_id()
         if not tenant_id:
-            return {"content": [{"type": "text", "text": "No tenant ID configured. Authenticate first."}]}
+            return {
+                "isError": True,
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "No tenant ID configured. Authenticate through /xero/auth before calling tools."
+                    }
+                ],
+                "metadata": {"reason": "missingTenantId"}
+            }
         accounting_api = AccountingApi(api_client)
 
         if name == "xero.list_invoices":
@@ -1347,10 +1411,28 @@ async def handle_tool_call(name: str, args: Dict):
 
             quotes = accounting_api.get_quotes(tenant_id, **q_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([q.to_dict() for q in quotes.quotes])}]}
-        return {"content": [{"type": "text", "text": f"Tool {name} not implemented"}]}
+        return {
+            "isError": True,
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Tool {name} not implemented"
+                }
+            ],
+            "metadata": {"reason": "notImplemented"}
+        }
     except Exception as e:
-        logger.error(f"Tool error: {str(e)}")
-        return {"content": [{"type": "text", "text": f"Error: {str(e)}"}]}
+        logger.exception("Tool error during %s", name)
+        return {
+            "isError": True,
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Error while executing {name}: {str(e)}"
+                }
+            ],
+            "metadata": {"reason": "exception", "exceptionType": type(e).__name__}
+        }
 
 # Health check
 @app.get("/xero/healthz")
