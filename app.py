@@ -651,13 +651,12 @@ def require_auth(creds: HTTPAuthorizationCredentials = Depends(security)):
             detail="Authorization required",
             headers={
                 "WWW-Authenticate": (
-                'Bearer '
-                'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/xero/", '
-                'scope="mcp:read:xero"'
+                    'Bearer '
+                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/xero", '
+                    'scope="mcp:read:xero"'
                 )
             },
         )
-
     return verify_jwt(creds.credentials)
 
 def encrypt_data(data: bytes) -> bytes:
@@ -1195,7 +1194,7 @@ async def mcp_endpoint(request: Request, _=Depends(require_auth)):
 # --- Protected Resource Metadata (RFC 9728) ---
 
 PRM = {
-    "resource": "https://mcp.backyardbrains.com/xero/", 
+    "resource": "https://mcp.backyardbrains.com/xero", 
     "authorization_servers": [f"https://{AUTH0_DOMAIN}/"],  # issuer has trailing slash
     "scopes_supported": ["mcp:read:xero", "mcp:write:xero"],
     "bearer_methods_supported": ["header"],
