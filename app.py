@@ -786,7 +786,7 @@ def _list_tools_payload():
     return {
         "tools": [
             {
-                "name": "xero.list_invoices",
+                "name": "xero_list_invoices",
                 "description": "List or summarize invoices with filters (date, contact, status) and grouping.",
                 "inputSchema": {
                     "type": "object",
@@ -809,7 +809,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.get_balance_sheet",
+                "name": "xero_get_balance_sheet",
                 "description": "Retrieve Balance Sheet with optional parameters.",
                 "inputSchema": {
                     "type": "object",
@@ -828,7 +828,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.get_profit_and_loss",
+                "name": "xero_get_profit_and_loss",
                 "description": "Retrieve Profit & Loss (Income Statement) with comparative and tracking options.",
                 "inputSchema": {
                     "type": "object",
@@ -850,7 +850,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.get_cash_summary",
+                "name": "xero_get_cash_summary",
                 "description": "Retrieve Cash Summary report for near-term cash position and movements.",
                 "inputSchema": {
                     "type": "object",
@@ -866,7 +866,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.get_cashflow",
+                "name": "xero_get_cashflow",
                 "description": "Retrieve Cashflow report (if enabled) for historical cash movements.",
                 "inputSchema": {
                     "type": "object",
@@ -883,7 +883,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.list_contacts",
+                "name": "xero_list_contacts",
                 "description": "Retrieve contacts with optional filters and pagination.",
                 "inputSchema": {
                     "type": "object",
@@ -902,7 +902,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.create_contacts",
+                "name": "xero_create_contacts",
                 "description": "Creates one or more contacts",
                 "inputSchema": {"type": "object", "properties": {"contacts": {"type": "array"}}},
                 "securitySchemes": [
@@ -910,7 +910,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.list_bank_transactions",
+                "name": "xero_list_bank_transactions",
                 "description": "Retrieve bank transactions with filters.",
                 "inputSchema": {
                     "type": "object",
@@ -927,7 +927,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.create_bank_transactions",
+                "name": "xero_create_bank_transactions",
                 "description": "Creates one or more bank transactions",
                 "inputSchema": {"type": "object", "properties": {"bank_transactions": {"type": "array"}}},
                 "securitySchemes": [
@@ -935,7 +935,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.list_accounts",
+                "name": "xero_list_accounts",
                 "description": "Retrieves the full chart of accounts",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
@@ -943,7 +943,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.list_journals",
+                "name": "xero_list_journals",
                 "description": "Retrieve journals with date filters.",
                 "inputSchema": {
                     "type": "object",
@@ -959,7 +959,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.list_organisations",
+                "name": "xero_list_organisations",
                 "description": "Retrieves Xero organisation details",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [
@@ -967,7 +967,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.list_payments",
+                "name": "xero_list_payments",
                 "description": "Retrieve payments with optional filters.",
                 "inputSchema": {
                     "type": "object",
@@ -987,7 +987,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.get_aged_receivables",
+                "name": "xero_get_aged_receivables",
                 "description": "Retrieve aged receivables by contact with optional grouping.",
                 "inputSchema": {
                     "type": "object",
@@ -1007,7 +1007,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.get_aged_payables",
+                "name": "xero_get_aged_payables",
                 "description": "Retrieve aged payables by contact with optional grouping.",
                 "inputSchema": {
                     "type": "object",
@@ -1027,7 +1027,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.list_tracking_categories",
+                "name": "xero_list_tracking_categories",
                 "description": "List tracking categories and available options.",
                 "inputSchema": {
                     "type": "object",
@@ -1041,7 +1041,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.get_tracking_profitability",
+                "name": "xero_get_tracking_profitability",
                 "description": "Aggregate revenue/expense by tracking option using invoice line items.",
                 "inputSchema": {
                     "type": "object",
@@ -1060,7 +1060,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.get_sales_by_product",
+                "name": "xero_get_sales_by_product",
                 "description": "Get sales and quantity sold by product for a date range. Filters for sales revenue accounts only (default: account 4000). Perfect for analyzing product performance.",
                 "inputSchema": {
                     "type": "object",
@@ -1077,7 +1077,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.get_sales_by_country",
+                "name": "xero_get_sales_by_country",
                 "description": "Get sales revenue and invoice counts by customer country for a date range. Filters for sales revenue accounts only (default: account 4000). Perfect for geographic analysis.",
                 "inputSchema": {
                     "type": "object",
@@ -1093,7 +1093,7 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero.list_quotes",
+                "name": "xero_list_quotes",
                 "description": "Retrieve quotes with optional filters.",
                 "inputSchema": {
                     "type": "object",
@@ -1647,8 +1647,33 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
 
 _KNOWN_TOOL_NAMES: Set[str] = {tool["name"] for tool in _list_tools_payload()["tools"]}
 
+_TOOL_NAME_ALIASES = {
+    "xero.list_invoices": "xero_list_invoices",
+    "xero.get_balance_sheet": "xero_get_balance_sheet",
+    "xero.get_profit_and_loss": "xero_get_profit_and_loss",
+    "xero.get_cash_summary": "xero_get_cash_summary",
+    "xero.get_cashflow": "xero_get_cashflow",
+    "xero.list_contacts": "xero_list_contacts",
+    "xero.create_contacts": "xero_create_contacts",
+    "xero.list_bank_transactions": "xero_list_bank_transactions",
+    "xero.create_bank_transactions": "xero_create_bank_transactions",
+    "xero.list_accounts": "xero_list_accounts",
+    "xero.list_journals": "xero_list_journals",
+    "xero.list_organisations": "xero_list_organisations",
+    "xero.list_payments": "xero_list_payments",
+    "xero.get_aged_receivables": "xero_get_aged_receivables",
+    "xero.get_aged_payables": "xero_get_aged_payables",
+    "xero.list_tracking_categories": "xero_list_tracking_categories",
+    "xero.get_tracking_profitability": "xero_get_tracking_profitability",
+    "xero.get_sales_by_product": "xero_get_sales_by_product",
+    "xero.get_sales_by_country": "xero_get_sales_by_country",
+    "xero.list_quotes": "xero_list_quotes",
+}
 
 async def handle_tool_call(name: str, args: Dict):
+    if name in _TOOL_NAME_ALIASES:
+        name = _TOOL_NAME_ALIASES[name]
+
     if not name or name not in _KNOWN_TOOL_NAMES:
         return {
             "isError": True,
@@ -1692,9 +1717,9 @@ async def handle_tool_call(name: str, args: Dict):
             }
         accounting_api = AccountingApi(api_client)
 
-        if name == "xero.list_invoices":
+        if name == "xero_list_invoices":
             return await _process_invoices_with_grouping(accounting_api, tenant_id, args)
-        elif name == "xero.get_balance_sheet":
+        elif name == "xero_get_balance_sheet":
             # Optional parameters
             bs_date = _get_arg(args, "date")
             bs_periods = _get_arg(args, "periods")
@@ -1727,7 +1752,7 @@ async def handle_tool_call(name: str, args: Dict):
 
             balance_sheet = accounting_api.get_report_balance_sheet(tenant_id, **bs_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([rep.to_dict() for rep in balance_sheet.reports])}]}
-        elif name == "xero.get_profit_and_loss":
+        elif name == "xero_get_profit_and_loss":
             pl_from = _get_arg(args, "fromDate", "from_date")
             pl_to = _get_arg(args, "toDate", "to_date")
             pl_periods = _get_arg(args, "periods")
@@ -1770,7 +1795,7 @@ async def handle_tool_call(name: str, args: Dict):
 
             pl_report = accounting_api.get_report_profit_and_loss(tenant_id, **pl_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(pl_report.reports[0]))}]}
-        elif name == "xero.get_cash_summary":
+        elif name == "xero_get_cash_summary":
             cs_from = _get_arg(args, "fromDate", "from_date")
             cs_to = _get_arg(args, "toDate", "to_date")
             cs_periods = _get_arg(args, "periods")
@@ -1795,7 +1820,7 @@ async def handle_tool_call(name: str, args: Dict):
 
             cash_summary = _fetch_report_by_resource(accounting_api, tenant_id, "/Reports/CashSummary", query)
             return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(cash_summary))}]}
-        elif name == "xero.get_cashflow":
+        elif name == "xero_get_cashflow":
             cf_date = _get_arg(args, "date")
             cf_periods = _get_arg(args, "periods")
             cf_timeframe = _get_arg(args, "timeframe")
@@ -1826,7 +1851,7 @@ async def handle_tool_call(name: str, args: Dict):
 
             cashflow = _fetch_report_by_resource(accounting_api, tenant_id, "/Reports/Cashflow", query)
             return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(cashflow))}]}
-        elif name == "xero.list_contacts":
+        elif name == "xero_list_contacts":
             search_term = _get_arg(args, "searchTerm", "search_term")
             page = _get_arg(args, "page")
             modified_since = _get_arg(args, "modifiedSince", "modified_since")
@@ -1863,12 +1888,12 @@ async def handle_tool_call(name: str, args: Dict):
 
             contacts = accounting_api.get_contacts(tenant_id, **c_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([c.to_dict() for c in contacts.contacts])}]}
-        elif name == "xero.create_contacts":
+        elif name == "xero_create_contacts":
             contacts_data = args.get('contacts', [])
             contacts_obj = Contacts(contacts=[Contact(**data) for data in contacts_data])
             created = accounting_api.create_contacts(tenant_id, contacts_obj)
             return {"content": [{"type": "text", "text": safe_dumps([c.to_dict() for c in created.contacts])}]}
-        elif name == "xero.list_bank_transactions":
+        elif name == "xero_list_bank_transactions":
             bt_date_from = _get_arg(args, "dateFrom", "date_from")
             bt_date_to = _get_arg(args, "dateTo", "date_to")
             bt_account_id = _get_arg(args, "accountId", "account_id")
@@ -1890,15 +1915,15 @@ async def handle_tool_call(name: str, args: Dict):
 
             transactions = accounting_api.get_bank_transactions(tenant_id, **bt_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([t.to_dict() for t in transactions.bank_transactions])}]}
-        elif name == "xero.create_bank_transactions":
+        elif name == "xero_create_bank_transactions":
             bank_transactions_data = args.get('bank_transactions', [])
             bank_transactions_obj = BankTransactions(bank_transactions=[BankTransaction(**data) for data in bank_transactions_data])
             created = accounting_api.create_bank_transactions(tenant_id, bank_transactions_obj)
             return {"content": [{"type": "text", "text": safe_dumps([t.to_dict() for t in created.bank_transactions])}]}
-        elif name == "xero.list_accounts":
+        elif name == "xero_list_accounts":
             accounts = accounting_api.get_accounts(tenant_id)
             return {"content": [{"type": "text", "text": safe_dumps([a.to_dict() for a in accounts.accounts])}]}
-        elif name == "xero.list_journals":
+        elif name == "xero_list_journals":
             j_date_from = _get_arg(args, "dateFrom", "date_from")
             j_date_to = _get_arg(args, "dateTo", "date_to")
             j_order = _get_arg(args, "order")
@@ -1914,10 +1939,10 @@ async def handle_tool_call(name: str, args: Dict):
                 j_kwargs["page"] = j_page
             journals = accounting_api.get_journals(tenant_id, **j_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([j.to_dict() for j in journals.journals])}]}
-        elif name == "xero.list_organisations":
+        elif name == "xero_list_organisations":
             organisations = accounting_api.get_organisations(tenant_id)
             return {"content": [{"type": "text", "text": safe_dumps([o.to_dict() for o in organisations.organisations])}]}
-        elif name == "xero.list_payments":
+        elif name == "xero_list_payments":
             ps_modified_since = _get_arg(args, "modifiedSince", "modified_since")
             ps_date_from = _get_arg(args, "dateFrom", "date_from")
             ps_date_to = _get_arg(args, "dateTo", "date_to")
@@ -1950,7 +1975,7 @@ async def handle_tool_call(name: str, args: Dict):
 
             payments = accounting_api.get_payments(tenant_id, **pay_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([p.to_dict() for p in payments.payments])}]}
-        elif name == "xero.get_aged_receivables":
+        elif name == "xero_get_aged_receivables":
             ar_date = _get_arg(args, "date")
             ar_periods = _get_arg(args, "periods")
             ar_timeframe = _get_arg(args, "timeframe")
@@ -1970,7 +1995,7 @@ async def handle_tool_call(name: str, args: Dict):
                 group_by = [group_by]
             result = _summarize_aged_report(report, group_by if isinstance(group_by, list) else None, accounting_api, tenant_id)
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
-        elif name == "xero.get_aged_payables":
+        elif name == "xero_get_aged_payables":
             ap_date = _get_arg(args, "date")
             ap_periods = _get_arg(args, "periods")
             ap_timeframe = _get_arg(args, "timeframe")
@@ -1990,7 +2015,7 @@ async def handle_tool_call(name: str, args: Dict):
                 group_by = [group_by]
             result = _summarize_aged_report(report, group_by if isinstance(group_by, list) else None, accounting_api, tenant_id)
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
-        elif name == "xero.list_tracking_categories":
+        elif name == "xero_list_tracking_categories":
             include_archived = _get_arg(args, "includeArchived", "include_archived")
             order = _get_arg(args, "order")
             tc_kwargs = {}
@@ -2000,7 +2025,7 @@ async def handle_tool_call(name: str, args: Dict):
                 tc_kwargs["order"] = order
             categories = accounting_api.get_tracking_categories(tenant_id, **tc_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps(_serialize_tracking_categories(categories))}]}
-        elif name == "xero.get_tracking_profitability":
+        elif name == "xero_get_tracking_profitability":
             category_id = _get_arg(args, "trackingCategoryID", "tracking_category_id")
             if not category_id:
                 raise HTTPException(status_code=400, detail="trackingCategoryID is required")
@@ -2024,7 +2049,7 @@ async def handle_tool_call(name: str, args: Dict):
                 include_unassigned=include_unassigned,
             )
             return {"content": [{"type": "text", "text": safe_dumps(summary)}]}
-        elif name == "xero.get_sales_by_product":
+        elif name == "xero_get_sales_by_product":
             # Dedicated tool for sales by product analysis
             date_from = _get_arg(args, "dateFrom", "date_from")
             date_to = _get_arg(args, "dateTo", "date_to")
@@ -2053,7 +2078,7 @@ async def handle_tool_call(name: str, args: Dict):
             }
 
             return await _process_invoices_with_grouping(accounting_api, tenant_id, sales_args)
-        elif name == "xero.get_sales_by_country":
+        elif name == "xero_get_sales_by_country":
             # Dedicated tool for sales by country analysis
             date_from = _get_arg(args, "dateFrom", "date_from")
             date_to = _get_arg(args, "dateTo", "date_to")
@@ -2089,7 +2114,7 @@ async def handle_tool_call(name: str, args: Dict):
                 country_args["accountCodes"] = account_codes
 
             return await _process_invoices_with_grouping(accounting_api, tenant_id, country_args)
-        elif name == "xero.list_quotes":
+        elif name == "xero_list_quotes":
             q_date_from = _get_arg(args, "dateFrom", "date_from")
             q_date_to = _get_arg(args, "dateTo", "date_to")
             q_exp_from = _get_arg(args, "expiryDateFrom", "expiry_date_from")
