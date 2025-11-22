@@ -1,4 +1,4 @@
-# Simple Xero MCP Server
+# Python Xero MCP Server
 
 This is a basic Model Context Protocol (MCP) server for integrating with Xero accounting API using Python and FastAPI.
 
