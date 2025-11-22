@@ -865,23 +865,7 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
-            {
-                "name": "xero_get_cashflow",
-                "description": "Retrieve Cashflow report (if enabled) for historical cash movements.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "date": {"type": "string", "description": "Report date (YYYY-MM-DD)"},
-                        "periods": {"type": "integer", "description": "Number of comparative periods"},
-                        "timeframe": {"type": "string", "enum": ["MONTH", "QUARTER", "YEAR"], "description": "Comparative timeframe"},
-                        "fromDate": {"type": "string", "description": "Optional start date override"},
-                        "toDate": {"type": "string", "description": "Optional end date override"}
-                    }
-                },
-                "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
-                ]
-            },
+
             {
                 "name": "xero_list_contacts",
                 "description": "Retrieve contacts with optional filters and pagination.",
@@ -1059,39 +1043,7 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
             },
-            {
-                "name": "xero_get_sales_by_product",
-                "description": "Get sales and quantity sold by product for a date range. Filters for sales revenue accounts only (default: account 4000). Perfect for analyzing product performance.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "dateFrom": {"type": "string", "description": "Start date (YYYY-MM-DD) - e.g., '2025-07-01' for Q3 2025"},
-                        "dateTo": {"type": "string", "description": "End date (YYYY-MM-DD) - e.g., '2025-09-30' for Q3 2025"},
-                        "itemCodes": {"type": "array", "items": {"type": "string"}, "description": "Specific item codes to include (optional)"},
-                        "groupByTime": {"type": "string", "enum": ["month", "quarter", "year"], "description": "Also group by time period (optional)"},
-                        "accountCodes": {"type": "array", "items": {"type": "string"}, "description": "Account codes to include (default: ['4000'] for sales revenue)"}
-                    }
-                },
-                "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
-                ]
-            },
-            {
-                "name": "xero_get_sales_by_country",
-                "description": "Get sales revenue and invoice counts by customer country for a date range. Filters for sales revenue accounts only (default: account 4000). Perfect for geographic analysis.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "dateFrom": {"type": "string", "description": "Start date (YYYY-MM-DD) - e.g., '2025-07-01' for Q3 2025"},
-                        "dateTo": {"type": "string", "description": "End date (YYYY-MM-DD) - e.g., '2025-09-30' for Q3 2025"},
-                        "groupByTime": {"type": "string", "enum": ["month", "quarter", "year"], "description": "Also group by time period (optional)"},
-                        "accountCodes": {"type": "array", "items": {"type": "string"}, "description": "Account codes to include (default: ['4000'] for sales revenue)"}
-                    }
-                },
-                "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
-                ]
-            },
+
             {
                 "name": "xero_list_quotes",
                 "description": "Retrieve quotes with optional filters.",
@@ -1106,6 +1058,24 @@ def _list_tools_payload():
                         "statuses": {"type": "array", "items": {"type": "string"}},
                         "order": {"type": "string"},
                         "page": {"type": "integer", "minimum": 1}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
+            },
+            {
+                "name": "xero_get_account_transactions",
+                "description": "List all transactions affecting a specific account over a date range. Perfect for account reconciliation and detailed transaction analysis.",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["accountCode"],
+                    "properties": {
+                        "accountCode": {"type": "string", "description": "Account code from chart of accounts (e.g., '1200' for AR, '4000' for Sales)"},
+                        "dateFrom": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+                        "dateTo": {"type": "string", "description": "End date (YYYY-MM-DD)"},
+                        "includeOpeningBalance": {"type": "boolean", "description": "Include opening balance as of dateFrom (default: true)"},
+                        "page": {"type": "integer", "minimum": 1, "description": "Page number for pagination"}
                     }
                 },
                 "securitySchemes": [
@@ -1665,8 +1635,6 @@ _TOOL_NAME_ALIASES = {
     "xero.get_aged_payables": "xero_get_aged_payables",
     "xero.list_tracking_categories": "xero_list_tracking_categories",
     "xero.get_tracking_profitability": "xero_get_tracking_profitability",
-    "xero.get_sales_by_product": "xero_get_sales_by_product",
-    "xero.get_sales_by_country": "xero_get_sales_by_country",
     "xero.list_quotes": "xero_list_quotes",
 }
 
@@ -1820,37 +1788,7 @@ async def handle_tool_call(name: str, args: Dict):
 
             cash_summary = _fetch_report_by_resource(accounting_api, tenant_id, "/Reports/CashSummary", query)
             return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(cash_summary))}]}
-        elif name == "xero_get_cashflow":
-            cf_date = _get_arg(args, "date")
-            cf_periods = _get_arg(args, "periods")
-            cf_timeframe = _get_arg(args, "timeframe")
-            cf_from = _get_arg(args, "fromDate", "from_date")
-            cf_to = _get_arg(args, "toDate", "to_date")
 
-            if isinstance(cf_date, str):
-                d = _parse_iso_date(cf_date)
-                cf_date = d.isoformat() if d else cf_date
-            if isinstance(cf_from, str):
-                d = _parse_iso_date(cf_from)
-                cf_from = d.isoformat() if d else cf_from
-            if isinstance(cf_to, str):
-                d = _parse_iso_date(cf_to)
-                cf_to = d.isoformat() if d else cf_to
-
-            query = {}
-            if cf_date is not None:
-                query["date"] = cf_date
-            if cf_from is not None:
-                query["fromDate"] = cf_from
-            if cf_to is not None:
-                query["toDate"] = cf_to
-            if cf_periods is not None:
-                query["periods"] = cf_periods
-            if cf_timeframe is not None:
-                query["timeframe"] = cf_timeframe
-
-            cashflow = _fetch_report_by_resource(accounting_api, tenant_id, "/Reports/Cashflow", query)
-            return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(cashflow))}]}
         elif name == "xero_list_contacts":
             search_term = _get_arg(args, "searchTerm", "search_term")
             page = _get_arg(args, "page")
@@ -2049,71 +1987,8 @@ async def handle_tool_call(name: str, args: Dict):
                 include_unassigned=include_unassigned,
             )
             return {"content": [{"type": "text", "text": safe_dumps(summary)}]}
-        elif name == "xero_get_sales_by_product":
-            # Dedicated tool for sales by product analysis
-            date_from = _get_arg(args, "dateFrom", "date_from")
-            date_to = _get_arg(args, "dateTo", "date_to")
-            item_codes = _get_arg(args, "itemCodes", "item_codes")
-            group_by_time = _get_arg(args, "groupByTime", "group_by_time")
-            account_codes = _get_arg(args, "accountCodes", "account_codes")
-            # Default to sales revenue account 4000 if not specified
-            if not account_codes:
-                account_codes = ["4000"]
 
-            # Build group_by list
-            group_by = ["product"]
-            if group_by_time:
-                group_by.append(group_by_time)
 
-            # Use the common invoice processing logic with product grouping
-            # Include more statuses to ensure we get sales data
-            sales_args = {
-                "dateFrom": date_from,
-                "dateTo": date_to,
-                "groupBy": group_by,
-                "metrics": ["quantity", "total", "countInvoices"],
-                "statuses": ["AUTHORISED", "PAID", "DRAFT", "SUBMITTED"],  # Include more statuses
-                "itemCodes": item_codes,
-                "accountCodes": account_codes,  # Filter by sales revenue accounts
-            }
-
-            return await _process_invoices_with_grouping(accounting_api, tenant_id, sales_args)
-        elif name == "xero_get_sales_by_country":
-            # Dedicated tool for sales by country analysis
-            date_from = _get_arg(args, "dateFrom", "date_from")
-            date_to = _get_arg(args, "dateTo", "date_to")
-            group_by_time = _get_arg(args, "groupByTime", "group_by_time")
-            account_codes = _get_arg(args, "accountCodes", "account_codes")
-
-            # Set default date range if none provided (last 90 days)
-            if not date_from and not date_to:
-                from datetime import datetime, timedelta
-                today = datetime.now().date()
-                date_from = (today - timedelta(days=90)).isoformat()
-                date_to = today.isoformat()
-
-            # For country analysis, don't filter by account codes by default
-            # since country is a contact attribute, not line item attribute
-
-            # Build group_by list
-            group_by = ["country"]
-            if group_by_time:
-                group_by.append(group_by_time)
-
-            # Use invoice-level aggregation for country grouping
-            country_args = {
-                "dateFrom": date_from,
-                "dateTo": date_to,
-                "groupBy": group_by,
-                "metrics": ["total", "countInvoices"],
-                "statuses": ["AUTHORISED", "PAID", "DRAFT", "SUBMITTED"],  # Include more statuses
-            }
-
-            # Only add account codes if explicitly specified
-            if account_codes:
-                country_args["accountCodes"] = account_codes
-
-            return await _process_invoices_with_grouping(accounting_api, tenant_id, country_args)
         elif name == "xero_list_quotes":
             q_date_from = _get_arg(args, "dateFrom", "date_from")
             q_date_to = _get_arg(args, "dateTo", "date_to")
@@ -2141,6 +2016,111 @@ async def handle_tool_call(name: str, args: Dict):
 
             quotes = accounting_api.get_quotes(tenant_id, **q_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([q.to_dict() for q in quotes.quotes])}]}
+        elif name == "xero_get_account_transactions":
+            # Get all transactions affecting a specific account
+            account_code = _get_arg(args, "accountCode", "account_code")
+            if not account_code:
+                return {
+                    "isError": True,
+                    "content": [{"type": "text", "text": "accountCode is required"}],
+                    "metadata": {"reason": "missingParameter"}
+                }
+            
+            date_from = _get_arg(args, "dateFrom", "date_from")
+            date_to = _get_arg(args, "dateTo", "date_to")
+            include_opening_balance = bool(_get_arg(args, "includeOpeningBalance", "include_opening_balance", default=True))
+            page = _get_arg(args, "page")
+            
+            # First, get the account details to validate and get account name
+            accounts_response = accounting_api.get_accounts(tenant_id, where=f'Code=="{account_code}"')
+            if not accounts_response.accounts:
+                return {
+                    "isError": True,
+                    "content": [{"type": "text", "text": f"Account {account_code} not found"}],
+                    "metadata": {"reason": "accountNotFound"}
+                }
+            
+            account = accounts_response.accounts[0]
+            account_name = getattr(account, "name", account_code)
+            account_id = getattr(account, "account_id", None)
+            
+            # Build where clause for journal lines
+            where_clauses = [f'AccountCode=="{account_code}"']
+            if date_from and date_to:
+                where_clauses.append(_xero_where_date_field("JournalDate", date_from, date_to))
+            elif date_from:
+                where_clauses.append(_xero_where_date_field("JournalDate", date_from, None))
+            elif date_to:
+                where_clauses.append(_xero_where_date_field("JournalDate", None, date_to))
+            
+            where = _join_where(*where_clauses)
+            
+            # Get journal lines for this account
+            j_kwargs = {"where": where}
+            if page:
+                j_kwargs["page"] = page
+            
+            journals = accounting_api.get_journals(tenant_id, **j_kwargs)
+            
+            # Process journal lines to extract transactions for this account
+            transactions = []
+            total_debits = 0.0
+            total_credits = 0.0
+            
+            for journal in (journals.journals or []):
+                journal_date = getattr(journal, "journal_date", None)
+                journal_number = getattr(journal, "journal_number", None)
+                source_id = getattr(journal, "source_id", None)
+                source_type = getattr(journal, "source_type", None)
+                
+                # Extract journal lines for our account
+                journal_lines = getattr(journal, "journal_lines", []) or []
+                for line in journal_lines:
+                    line_account_code = getattr(line, "account_code", None)
+                    if line_account_code != account_code:
+                        continue
+                    
+                    debit = float(getattr(line, "gross_amount", 0) or 0) if getattr(line, "gross_amount", 0) and float(getattr(line, "gross_amount", 0)) > 0 else 0
+                    credit = abs(float(getattr(line, "gross_amount", 0) or 0)) if getattr(line, "gross_amount", 0) and float(getattr(line, "gross_amount", 0)) < 0 else 0
+                    
+                    total_debits += debit
+                    total_credits += credit
+                    
+                    transactions.append({
+                        "date": journal_date.isoformat() if journal_date else None,
+                        "journalNumber": journal_number,
+                        "description": getattr(line, "description", None) or "",
+                        "reference": getattr(journal, "reference", None),
+                        "debit": debit,
+                        "credit": credit,
+                        "sourceId": source_id,
+                        "sourceType": source_type,
+                        "accountCode": line_account_code,
+                        "accountName": getattr(line, "account_name", None),
+                        "taxType": getattr(line, "tax_type", None),
+                        "taxAmount": float(getattr(line, "tax_amount", 0) or 0),
+                        "netAmount": float(getattr(line, "net_amount", 0) or 0),
+                    })
+            
+            # Sort by date
+            transactions.sort(key=lambda x: x.get("date") or "9999-99-99")
+            
+            result = {
+                "accountCode": account_code,
+                "accountName": account_name,
+                "accountId": account_id,
+                "dateFrom": date_from,
+                "dateTo": date_to,
+                "transactions": transactions,
+                "summary": {
+                    "totalDebits": total_debits,
+                    "totalCredits": total_credits,
+                    "netChange": total_debits - total_credits,
+                    "transactionCount": len(transactions)
+                }
+            }
+            
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
         return {
             "isError": True,
             "content": [
