@@ -889,7 +889,7 @@ def _list_tools_payload():
             {
                 "name": "xero_create_contacts",
                 "description": "Creates one or more contacts",
-                "inputSchema": {"type": "object", "properties": {"contacts": {"type": "array"}}},
+                "inputSchema": {"type": "object", "properties": {"contacts": {"type": "array", "items": {"type": "object"}}}},
                 "securitySchemes": [
                     { "type": "oauth2", "scopes": ["mcp:write:xero"] }
                 ]
@@ -914,7 +914,7 @@ def _list_tools_payload():
             {
                 "name": "xero_create_bank_transactions",
                 "description": "Creates one or more bank transactions",
-                "inputSchema": {"type": "object", "properties": {"bank_transactions": {"type": "array"}}},
+                "inputSchema": {"type": "object", "properties": {"bank_transactions": {"type": "array", "items": {"type": "object"}}}},
                 "securitySchemes": [
                     { "type": "oauth2", "scopes": ["mcp:write:xero"] }
                 ]
