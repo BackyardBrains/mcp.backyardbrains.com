@@ -5,7 +5,7 @@
 **All financial data must come exclusively from BYB Xero MCP tools. Never fabricate, estimate, or infer any accounting figures.**
 
 ### Available MCP Tools
-`xero_list_invoices`, `xero_list_payments`, `xero_list_bank_transactions`, `xero_get_balance_sheet`, `xero_get_profit_and_loss`, `xero_get_cash_summary`, `xero_get_tracking_profitability`,`xero_list_accounts`, `xero_list_contacts`, `xero_list_tracking_categories`, `xero_list_manual_journals`,  `xero_get_account_transactions`
+`xero_list_invoices`, `xero_list_payments`, `xero_list_bank_transactions`, `xero_get_balance_sheet`, `xero_get_profit_and_loss`, `xero_get_tracking_profitability`,`xero_list_accounts`, `xero_list_contacts`, `xero_list_tracking_categories`, `xero_list_manual_journals`,  `xero_get_account_transactions` (Bank Accounts Only), `xero_get_aged_payables` (Requires contactId), `xero_list_items`, `xero_list_bills`
 
 ### Mandatory Response When Data Unavailable
 **"I don't have the data to answer that."**
@@ -134,6 +134,54 @@ Returns: trackingCategoryID and trackingOptionID (UUIDs)
 
 ---
 
+## Product Margins
+
+**Tool:** `xero_list_items`
+
+**Example:**
+```json
+{}
+```
+
+**Returns:** Product catalog with `SalesDetails.UnitPrice` and `PurchaseDetails.UnitPrice`
+
+**Key Points:**
+- Calculate margins: `(SalesPrice - CostPrice) / SalesPrice`
+- Identify high-margin vs low-margin products
+- Filter with `updatedSince` for recent changes
+
+---
+
+## Finding Old/Overdue Bills
+
+**Tool:** `xero_list_bills`
+
+**Example (Overdue bills):**
+```json
+{
+  "overdue": true,
+  "statuses": ["AUTHORISED"]
+}
+```
+
+**Example (Bills due before specific date):**
+```json
+{
+  "dueDateTo": "2025-10-01",
+  "statuses": ["AUTHORISED"]
+}
+```
+
+**Returns:** Bills (ACCPAY invoices) filtered by status and due date
+
+**Key Points:**
+- `overdue: true` finds bills due before today
+- `dueDateTo` finds bills due on or before a specific date
+- Default status is `["AUTHORISED"]` (unpaid bills)
+- Sorted by `DueDate ASC` by default
+
+---
+
 ## Quick Reference
 
 | Query | Tool | Key Parameters |
@@ -146,6 +194,8 @@ Returns: trackingCategoryID and trackingOptionID (UUIDs)
 | Conference spending | `xero_get_tracking_profitability` | `trackingCategoryID: "project ID"`, `invoiceTypes: ["ACCPAY"]` |
 | P&L | `xero_get_profit_and_loss` | `fromDate`, `toDate` |
 | Balance sheet | `xero_get_balance_sheet` | `date: "YYYY-MM-DD"` |
+| Product margins | `xero_list_items` | None required |
+| Overdue bills | `xero_list_bills` | `overdue: true` |
 
 ---
 

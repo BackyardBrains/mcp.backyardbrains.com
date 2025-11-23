@@ -285,29 +285,11 @@ Shows Q3 2025 compared to previous 4 quarters.
 
 ---
 
-### 9. Cash Summary
-
-**Purpose:** Near-term cash position and movements.
-
-**Tool:** `xero_get_cash_summary`
-
-**Example Request:**
-```json
-{
-  "fromDate": "2025-01-01",
-  "toDate": "2025-12-31",
-  "periods": 12,
-  "timeframe": "MONTH"
-}
-```
-
----
-
 ## 🔍 Accounts & Transaction Details
 
-### 10. Account Transactions (Transaction List for Specific Account)
-
-**Purpose:** See all transactions affecting a specific account (e.g., specific revenue account).
+### 10. Account Transactions (Bank Accounts Only)
+ 
+ **Purpose:** See all transactions affecting a specific **Bank Account**.
 
 **Tool:** `xero_get_account_transactions`
 
@@ -334,6 +316,63 @@ First get the chart of accounts with `xero_list_accounts` to find the account co
 
 ---
 
+### 11. Product Catalog (Items)
+
+**Purpose:** Retrieve product/service catalog with cost and sales prices for margin analysis.
+
+**Tool:** `xero_list_items`
+
+**Example:**
+```json
+{}
+```
+
+**What it returns:** All items with:
+- `Code` - Item code
+- `Name` - Item description
+- `SalesDetails.UnitPrice` - Sales price
+- `PurchaseDetails.UnitPrice` - Cost price
+- Inventory tracking settings
+
+**For margin analysis:**
+Calculate: `(SalesPrice - CostPrice) / SalesPrice * 100` for margin percentage.
+
+---
+
+### 12. Bills (Accounts Payable)
+
+**Purpose:** Find unpaid or overdue bills to manage cash flow.
+
+**Tool:** `xero_list_bills`
+
+**Example (All overdue bills):**
+```json
+{
+  "overdue": true,
+  "statuses": ["AUTHORISED"]
+}
+```
+
+**Example (Bills due before a specific date):**
+```json
+{
+  "dueDateTo": "2025-10-01",
+  "statuses": ["AUTHORISED"]
+}
+```
+
+**What it returns:**
+- Bills (ACCPAY invoices) matching your filters
+- Sorted by due date (oldest first)
+- Includes contact, amount, and due date info
+
+**Common use cases:**
+- "Show me all overdue bills" → `{"overdue": true}`
+- "Bills due in the next 30 days" → Use `dueDateTo` with date 30 days from now
+- "Show paid bills from last month" → `{"statuses": ["PAID"], "dateFrom": "2025-10-01", "dateTo": "2025-10-31"}`
+
+---
+
 ## 🎯 Quick Reference: Most Common Use Cases
 
 | What You Want | Tool to Use | Key Parameters |
@@ -347,6 +386,9 @@ First get the chart of accounts with `xero_list_accounts` to find the account co
 | **P&L for grant** | `xero_get_profit_and_loss` | `trackingCategoryID`, `trackingOptionID` |
 | **Overall P&L** | `xero_get_profit_and_loss` | `fromDate`, `toDate` |
 | **Balance sheet** | `xero_get_balance_sheet` | `date: "YYYY-MM-DD"` |
+| **Product margins** | `xero_list_items` | None required |
+| **Overdue bills** | `xero_list_bills` | `overdue: true` |
+| **Old bills (30+ days)** | `xero_list_bills` | `dueDateTo: "[30 days ago]"` |
 
 ---
 
@@ -381,7 +423,7 @@ First get the chart of accounts with `xero_list_accounts` to find the account co
 - `xero_list_payments` - Payment records
 - `xero_list_accounts` - Chart of accounts
 - `xero_list_manual_journals` - Manual journals with flexible filtering
-- `xero_get_aged_payables` - Outstanding supplier bills
+- `xero_get_aged_payables` - Outstanding supplier bills (Requires `contactId`)
 
 ---
 

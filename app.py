@@ -1064,6 +1064,38 @@ def _list_tools_payload():
                 "securitySchemes": [
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ]
+            },
+            {
+                "name": "xero_list_items",
+                "description": "Retrieve items (products/services) with details like cost price and sales price.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "updatedSince": {"type": "string", "description": "Filter by updated date (ISO)"}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
+            },
+            {
+                "name": "xero_list_bills",
+                "description": "Retrieve bills (Accounts Payable invoices) with filtering for due dates and status.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "statuses": {"type": "array", "items": {"type": "string"}, "description": "Bill statuses (e.g. AUTHORISED, PAID)"},
+                        "dueDateTo": {"type": "string", "description": "Find bills due on or before this date (YYYY-MM-DD)"},
+                        "overdue": {"type": "boolean", "description": "Convenience: Find bills due before today"},
+                        "dateFrom": {"type": "string", "description": "Bill date start"},
+                        "dateTo": {"type": "string", "description": "Bill date end"},
+                        "page": {"type": "integer", "minimum": 1},
+                        "order": {"type": "string"}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
             }
         ]
     }
@@ -1604,8 +1636,7 @@ _TOOL_NAME_ALIASES = {
     "xero.list_invoices": "xero_list_invoices",
     "xero.get_balance_sheet": "xero_get_balance_sheet",
     "xero.get_profit_and_loss": "xero_get_profit_and_loss",
-    "xero.get_cash_summary": "xero_get_cash_summary",
-    "xero.get_cashflow": "xero_get_cashflow",
+    "xero.get_profit_and_loss": "xero_get_profit_and_loss",
     "xero.list_contacts": "xero_list_contacts",
     "xero.create_contacts": "xero_create_contacts",
     "xero.list_bank_transactions": "xero_list_bank_transactions",
@@ -1618,6 +1649,8 @@ _TOOL_NAME_ALIASES = {
     "xero.list_tracking_categories": "xero_list_tracking_categories",
     "xero.get_tracking_profitability": "xero_get_tracking_profitability",
     "xero.list_quotes": "xero_list_quotes",
+    "xero.list_items": "xero_list_items",
+    "xero.list_bills": "xero_list_bills",
 }
 
 async def handle_tool_call(name: str, args: Dict):
@@ -1745,31 +1778,8 @@ async def handle_tool_call(name: str, args: Dict):
 
             pl_report = accounting_api.get_report_profit_and_loss(tenant_id, **pl_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(pl_report.reports[0]))}]}
-        elif name == "xero_get_cash_summary":
-            cs_from = _get_arg(args, "fromDate", "from_date")
-            cs_to = _get_arg(args, "toDate", "to_date")
-            cs_periods = _get_arg(args, "periods")
-            cs_timeframe = _get_arg(args, "timeframe")
-
-            if isinstance(cs_from, str):
-                d = _parse_iso_date(cs_from)
-                cs_from = d.isoformat() if d else cs_from
-            if isinstance(cs_to, str):
-                d = _parse_iso_date(cs_to)
-                cs_to = d.isoformat() if d else cs_to
-
-            query = {}
-            if cs_from is not None:
-                query["fromDate"] = cs_from
-            if cs_to is not None:
-                query["toDate"] = cs_to
-            if cs_periods is not None:
-                query["periods"] = cs_periods
-            if cs_timeframe is not None:
-                query["timeframe"] = cs_timeframe
-
-            cash_summary = _fetch_report_by_resource(accounting_api, tenant_id, "/Reports/CashSummary", query)
-            return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(cash_summary))}]}
+            pl_report = accounting_api.get_report_profit_and_loss(tenant_id, **pl_kwargs)
+            return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(pl_report.reports[0]))}]}
 
         elif name == "xero_list_contacts":
             search_term = _get_arg(args, "searchTerm", "search_term")
@@ -1830,6 +1840,9 @@ async def handle_tool_call(name: str, args: Dict):
                 bt_kwargs["where"] = where
             if bt_order:
                 bt_kwargs["order"] = bt_order
+            if bt_page:
+                bt_kwargs["page"] = bt_page
+
             if bt_page:
                 bt_kwargs["page"] = bt_page
 
@@ -1913,6 +1926,14 @@ async def handle_tool_call(name: str, args: Dict):
             ap_periods = _get_arg(args, "periods")
             ap_timeframe = _get_arg(args, "timeframe")
             group_by = _get_arg(args, "groupBy", "group_by")
+            ap_contact_id = _get_arg(args, "contactId", "contact_id")
+            if not ap_contact_id:
+                 return {
+                    "isError": True,
+                    "content": [{"type": "text", "text": "contactId is required for Aged Payables by Contact report"}],
+                    "metadata": {"reason": "missingParameter"}
+                }
+
             if isinstance(ap_date, str):
                 d = _parse_iso_date(ap_date)
                 ap_date = d.isoformat() if d else ap_date
@@ -1923,7 +1944,8 @@ async def handle_tool_call(name: str, args: Dict):
                 ap_kwargs["periods"] = ap_periods
             if ap_timeframe is not None:
                 ap_kwargs["timeframe"] = ap_timeframe
-            report = accounting_api.get_report_aged_payables_by_contact(tenant_id, **ap_kwargs)
+            
+            report = accounting_api.get_report_aged_payables_by_contact(tenant_id, ap_contact_id, **ap_kwargs)
             if isinstance(group_by, str):
                 group_by = [group_by]
             result = _summarize_aged_report(report, group_by if isinstance(group_by, list) else None, accounting_api, tenant_id)
@@ -2016,86 +2038,102 @@ async def handle_tool_call(name: str, args: Dict):
                 }
             
             account = accounts_response.accounts[0]
-            account_name = getattr(account, "name", account_code)
+            
+            # Check if it is a bank account
             account_id = getattr(account, "account_id", None)
+            # We can check account type, but we don't have it in the account object returned by get_accounts unless we check 'type' field?
+            # get_accounts returns Account objects.
+            # Let's check if we can use get_bank_transactions for this account.
+            # If we have account_id, we can try.
             
-            # Build where clause for journal lines
-            where_clauses = [f'AccountCode=="{account_code}"']
-            if date_from and date_to:
-                where_clauses.append(_xero_where_date_field("JournalDate", date_from, date_to))
-            elif date_from:
-                where_clauses.append(_xero_where_date_field("JournalDate", date_from, None))
-            elif date_to:
-                where_clauses.append(_xero_where_date_field("JournalDate", None, date_to))
+            # Note: get_bank_transactions only works for bank accounts.
+            # If the account is not a bank account, we can't use it.
+            # We can check account.type.
+            account_type = getattr(account, "type", None)
             
-            where = _join_where(*where_clauses)
+            # account_type might be an Enum (AccountType.BANK) or string
+            is_bank = str(account_type) == "BANK" or str(account_type) == "AccountType.BANK"
             
-            # Get journal lines for this account
-            j_kwargs = {"where": where}
-            if page:
-                j_kwargs["page"] = page
-            
-            journals = accounting_api.get_journals(tenant_id, **j_kwargs)
-            
-            # Process journal lines to extract transactions for this account
-            transactions = []
-            total_debits = 0.0
-            total_credits = 0.0
-            
-            for journal in (journals.journals or []):
-                journal_date = getattr(journal, "journal_date", None)
-                journal_number = getattr(journal, "journal_number", None)
-                source_id = getattr(journal, "source_id", None)
-                source_type = getattr(journal, "source_type", None)
+            if is_bank:
+                # Use get_bank_transactions
+                bt_kwargs = {}
+                where_clauses = [f'BankAccount.AccountID==Guid("{account_id}")']
+                if date_from and date_to:
+                    where_clauses.append(_xero_where_date_field("Date", date_from, date_to))
+                elif date_from:
+                    where_clauses.append(_xero_where_date_field("Date", date_from, None))
+                elif date_to:
+                    where_clauses.append(_xero_where_date_field("Date", None, date_to))
                 
-                # Extract journal lines for our account
-                journal_lines = getattr(journal, "journal_lines", []) or []
-                for line in journal_lines:
-                    line_account_code = getattr(line, "account_code", None)
-                    if line_account_code != account_code:
-                        continue
-                    
-                    debit = float(getattr(line, "gross_amount", 0) or 0) if getattr(line, "gross_amount", 0) and float(getattr(line, "gross_amount", 0)) > 0 else 0
-                    credit = abs(float(getattr(line, "gross_amount", 0) or 0)) if getattr(line, "gross_amount", 0) and float(getattr(line, "gross_amount", 0)) < 0 else 0
-                    
-                    total_debits += debit
-                    total_credits += credit
-                    
-                    transactions.append({
-                        "date": journal_date.isoformat() if journal_date else None,
-                        "journalNumber": journal_number,
-                        "description": getattr(line, "description", None) or "",
-                        "reference": getattr(journal, "reference", None),
-                        "debit": debit,
-                        "credit": credit,
-                        "sourceId": source_id,
-                        "sourceType": source_type,
-                        "accountCode": line_account_code,
-                        "accountName": getattr(line, "account_name", None),
-                        "taxType": getattr(line, "tax_type", None),
-                        "taxAmount": float(getattr(line, "tax_amount", 0) or 0),
-                        "netAmount": float(getattr(line, "net_amount", 0) or 0),
-                    })
-            
-            # Sort by date
-            transactions.sort(key=lambda x: x.get("date") or "9999-99-99")
-            
-            result = {
-                "accountCode": account_code,
-                "accountName": account_name,
-                "accountId": account_id,
-                "dateFrom": date_from,
-                "dateTo": date_to,
-                "transactions": transactions,
-                "summary": {
-                    "totalDebits": total_debits,
-                    "totalCredits": total_credits,
-                    "netChange": total_debits - total_credits,
-                    "transactionCount": len(transactions)
+                bt_kwargs["where"] = _join_where(*where_clauses)
+                if page:
+                    bt_kwargs["page"] = page
+                
+                transactions = accounting_api.get_bank_transactions(tenant_id, **bt_kwargs)
+                return {"content": [{"type": "text", "text": safe_dumps([t.to_dict() for t in transactions.bank_transactions])}]}
+            else:
+                return {
+                    "isError": True,
+                    "content": [{"type": "text", "text": f"Transaction listing for non-bank accounts (Type: {account_type}) is not currently supported via this tool due to API limitations. Please use xero_get_profit_and_loss or xero_get_balance_sheet for financial reports."}],
+                    "metadata": {"reason": "notSupportedForAccountType"}
                 }
-            }
+        elif name == "xero_list_items":
+            updated_since = _get_arg(args, "updatedSince", "updated_since")
+            i_kwargs = {}
+            if updated_since:
+                if isinstance(updated_since, str):
+                    d = _parse_iso_datetime(updated_since)
+                    if d:
+                        i_kwargs["if_modified_since"] = d
             
-            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+            items = accounting_api.get_items(tenant_id, **i_kwargs)
+            return {"content": [{"type": "text", "text": safe_dumps([i.to_dict() for i in items.items])}]}
+        elif name == "xero_list_bills":
+            # Specialized tool for Bills (ACCPAY invoices)
+            b_status = _get_arg(args, "statuses")
+            if not b_status:
+                b_status = ["AUTHORISED"] # Default to approved bills
+            
+            b_due_date_to = _get_arg(args, "dueDateTo", "due_date_to")
+            b_date_from = _get_arg(args, "dateFrom", "date_from")
+            b_date_to = _get_arg(args, "dateTo", "date_to")
+            b_overdue = bool(_get_arg(args, "overdue", default=False))
+            b_page = _get_arg(args, "page")
+            b_order = _get_arg(args, "order")
+
+            where_clauses = ['Type=="ACCPAY"']
+            
+            if isinstance(b_status, list) and b_status:
+                where_clauses.append("(" + " || ".join([f'Status=="{s}"' for s in b_status]) + ")")
+            
+            if b_due_date_to:
+                # Find bills due on or before this date
+                d = _parse_iso_date(b_due_date_to)
+                if d:
+                    # Xero API doesn't support DueDate <= X directly in all cases, but let's try standard filter
+                    # Actually DueDate is filterable.
+                    where_clauses.append(f'DueDate <= DateTime({d.year},{d.month},{d.day})')
+            
+            if b_overdue:
+                # Find bills due before TODAY
+                import datetime
+                today = datetime.date.today()
+                where_clauses.append(f'DueDate < DateTime({today.year},{today.month},{today.day})')
+
+            if b_date_from or b_date_to:
+                where_clauses.append(_xero_where_date_range(b_date_from, b_date_to))
+
+            b_kwargs = {"where": " && ".join(where_clauses)}
+            if b_page:
+                b_kwargs["page"] = b_page
+            if b_order:
+                b_kwargs["order"] = b_order
+            else:
+                b_kwargs["order"] = "DueDate ASC" # Default sort by due date for bills
+
+            bills = accounting_api.get_invoices(tenant_id, **b_kwargs)
+            return {"content": [{"type": "text", "text": safe_dumps([b.to_dict() for b in bills.invoices])}]}
+
         return {
             "isError": True,
             "content": [
