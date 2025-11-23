@@ -380,7 +380,7 @@ First get the chart of accounts with `xero_list_accounts` to find the account co
 - `xero_list_bank_transactions` - Bank account transactions
 - `xero_list_payments` - Payment records
 - `xero_list_accounts` - Chart of accounts
-- `xero_get_aged_receivables` - Outstanding customer invoices
+- `xero_list_manual_journals` - Manual journals with flexible filtering
 - `xero_get_aged_payables` - Outstanding supplier bills
 
 ---

@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 import requests
 import uvicorn
 from cryptography.fernet import Fernet, InvalidToken
-from xero_python.accounting import AccountingApi, Contact, Contacts, BankTransaction, BankTransactions, Journal, Payment, Quote, Account, Organisation
+from xero_python.accounting import AccountingApi, Contact, Contacts, BankTransaction, BankTransactions, Journal, ManualJournal, ManualJournals, Payment, Quote, Account, Organisation
 from xero_python.api_client import ApiClient
 from xero_python.api_client.oauth2 import OAuth2Token
 from xero_python.api_client.configuration import Configuration
@@ -928,13 +928,14 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero_list_journals",
-                "description": "Retrieve journals with date filters.",
+                "name": "xero_list_manual_journals",
+                "description": "Retrieve manual journals with optional filters.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "dateFrom": {"type": "string", "description": "JournalDate start (YYYY-MM-DD)"},
                         "dateTo": {"type": "string", "description": "JournalDate end (YYYY-MM-DD)"},
+                        "where": {"type": "string", "description": "Xero where clause to filter manual journals"},
                         "order": {"type": "string"},
                         "page": {"type": "integer", "minimum": 1}
                     }
@@ -965,26 +966,6 @@ def _list_tools_payload():
                         "isReconciled": {"type": "boolean"},
                         "order": {"type": "string"},
                         "page": {"type": "integer", "minimum": 1}
-                    }
-                },
-                "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
-                ]
-            },
-            {
-                "name": "xero_get_aged_receivables",
-                "description": "Retrieve aged receivables by contact with optional grouping.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "date": {"type": "string", "description": "Report date (YYYY-MM-DD)"},
-                        "periods": {"type": "integer", "description": "Number of comparative periods"},
-                        "timeframe": {"type": "string", "enum": ["MONTH", "QUARTER", "YEAR"], "description": "Comparative timeframe"},
-                        "groupBy": {
-                            "type": "array",
-                            "items": {"type": "string", "enum": ["contact", "region", "country", "salesperson"]},
-                            "description": "Optional grouping dimensions"
-                        }
                     }
                 },
                 "securitySchemes": [
@@ -1629,10 +1610,9 @@ _TOOL_NAME_ALIASES = {
     "xero.list_bank_transactions": "xero_list_bank_transactions",
     "xero.create_bank_transactions": "xero_create_bank_transactions",
     "xero.list_accounts": "xero_list_accounts",
-    "xero.list_journals": "xero_list_journals",
+    "xero.list_manual_journals": "xero_list_manual_journals",
     "xero.list_organisations": "xero_list_organisations",
     "xero.list_payments": "xero_list_payments",
-    "xero.get_aged_receivables": "xero_get_aged_receivables",
     "xero.get_aged_payables": "xero_get_aged_payables",
     "xero.list_tracking_categories": "xero_list_tracking_categories",
     "xero.get_tracking_profitability": "xero_get_tracking_profitability",
@@ -1862,22 +1842,35 @@ async def handle_tool_call(name: str, args: Dict):
         elif name == "xero_list_accounts":
             accounts = accounting_api.get_accounts(tenant_id)
             return {"content": [{"type": "text", "text": safe_dumps([a.to_dict() for a in accounts.accounts])}]}
-        elif name == "xero_list_journals":
-            j_date_from = _get_arg(args, "dateFrom", "date_from")
-            j_date_to = _get_arg(args, "dateTo", "date_to")
-            j_order = _get_arg(args, "order")
-            j_page = _get_arg(args, "page")
+        elif name == "xero_list_manual_journals":
+            mj_date_from = _get_arg(args, "dateFrom", "date_from")
+            mj_date_to = _get_arg(args, "dateTo", "date_to")
+            mj_where = _get_arg(args, "where")
+            mj_order = _get_arg(args, "order")
+            mj_page = _get_arg(args, "page")
 
-            where = _xero_where_date_field("JournalDate", j_date_from, j_date_to)
-            j_kwargs = {}
+            where = _join_where(
+                mj_where if isinstance(mj_where, str) and mj_where.strip() else "",
+                _xero_where_date_field("JournalDate", mj_date_from, mj_date_to),
+            )
+
+            mj_kwargs = {}
             if where:
-                j_kwargs["where"] = where
-            if j_order:
-                j_kwargs["order"] = j_order
-            if j_page:
-                j_kwargs["page"] = j_page
-            journals = accounting_api.get_journals(tenant_id, **j_kwargs)
-            return {"content": [{"type": "text", "text": safe_dumps([j.to_dict() for j in journals.journals])}]}
+                mj_kwargs["where"] = where
+            if mj_order:
+                mj_kwargs["order"] = mj_order
+            if mj_page:
+                mj_kwargs["page"] = mj_page
+
+            manual_journals = accounting_api.get_manual_journals(tenant_id, **mj_kwargs)
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": safe_dumps([j.to_dict() for j in (manual_journals.manual_journals or [])]),
+                    }
+                ]
+            }
         elif name == "xero_list_organisations":
             organisations = accounting_api.get_organisations(tenant_id)
             return {"content": [{"type": "text", "text": safe_dumps([o.to_dict() for o in organisations.organisations])}]}
@@ -1914,26 +1907,6 @@ async def handle_tool_call(name: str, args: Dict):
 
             payments = accounting_api.get_payments(tenant_id, **pay_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([p.to_dict() for p in payments.payments])}]}
-        elif name == "xero_get_aged_receivables":
-            ar_date = _get_arg(args, "date")
-            ar_periods = _get_arg(args, "periods")
-            ar_timeframe = _get_arg(args, "timeframe")
-            group_by = _get_arg(args, "groupBy", "group_by")
-            if isinstance(ar_date, str):
-                d = _parse_iso_date(ar_date)
-                ar_date = d.isoformat() if d else ar_date
-            ar_kwargs = {}
-            if ar_date is not None:
-                ar_kwargs["date"] = ar_date
-            if ar_periods is not None:
-                ar_kwargs["periods"] = ar_periods
-            if ar_timeframe is not None:
-                ar_kwargs["timeframe"] = ar_timeframe
-            report = accounting_api.get_report_aged_receivables_by_contact(tenant_id, **ar_kwargs)
-            if isinstance(group_by, str):
-                group_by = [group_by]
-            result = _summarize_aged_report(report, group_by if isinstance(group_by, list) else None, accounting_api, tenant_id)
-            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
         elif name == "xero_get_aged_payables":
             ap_date = _get_arg(args, "date")
             ap_periods = _get_arg(args, "periods")
