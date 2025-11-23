@@ -274,7 +274,8 @@ def _serialize_tracking_categories(categories) -> List[Dict[str, Any]]:
     output = []
     for cat in getattr(categories, "tracking_categories", None) or []:
         options = []
-        for opt in getattr(cat, "tracking_options", None) or []:
+        # Xero SDK may expose tracking options as either `tracking_options` or `options`
+        for opt in getattr(cat, "tracking_options", None) or getattr(cat, "options", None) or []:
             options.append(
                 {
                     "trackingOptionId": getattr(opt, "tracking_option_id", None),
@@ -297,7 +298,7 @@ def _build_tracking_maps(categories) -> Dict[str, Dict[str, Any]]:
     mapping: Dict[str, Dict[str, Any]] = {}
     for cat in getattr(categories, "tracking_categories", None) or []:
         options = {}
-        for opt in getattr(cat, "tracking_options", None) or []:
+        for opt in getattr(cat, "tracking_options", None) or getattr(cat, "options", None) or []:
             opt_id = getattr(opt, "tracking_option_id", None)
             if opt_id:
                 options[opt_id] = {
