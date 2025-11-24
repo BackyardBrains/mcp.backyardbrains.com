@@ -953,6 +953,14 @@ def mcp_manifest():
     return JSONResponse(manifest)
 
 
+@app.get("/xero/mcp")
+async def mcp_endpoint_get(request: Request, _=Depends(require_auth)):
+    """
+    Handle GET requests to the MCP endpoint (e.g. health checks).
+    """
+    return {"status": "ok", "message": "Xero MCP endpoint. Use POST for JSON-RPC."}
+
+
 @app.post("/xero/mcp")
 async def mcp_endpoint(request: Request, _=Depends(require_auth)):
     body = await request.json()
