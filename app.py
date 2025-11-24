@@ -1069,12 +1069,12 @@ async def mcp_root_post_no_slash(request: Request, _=Depends(require_auth)):
 # Provide a simple GET on the MCP root for basic diagnostics
 @app.get("/xero/")
 def mcp_root_get(_=Depends(require_auth)):
-    return mcp_manifest()
+    return {"status": "ok", "message": "Xero MCP root. POST JSON with method=initialize/tools.list/tools.call."}
 
 # No-trailing-slash variant
 @app.get("/xero")
 def mcp_root_get_no_slash(_=Depends(require_auth)):
-    return mcp_manifest()
+    return {"status": "ok", "message": "Xero MCP root. POST JSON with method=initialize/tools.list/tools.call."}
 
 # Proxy for /authorize to add audience
 AUTH0_AUTHORIZE_URL = f"https://{AUTH0_DOMAIN}/authorize"
