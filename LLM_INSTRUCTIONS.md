@@ -5,7 +5,7 @@
 **All financial data must come exclusively from BYB Xero MCP tools. Never fabricate, estimate, or infer any accounting figures.**
 
 ### Available MCP Tools
-`xero_list_invoices`, `xero_list_payments`, `xero_list_bank_transactions`, `xero_get_balance_sheet`, `xero_get_profit_and_loss`, `xero_get_tracking_profitability`,`xero_list_accounts`, `xero_list_contacts`, `xero_list_tracking_categories`, `xero_list_manual_journals`,  `xero_get_account_transactions` (Bank Accounts Only), `xero_get_aged_payables` (Requires contactId), `xero_list_items`, `xero_list_bills`
+`xero_list_invoices`, `xero_list_payments`, `xero_list_bank_transactions`, `xero_get_balance_sheet`, `xero_get_profit_and_loss`, `xero_list_accounts`, `xero_list_contacts`, `xero_list_tracking_categories`, `xero_list_manual_journals`,  `xero_get_account_transactions`, `xero_list_items`, `xero_list_bills`
 
 ### Mandatory Response When Data Unavailable
 **"I don't have the data to answer that."**
@@ -55,7 +55,7 @@ Returns: trackingCategoryID and trackingOptionID (UUIDs)
 - Use ISO dates: `YYYY-MM-DD`
 - Filter by `statuses` to exclude drafts/voids
 - Combine dimensions: `["country", "month"]` for time-series
-- For grant-specific: use `xero_get_tracking_profitability` with "Who Pays" tracking ID
+- For grant-specific: use `xero_get_profit_and_loss` with "Who Pays" tracking ID
 
 ---
 
@@ -87,50 +87,58 @@ Returns: trackingCategoryID and trackingOptionID (UUIDs)
 
 ## Grant Analysis (Using "Who Pays" Tracking)
 
-**Tool:** `xero_get_tracking_profitability`
+**Tool:** `xero_get_profit_and_loss`
 
 **Workflow:**
 1. Get tracking ID: `xero_list_tracking_categories` → find "Who Pays" → note `trackingCategoryId`
-2. Query profitability:
+2. Query P&L filtered by tracking category:
 ```json
 {
+  "fromDate": "2025-01-01",
+  "toDate": "2025-03-31",
   "trackingCategoryID": "xxx-id-xxx",
-  "dateFrom": "2025-01-01",
-  "dateTo": "2025-03-31",
-  "invoiceTypes": ["ACCREC", "ACCPAY"]
+  "trackingOptionID": "xxx-grant-id-xxx"
 }
 ```
 
-**Returns:** Revenue (`ACCREC`) and expenses (`ACCPAY`) per grant
-
-**For specific grant only:**
-```json
-{
-  "trackingCategoryID": "xxx-id-xxx",
-  "trackingOptionIDs": ["xxx-grant-id-xxx"],
-  "dateFrom": "2025-01-01",
-  "dateTo": "2025-03-31"
-}
-```
+**Returns:** Income and expenses specific to that grant.
 
 ---
 
 ## Project/Conference Analysis (Using "project" Tracking)
 
-**Tool:** `xero_get_tracking_profitability`
+**Tool:** `xero_get_profit_and_loss`
 
 **Conference spending example:**
 ```json
 {
+  "fromDate": "2025-11-01",
+  "toDate": "2025-11-30",
   "trackingCategoryID": "xxx-project-id-xxx",
-  "trackingOptionIDs": ["xxx-conference-id-xxx"],
-  "dateFrom": "2025-11-01",
-  "dateTo": "2025-11-30",
-  "invoiceTypes": ["ACCPAY"]
+  "trackingOptionID": "xxx-conference-id-xxx"
 }
 ```
 
-**Note:** `ACCPAY` = expenses, `ACCREC` = revenue
+**Returns:** Income and expenses for the specific project/conference.
+
+---
+
+## Account Transactions (General Ledger)
+
+**Tool:** `xero_get_account_transactions`
+
+**Purpose:** View detailed transactions for ANY account (Bank, Expense, Revenue, Liability, etc.).
+
+**Example (Accrued Wages - 2300):**
+```json
+{
+  "accountCode": "2300",
+  "dateFrom": "2025-01-01",
+  "dateTo": "2025-12-31"
+}
+```
+
+**Returns:** List of all transactions (invoices, bills, journals, payments) affecting the account.
 
 ---
 
@@ -190,8 +198,8 @@ Returns: trackingCategoryID and trackingOptionID (UUIDs)
 | Sales by product | `xero_list_invoices` | `groupBy: ["product"]`, `metrics: ["quantity", "total"]` |
 | Top customers | `xero_list_invoices` | `groupBy: ["customer"]` |
 | Monthly trend | `xero_list_invoices` | `groupBy: ["month"]` |
-| Grant profitability | `xero_get_tracking_profitability` | `trackingCategoryID: "Who Pays ID"` |
-| Conference spending | `xero_get_tracking_profitability` | `trackingCategoryID: "project ID"`, `invoiceTypes: ["ACCPAY"]` |
+| Grant profitability | `xero_get_profit_and_loss` | `trackingCategoryID`, `trackingOptionID` |
+| Conference spending | `xero_get_profit_and_loss` | `trackingCategoryID`, `trackingOptionID` |
 | P&L | `xero_get_profit_and_loss` | `fromDate`, `toDate` |
 | Balance sheet | `xero_get_balance_sheet` | `date: "YYYY-MM-DD"` |
 | Product margins | `xero_list_items` | None required |

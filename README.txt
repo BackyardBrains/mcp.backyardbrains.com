@@ -66,7 +66,7 @@ This returns all tracking categories with their IDs and options. You'll need the
   "metrics": ["total"]
 }
 ```
-Then filter invoices manually by looking at tracking data in line items, or use `xero_get_tracking_profitability` for grant-specific analysis.
+Then filter invoices manually by looking at tracking data in line items, or use `xero_get_profit_and_loss` for grant-specific analysis.
 
 ---
 
@@ -156,7 +156,7 @@ Then filter invoices manually by looking at tracking data in line items, or use 
 
 **Purpose:** See all revenue and expenses for each grant or funding source.
 
-**Tool:** `xero_get_tracking_profitability`
+**Tool:** `xero_get_profit_and_loss`
 
 **First, get the tracking category ID:**
 ```json
@@ -168,25 +168,22 @@ Find "Who Pays" and note its trackingCategoryId
 ```json
 {
   "trackingCategoryID": "xxx-tracking-category-id-xxx",
-  "dateFrom": "2025-01-01",
-  "dateTo": "2025-03-31",
-  "invoiceTypes": ["ACCREC", "ACCPAY"],
-  "includeUnassigned": false
+  "fromDate": "2025-01-01",
+  "toDate": "2025-03-31"
 }
 ```
 
 **What it returns:**
-- Revenue (ACCREC) and expenses (ACCPAY) broken down by each tracking option (each grant)
-- Shows lineAmount, taxAmount, total, and invoice count per grant
-- Sorted by total amount (highest first)
+- Income and Expenses for the grant
+- Net Profit/Loss for the grant
 
 **To analyze a specific grant only:**
 ```json
 {
   "trackingCategoryID": "xxx-tracking-category-id-xxx",
-  "trackingOptionIDs": ["xxx-grant-option-id-xxx"],
-  "dateFrom": "2025-01-01",
-  "dateTo": "2025-03-31"
+  "trackingOptionID": "xxx-grant-option-id-xxx",
+  "fromDate": "2025-01-01",
+  "toDate": "2025-03-31"
 }
 ```
 
@@ -196,29 +193,28 @@ Find "Who Pays" and note its trackingCategoryId
 
 **Purpose:** Track spending and revenue for specific projects (e.g., conferences).
 
-**Tool:** `xero_get_tracking_profitability`
+**Tool:** `xero_get_profit_and_loss`
 
 **Example Request (all projects):**
 ```json
 {
   "trackingCategoryID": "xxx-project-tracking-id-xxx",
-  "dateFrom": "2025-01-01",
-  "dateTo": "2025-12-31",
-  "invoiceTypes": ["ACCREC", "ACCPAY"]
+  "fromDate": "2025-01-01",
+  "toDate": "2025-12-31"
 }
 ```
 
 **Example Request (conference spending only):**
 ```json
+```json
 {
   "trackingCategoryID": "xxx-project-tracking-id-xxx",
-  "trackingOptionIDs": ["xxx-conference-option-id-xxx"],
-  "dateFrom": "2025-11-01",
-  "dateTo": "2025-11-30",
-  "invoiceTypes": ["ACCPAY"]
+  "trackingOptionID": "xxx-conference-option-id-xxx",
+  "fromDate": "2025-11-01",
+  "toDate": "2025-11-30"
 }
 ```
-Note: `ACCPAY` = expenses/bills, `ACCREC` = sales/revenue
+
 
 ---
 
@@ -289,7 +285,7 @@ Shows Q3 2025 compared to previous 4 quarters.
 
 ### 10. Account Transactions (Bank Accounts Only)
  
- **Purpose:** See all transactions affecting a specific **Bank Account**.
+ **Purpose:** See all transactions affecting a specific **Account** (Bank, Expense, Revenue, etc.).
 
 **Tool:** `xero_get_account_transactions`
 
@@ -298,8 +294,7 @@ Shows Q3 2025 compared to previous 4 quarters.
 {
   "accountCode": "4000",
   "dateFrom": "2025-01-01",
-  "dateTo": "2025-03-31",
-  "includeOpeningBalance": true
+  "dateTo": "2025-03-31"
 }
 ```
 
@@ -381,8 +376,8 @@ Calculate: `(SalesPrice - CostPrice) / SalesPrice * 100` for margin percentage.
 | **Sales by product** | `xero_list_invoices` | `groupBy: ["product"]`, `metrics: ["quantity", "total"]` |
 | **Top customers** | `xero_list_invoices` | `groupBy: ["customer"]`, `metrics: ["total"]` |
 | **Monthly sales trend** | `xero_list_invoices` | `groupBy: ["month"]`, `metrics: ["total"]` |
-| **Grant profitability** | `xero_get_tracking_profitability` | `trackingCategoryID: "Who Pays ID"` |
-| **Conference spending** | `xero_get_tracking_profitability` | `trackingCategoryID: "project ID"`, `trackingOptionIDs: ["conference ID"]` |
+| **Grant profitability** | `xero_get_profit_and_loss` | `trackingCategoryID`, `trackingOptionID` |
+| **Conference spending** | `xero_get_profit_and_loss` | `trackingCategoryID`, `trackingOptionID` |
 | **P&L for grant** | `xero_get_profit_and_loss` | `trackingCategoryID`, `trackingOptionID` |
 | **Overall P&L** | `xero_get_profit_and_loss` | `fromDate`, `toDate` |
 | **Balance sheet** | `xero_get_balance_sheet` | `date: "YYYY-MM-DD"` |
@@ -409,8 +404,7 @@ Calculate: `(SalesPrice - CostPrice) / SalesPrice * 100` for margin percentage.
    - `countInvoices` = number of invoices
 
 6. **Tracking profitability vs. P&L:**
-   - Use `xero_get_tracking_profitability` for multi-grant/project comparison
-   - Use `xero_get_profit_and_loss` with tracking filters for full financial statement detail
+   - Use `xero_get_profit_and_loss` with tracking filters for grant/project analysis
 
 7. **Pagination:** Most list tools support `page` parameter for large datasets.
 
@@ -423,7 +417,7 @@ Calculate: `(SalesPrice - CostPrice) / SalesPrice * 100` for margin percentage.
 - `xero_list_payments` - Payment records
 - `xero_list_accounts` - Chart of accounts
 - `xero_list_manual_journals` - Manual journals with flexible filtering
-- `xero_get_aged_payables` - Outstanding supplier bills (Requires `contactId`)
+
 
 ---
 
