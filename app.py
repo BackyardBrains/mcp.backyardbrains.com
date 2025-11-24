@@ -234,8 +234,14 @@ def _fetch_report_by_resource(accounting_api, tenant_id: str, resource: str, que
         "xero-tenant-id": tenant_id,
         "Accept": accounting_api.api_client.select_header_accept(["application/json"]),
     }
+
+    # xero-python 9.x no longer appends a trailing slash to the base URL. Ensure
+    # we send a correctly formatted resource path (e.g., "/Reports/..."), so
+    # the concatenation performed by `get_resource_url` produces a valid URL.
+    resource_path = resource if resource.startswith("/") else f"/{resource}"
+
     return accounting_api.api_client.call_api(
-        accounting_api.get_resource_url(resource),
+        accounting_api.get_resource_url(resource_path),
         "GET",
         {},
         query_params,
