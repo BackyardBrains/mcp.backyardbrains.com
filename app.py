@@ -4,6 +4,7 @@ load_dotenv()
 import logging
 import os
 import json
+import asyncio
 from typing import Dict, Any, Set, List, Tuple
 import base64
 from fastapi import FastAPI, Request, HTTPException
@@ -1189,8 +1190,20 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
         inv_kwargs["order"] = order
     if page:
         inv_kwargs["page"] = page
-    # Ensure line items are included for product-level aggregation
-    inv_kwargs["summary_only"] = False
+    # Optimize summary_only: default to True unless we specifically need line items
+    # We need line items if:
+    # 1. We are grouping by 'product'
+    # 2. We are filtering by item_codes or account_codes (which are on line items)
+    # 3. No grouping is requested AND include_line_items is True
+    need_line_items = False
+    if not group_by and include_line_items:
+        need_line_items = True
+    elif group_by and ("product" in group_by):
+        need_line_items = True
+    elif item_codes or account_codes:
+        need_line_items = True
+
+    inv_kwargs["summary_only"] = not need_line_items
     logger.info(f"Fetching invoices with filters: {inv_kwargs}")
     invoices = accounting_api.get_invoices(tenant_id, **inv_kwargs)
 
@@ -1218,18 +1231,30 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
         try:
             # Xero API might have limits on number of IDs, so let's fetch in batches
             batch_size = 50  # Reasonable batch size
+            loop = asyncio.get_running_loop()
+            tasks = []
+
+            def fetch_contacts_batch(ids):
+                return accounting_api.get_contacts(
+                    tenant_id,
+                    i_ds=ids,
+                    summary_only=False
+                )
+
             for i in range(0, len(contact_ids), batch_size):
                 batch_ids = contact_ids[i:i + batch_size]
-                try:
-                    contacts_response = accounting_api.get_contacts(
-                        tenant_id,
-                        i_ds=batch_ids,
-                        summary_only=False
-                    )
-                    for contact in contacts_response.contacts or []:
-                        full_contacts[contact.contact_id] = contact
-                except Exception as batch_error:
-                    logger.warning(f"Failed to fetch contact batch {i//batch_size + 1}: {batch_error}")
+                tasks.append(loop.run_in_executor(None, fetch_contacts_batch, batch_ids))
+            
+            # Wait for all batches
+            if tasks:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for res in results:
+                    if isinstance(res, Exception):
+                        logger.warning(f"Failed to fetch contact batch: {res}")
+                    else:
+                        for contact in res.contacts or []:
+                            full_contacts[contact.contact_id] = contact
+
         except Exception as e:
             logger.warning(f"Could not fetch full contact details: {e}")
             # Continue without full contacts - use embedded data only
@@ -1269,18 +1294,29 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
 
         # Fetch invoices in batches to avoid API limits
         batch_size = 10
+        loop = asyncio.get_running_loop()
+        tasks = []
+
+        def fetch_invoices_batch(ids):
+            return accounting_api.get_invoices(
+                tenant_id,
+                i_ds=ids,
+                summary_only=False
+            )
+
         for i in range(0, len(invoice_ids), batch_size):
             batch_ids = invoice_ids[i:i + batch_size]
-            try:
-                batch_invoices = accounting_api.get_invoices(
-                    tenant_id,
-                    i_ds=batch_ids,
-                    summary_only=False
-                )
-                for inv in batch_invoices.invoices or []:
-                    full_invoices[inv.invoice_id] = inv
-            except Exception as e:
-                logger.warning(f"Error fetching invoice batch {i//batch_size + 1}: {e}")
+            tasks.append(loop.run_in_executor(None, fetch_invoices_batch, batch_ids))
+        
+        # Wait for all batches
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for res in results:
+                if isinstance(res, Exception):
+                    logger.warning(f"Error fetching invoice batch: {res}")
+                else:
+                    for inv in res.invoices or []:
+                        full_invoices[inv.invoice_id] = inv
 
         # Replace sales list with full invoice details
         sales = [full_invoices.get(getattr(inv, "invoice_id"), inv) for inv in sales]
