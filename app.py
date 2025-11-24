@@ -447,8 +447,13 @@ def verify_jwt(token: str):
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Token validation error: {str(e)}")
 
-def require_auth(creds: HTTPAuthorizationCredentials = Depends(security)):
+def require_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
     if creds is None or creds.scheme.lower() != "bearer":
+        logger.warning(
+            "Missing/invalid Authorization header for %s %s",
+            request.method,
+            request.url.path,
+        )
         raise HTTPException(
             status_code=401,
             detail="Authorization required",
@@ -460,7 +465,16 @@ def require_auth(creds: HTTPAuthorizationCredentials = Depends(security)):
                 )
             },
         )
-    return verify_jwt(creds.credentials)
+    try:
+        return verify_jwt(creds.credentials)
+    except HTTPException as exc:
+        logger.warning(
+            "JWT validation failed for %s %s: %s",
+            request.method,
+            request.url.path,
+            exc.detail,
+        )
+        raise
 
 def encrypt_data(data: bytes) -> bytes:
     if not fernet:
@@ -524,6 +538,48 @@ def refresh_token_if_needed():
         save_tokens(new_tokens)
 
 app = FastAPI() # Define app here, after helpers but before routes
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Lightweight request logging to debug OAuth flows without leaking tokens."""
+
+    client_host = request.client.host if request.client else "unknown"
+    query_summary = dict(request.query_params)
+    auth_header = request.headers.get("authorization")
+
+    auth_summary = "none"
+    if auth_header:
+        parts = auth_header.split()
+        scheme = parts[0]
+        token = parts[1] if len(parts) > 1 else ""
+        token_hint = f"{token[:6]}...{len(token)}" if token else "missing"
+        auth_summary = f"{scheme} ({token_hint})"
+
+    logger.info(
+        "Incoming %s %s from %s query=%s auth=%s",
+        request.method,
+        request.url.path,
+        client_host,
+        query_summary,
+        auth_summary,
+    )
+
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        logger.exception(
+            "Request %s %s raised error: %s", request.method, request.url.path, exc
+        )
+        raise
+
+    logger.info(
+        "Completed %s %s with status %s",
+        request.method,
+        request.url.path,
+        response.status_code,
+    )
+    return response
 
 @app.get("/xero/auth")
 def xero_auth():
