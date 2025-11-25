@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 
-from utils import _rpc_result, _rpc_error, logger, safe_dumps
+from utils import MCP_PROTOCOL_VERSION, _rpc_result, _rpc_error, logger, safe_dumps
 from auth import require_metabase_auth
 
 # Environment variables
@@ -130,6 +130,20 @@ def get_metabase_client():
             logger.error(f"Failed to initialize Metabase client: {e}")
             return None
     return _metabase_client
+
+
+def _initialize_payload():
+    """Standard MCP initialize response for Metabase."""
+    return {
+        "protocolVersion": MCP_PROTOCOL_VERSION,
+        "capabilities": {
+            "tools": {"listChanged": False},
+            "resources": {"listChanged": False, "subscribe": False},
+            "prompts": {"listChanged": False},
+            "logging": {},
+        },
+        "serverInfo": {"name": "metabase-mcp", "version": "1.0.0"},
+    }
 
 def _list_metabase_tools():
     return {
@@ -415,7 +429,13 @@ async def handle_metabase_mcp(request: Request, payload: Dict = Depends(require_
     method = body.get("method")
     params = body.get("params", {})
 
-    if method == "tools/list":
+    if method == "initialize":
+        return _rpc_result(rpc_id, _initialize_payload())
+
+    elif method == "ping":
+        return _rpc_result(rpc_id, {"status": "ok"})
+
+    elif method == "tools/list":
         return _rpc_result(rpc_id, _list_metabase_tools())
     
     elif method == "tools/call":

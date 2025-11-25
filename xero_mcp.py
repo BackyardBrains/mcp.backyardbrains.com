@@ -18,7 +18,7 @@ from xero_python.api_client import ApiClient
 from xero_python.api_client.oauth2 import OAuth2Token
 from xero_python.api_client.configuration import Configuration
 
-from utils import safe_dumps, _as_float, _rpc_result, _rpc_error, logger
+from utils import MCP_PROTOCOL_VERSION, safe_dumps, _as_float, _rpc_result, _rpc_error, logger
 
 from auth import require_xero_auth
 
@@ -142,6 +142,20 @@ def get_xero_client():
 
     _xero_api_client = client
     return _xero_api_client
+
+
+def _initialize_payload():
+    """Standard MCP initialize response for Xero."""
+    return {
+        "protocolVersion": MCP_PROTOCOL_VERSION,
+        "capabilities": {
+            "tools": {"listChanged": False},
+            "resources": {"listChanged": False, "subscribe": False},
+            "prompts": {"listChanged": False},
+            "logging": {},
+        },
+        "serverInfo": {"name": "xero-mcp", "version": "1.0.0"},
+    }
 
 # ---- Argument helpers ----
 def _get_arg(args: Dict[str, Any], *names, default=None):
@@ -1498,7 +1512,13 @@ async def handle_mcp_request(request: Request, payload: Dict = Depends(require_x
     method = body.get("method")
     params = body.get("params", {})
 
-    if method == "tools/list":
+    if method == "initialize":
+        return _rpc_result(rpc_id, _initialize_payload())
+
+    elif method == "ping":
+        return _rpc_result(rpc_id, {"status": "ok"})
+
+    elif method == "tools/list":
         return _rpc_result(rpc_id, _list_tools_payload())
     
     elif method == "tools/call":
