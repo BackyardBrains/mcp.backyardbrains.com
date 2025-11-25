@@ -102,6 +102,7 @@ def verify_jwt(token: str):
             
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(last_error) if last_error else 'audience mismatch'}")
     except JWTError as e:
+        logger.warning("JWT decode failed: %s", e)
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Token validation error: {str(e)}")
