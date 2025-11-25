@@ -5,6 +5,7 @@ import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 # Load environment variables
@@ -13,6 +14,7 @@ load_dotenv()
 from utils import logger, MCP_PROTOCOL_VERSION
 import xero_mcp
 import metabase_mcp
+import oauth_endpoints
 
 # Initialize FastAPI app
 app = FastAPI(title="BYB Xero & Metabase MCP Server", version="1.0.0")
@@ -41,8 +43,13 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestLoggingMiddleware)
 
 # Mount Routers
+app.include_router(oauth_endpoints.router, tags=["oauth"])
 app.include_router(xero_mcp.router, prefix="/xero", tags=["xero"])
 app.include_router(metabase_mcp.router, prefix="/metabase", tags=["metabase"])
+
+# Serve static files (for token generation page)
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Global MCP Manifest
 @app.get("/.well-known/mcp.json")
