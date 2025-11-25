@@ -1439,14 +1439,19 @@ def xero_callback(code: str = None, state: str = None):
     if not code:
         raise HTTPException(status_code=400, detail="Missing code in callback")
     
-    oauth2_token = OAuth2Token(
-        client_id=XERO_CLIENT_ID,
-        client_secret=XERO_CLIENT_SECRET
-    )
-    
     try:
-        # Exchange code for token using the SDK method
-        token = oauth2_token.fetch_access_token(code=code, redirect_uri=XERO_REDIRECT_URI)
+        # Exchange code for token by calling Xero's token endpoint directly
+        token_url = "https://identity.xero.com/connect/token"
+        token_data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": XERO_REDIRECT_URI,
+        }
+        
+        auth_header = requests.auth.HTTPBasicAuth(XERO_CLIENT_ID, XERO_CLIENT_SECRET)
+        response = requests.post(token_url, data=token_data, auth=auth_header, timeout=10)
+        response.raise_for_status()
+        token = response.json()
     except Exception as e:
         logger.error(f"Xero token exchange failed: {e}")
         raise HTTPException(status_code=400, detail=f"Token exchange failed: {str(e)}")
