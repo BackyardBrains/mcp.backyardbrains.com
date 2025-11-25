@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Get Your MCP Token</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -15,27 +21,33 @@
             justify-content: center;
             padding: 20px;
         }
+
         .container {
             background: white;
             border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             max-width: 600px;
             width: 100%;
             padding: 40px;
         }
+
         h1 {
             color: #333;
             margin-bottom: 10px;
             font-size: 28px;
         }
+
         .subtitle {
             color: #666;
             margin-bottom: 30px;
             font-size: 14px;
         }
-        .login-section, .token-section {
+
+        .login-section,
+        .token-section {
             text-align: center;
         }
+
         .btn {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -49,13 +61,16 @@
             display: inline-block;
             text-decoration: none;
         }
+
         .btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
         }
+
         .btn:active {
             transform: translateY(0);
         }
+
         .token-box {
             background: #f7f9fc;
             border: 2px solid #e1e8ed;
@@ -70,13 +85,16 @@
             overflow-y: auto;
             text-align: left;
         }
+
         .copy-btn {
             background: #10b981;
             margin-top: 10px;
         }
+
         .copy-btn:hover {
             box-shadow: 0 10px 20px rgba(16, 185, 129, 0.4);
         }
+
         .info {
             background: #fef3c7;
             border-left: 4px solid #f59e0b;
@@ -87,7 +105,11 @@
             text-align: left;
             color: #92400e;
         }
-        .hidden { display: none; }
+
+        .hidden {
+            display: none;
+        }
+
         .user-info {
             background: #dbeafe;
             border-radius: 8px;
@@ -96,15 +118,18 @@
             font-size: 14px;
             color: #1e40af;
         }
+
         .scopes {
             margin-top: 15px;
             text-align: left;
         }
+
         .scopes h3 {
             font-size: 14px;
             color: #666;
             margin-bottom: 8px;
         }
+
         .scope-tag {
             display: inline-block;
             background: #e0e7ff;
@@ -117,6 +142,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>🔐 MCP Access Token</h1>
@@ -127,23 +153,24 @@
                 Click below to log in with your Backyard Brains account and generate your personal MCP access token.
             </p>
             <button id="loginBtn" class="btn">Login with Auth0</button>
-            
+
             <div class="info" style="margin-top: 30px;">
                 <strong>What is this?</strong><br>
-                This page generates a personal bearer token you can use in Antigravity's MCP configuration. Your token will only have the permissions assigned to your account.
+                This page generates a personal bearer token you can use in Antigravity's MCP configuration. Your token
+                will only have the permissions assigned to your account.
             </div>
         </div>
 
         <div id="tokenSection" class="token-section hidden">
             <div id="userInfo" class="user-info"></div>
-            
+
             <h2 style="font-size: 18px; margin-bottom: 10px; color: #333;">Your Access Token</h2>
             <div id="tokenBox" class="token-box"></div>
-            
+
             <button id="copyBtn" class="btn copy-btn">📋 Copy Token</button>
-            
+
             <div id="scopesContainer" class="scopes"></div>
-            
+
             <div class="info">
                 <strong>How to use:</strong><br>
                 1. Copy the token above<br>
@@ -161,7 +188,7 @@
         const AUTH0_DOMAIN = 'login.backyardbrains.com';
         const AUTH0_CLIENT_ID = 'XBgVrhllXZi1IR3o3TiFAI6nFgwU8CYU';
         const AUTH0_AUDIENCE = 'https://mcp.backyardbrains.com/xero';
-        
+
         let auth0Client;
 
         async function init() {
@@ -175,16 +202,25 @@
                 }
             });
 
-            // Check if returning from Auth0
-            if (window.location.search.includes('code=')) {
-                await auth0Client.handleRedirectCallback();
-                window.history.replaceState({}, document.title, '/get-token.html');
-            }
+            try {
+                if (window.location.search.includes('code=')) {
+                    await auth0Client.handleRedirectCallback();
+                    window.history.replaceState({}, document.title, '/get-token.html');
+                }
 
-            // Check if user is authenticated
-            const isAuthenticated = await auth0Client.isAuthenticated();
-            if (isAuthenticated) {
-                await showToken();
+                const isAuthenticated = await auth0Client.isAuthenticated();
+                if (isAuthenticated) {
+                    await showToken();
+                }
+            } catch (e) {
+                console.error('Auth0 init/redirect error:', e);
+                const box = document.getElementById('tokenBox');
+                if (box) {
+                    box.textContent =
+                        'Auth error: ' +
+                        (e.error || '') + ' ' +
+                        (e.error_description || '');
+                }
             }
         }
 
@@ -212,40 +248,54 @@
         });
 
         async function showToken() {
-            const user = await auth0Client.getUser();
-            const token = await auth0Client.getTokenSilently();
-            const claims = await auth0Client.getIdTokenClaims();
+            try {
+                const user = await auth0Client.getUser();
+                const token = await auth0Client.getTokenSilently();
 
-            // Show user info
-            document.getElementById('userInfo').innerHTML = `
-                Logged in as <strong>${user.email || user.name}</strong>
-            `;
+                // Show user info
+                document.getElementById('userInfo').innerHTML = `
+                    Logged in as <strong>${user.email || user.name}</strong>
+                `;
 
-            // Show token
-            document.getElementById('tokenBox').textContent = token;
+                // Show token
+                document.getElementById('tokenBox').textContent = token;
 
-            // Parse token to show scopes
-            const tokenParts = token.split('.');
-            const payload = JSON.parse(atob(tokenParts[1]));
-            
-            if (payload.permissions || payload.scope) {
-                const scopes = payload.permissions || (payload.scope ? payload.scope.split(' ') : []);
-                const mcpScopes = scopes.filter(s => s.startsWith('mcp:'));
-                
-                if (mcpScopes.length > 0) {
-                    document.getElementById('scopesContainer').innerHTML = `
-                        <h3>Your Permissions:</h3>
-                        ${mcpScopes.map(s => `<span class="scope-tag">${s}</span>`).join('')}
-                    `;
+                // Parse token to show scopes
+                const tokenParts = token.split('.');
+                const payload = JSON.parse(atob(tokenParts[1]));
+
+                if (payload.permissions || payload.scope) {
+                    const scopes = payload.permissions || (payload.scope ? payload.scope.split(' ') : []);
+                    const mcpScopes = scopes.filter(s => s.startsWith('mcp:'));
+
+                    if (mcpScopes.length > 0) {
+                        document.getElementById('scopesContainer').innerHTML = `
+                            <h3>Your Permissions:</h3>
+                            ${mcpScopes.map(s => `<span class="scope-tag">${s}</span>`).join('')}
+                        `;
+                    }
+                }
+
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('tokenSection').classList.remove('hidden');
+            } catch (e) {
+                console.error('getTokenSilently failed:', e);
+
+                document.getElementById('loginSection').classList.remove('hidden');
+                document.getElementById('tokenSection').classList.add('hidden');
+
+                const box = document.getElementById('tokenBox');
+                if (box) {
+                    box.textContent =
+                        'Error getting token: ' +
+                        (e.error || '') + ' ' +
+                        (e.error_description || '');
                 }
             }
-
-            // Toggle sections
-            document.getElementById('loginSection').classList.add('hidden');
-            document.getElementById('tokenSection').classList.remove('hidden');
         }
 
         init();
     </script>
 </body>
+
 </html>
