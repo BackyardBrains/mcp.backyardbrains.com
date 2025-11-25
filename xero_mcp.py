@@ -1420,14 +1420,18 @@ def xero_healthz():
 @router.get("/auth")
 def xero_auth():
     """Redirect to Xero authorization page"""
-    oauth2_token = OAuth2Token(
-        client_id=XERO_CLIENT_ID,
-        client_secret=XERO_CLIENT_SECRET
-    )
-    authorization_url = oauth2_token.generate_url(
-        redirect_uri=XERO_REDIRECT_URI,
-        scope=XERO_SCOPES.split(" ") if XERO_SCOPES else []
-    )
+    # Manually construct the OAuth2 authorization URL
+    # Xero OAuth2 endpoint
+    auth_url = "https://login.xero.com/identity/connect/authorize"
+    
+    params = {
+        "response_type": "code",
+        "client_id": XERO_CLIENT_ID,
+        "redirect_uri": XERO_REDIRECT_URI,
+        "scope": XERO_SCOPES,
+    }
+    
+    authorization_url = f"{auth_url}?{urlencode(params)}"
     return RedirectResponse(url=authorization_url)
 
 @router.get("/callback")
@@ -1441,11 +1445,8 @@ def xero_callback(code: str = None, state: str = None):
     )
     
     try:
-        # Exchange code for token
-        token = oauth2_token.generate_access_token(
-            code=code,
-            redirect_uri=XERO_REDIRECT_URI
-        )
+        # Exchange code for token using the SDK method
+        token = oauth2_token.fetch_access_token(code=code, redirect_uri=XERO_REDIRECT_URI)
     except Exception as e:
         logger.error(f"Xero token exchange failed: {e}")
         raise HTTPException(status_code=400, detail=f"Token exchange failed: {str(e)}")
