@@ -1405,6 +1405,14 @@ def xero_index():
         },
     }
 
+@router.post("/")
+async def xero_index_post(request: Request, payload: Dict = Depends(require_xero_auth)):
+    """
+    Handle MCP JSON-RPC requests at the root /xero/ endpoint.
+    Delegates to the same logic as /xero/mcp for convenience.
+    """
+    return await handle_mcp_request(request, payload)
+
 @router.get("/healthz")
 def xero_healthz():
     return {"status": "ok", "service": "xero"}

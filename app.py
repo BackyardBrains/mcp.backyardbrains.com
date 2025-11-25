@@ -88,10 +88,7 @@ async def mcp_manifest():
         "serverInfo": {
             "name": "xero-metabase-mcp",
             "version": "1.0.0"
-        },
-        # We can optionally list tools/resources here if the client supports it in manifest,
-        # but typically they are discovered via tools/list and resources/list.
-        # However, some MCP clients might look for them here or just the capabilities.
+        }
     }
 
 # OAuth 2.0 Authorization Server Metadata (RFC 8414)

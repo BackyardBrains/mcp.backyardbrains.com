@@ -27,6 +27,14 @@ def metabase_index():
         },
     }
 
+@router.post("/")
+async def metabase_index_post(request: Request, payload: Dict = Depends(require_metabase_auth)):
+    """
+    Handle MCP JSON-RPC requests at the root /metabase/ endpoint.
+    Delegates to the same logic as /metabase/mcp for convenience.
+    """
+    return await handle_metabase_mcp(request, payload)
+
 @router.get("/healthz")
 def metabase_healthz():
     return {"status": "ok", "service": "metabase"}
