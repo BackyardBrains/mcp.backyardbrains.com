@@ -82,6 +82,17 @@ def save_tenant_id(tenant_id: str):
     with open(TENANT_FILE, 'w') as f:
         f.write(tenant_id)
 
+
+def safe_exception_message(exc: Exception) -> str:
+    """Return a safe string representation of an exception without triggering nested errors."""
+    try:
+        return str(exc)
+    except Exception:
+        try:
+            return exc.__class__.__name__
+        except Exception:
+            return "UnknownException"
+
 def refresh_token_if_needed():
     tokens = load_tokens()
     if not tokens:
@@ -432,6 +443,9 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
 
     if where:
         inv_kwargs["where"] = where
+        if inv_kwargs["summary_only"]:
+            logger.info("Disabling summary_only because filters are present (unsupported by Xero)")
+            inv_kwargs["summary_only"] = False
     logger.info(f"Fetching invoices with filters: {inv_kwargs}")
     invoices = accounting_api.get_invoices(tenant_id, **inv_kwargs)
 
@@ -1328,7 +1342,7 @@ async def handle_tool_call(name: str, args: Dict):
                 logger.exception("Failed to fetch Account Transactions report")
                 return {
                     "isError": True,
-                    "content": [{"type": "text", "text": f"Failed to fetch report: {str(e)}"}],
+                    "content": [{"type": "text", "text": f"Failed to fetch report: {safe_exception_message(e)}"}],
                     "metadata": {"reason": "reportError"}
                 }
         elif name == "xero_list_items":
@@ -1405,7 +1419,7 @@ async def handle_tool_call(name: str, args: Dict):
             "content": [
                 {
                     "type": "text",
-                    "text": f"Error while executing {name}: {str(e)}"
+                    "text": f"Error while executing {name}: {safe_exception_message(e)}"
                 }
             ],
             "metadata": {"reason": "exception", "exceptionType": type(e).__name__}
@@ -1478,7 +1492,7 @@ def xero_callback(code: str = None, state: str = None):
         token = response.json()
     except Exception as e:
         logger.error(f"Xero token exchange failed: {e}")
-        raise HTTPException(status_code=400, detail=f"Token exchange failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Token exchange failed: {safe_exception_message(e)}")
 
     if not token:
         raise HTTPException(status_code=400, detail="Failed to retrieve token")
