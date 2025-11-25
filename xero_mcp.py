@@ -403,6 +403,7 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
     where = _join_where(
         _xero_where_date_range(date_from, date_to),
         _xero_where_contact(contact_id),
+        'Type=="ACCREC"',
         ("(" + " || ".join([f'Status=="{s}"' for s in statuses]) + ")") if isinstance(statuses, list) and statuses else ""
     )
 
@@ -427,9 +428,10 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
     invoices = accounting_api.get_invoices(tenant_id, **inv_kwargs)
 
     inv_objs = invoices.invoices or []
-    logger.info(f"Found {len(inv_objs)} total invoices")
+    logger.info(f"Found {len(inv_objs)} total invoices (pre-filter)")
 
     sales_invoices = [inv for inv in inv_objs if getattr(inv, "type", None) == "ACCREC"]
+    logger.info(f"Filtered to {len(sales_invoices)} sales invoices (ACCREC)")
     
     contact_ids = list(set(
         getattr(getattr(inv, "contact", None), "contact_id", None)
@@ -478,16 +480,16 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
 
     if not group_by:
         if include_line_items:
-            return {"content": [{"type": "text", "text": safe_dumps([inv.to_dict() for inv in inv_objs])}]}
+            return {"content": [{"type": "text", "text": safe_dumps([inv.to_dict() for inv in sales_invoices])}]}
         else:
             slim = []
-            for inv in inv_objs:
+            for inv in sales_invoices:
                 d = inv.to_dict()
                 d.pop("line_items", None)
                 slim.append(d)
             return {"content": [{"type": "text", "text": safe_dumps(slim)}]}
 
-    sales = [inv for inv in inv_objs if getattr(inv, "type", None) == "ACCREC"]
+    sales = sales_invoices
 
     if "product" in group_by:
         full_invoices = {}
