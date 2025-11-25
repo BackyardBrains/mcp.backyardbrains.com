@@ -94,6 +94,112 @@ async def mcp_manifest():
         # However, some MCP clients might look for them here or just the capabilities.
     }
 
+# OAuth 2.0 Authorization Server Metadata (RFC 8414)
+@app.get("/.well-known/oauth-authorization-server")
+@app.get("/.well-known/oauth-authorization-server/xero")
+@app.get("/.well-known/oauth-authorization-server/metabase")
+async def oauth_authorization_server(request: Request):
+    """
+    OAuth 2.0 Authorization Server Metadata endpoint.
+    Points to Auth0 as the authorization server.
+    """
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    if not auth0_domain:
+        return Response(status_code=404)
+    
+    base_url = f"https://{auth0_domain}"
+    
+    return {
+        "issuer": f"{base_url}/",
+        "authorization_endpoint": f"{base_url}/authorize",
+        "token_endpoint": f"{base_url}/oauth/token",
+        "userinfo_endpoint": f"{base_url}/userinfo",
+        "jwks_uri": f"{base_url}/.well-known/jwks.json",
+        "registration_endpoint": f"{base_url}/oidc/register",
+        "scopes_supported": [
+            "openid",
+            "profile",
+            "email",
+            "mcp:read",
+            "mcp:write",
+            "mcp:read:xero",
+            "mcp:write:xero",
+            "mcp:read:metabase",
+            "mcp:write:metabase"
+        ],
+        "response_types_supported": [
+            "code",
+            "token",
+            "id_token",
+            "code token",
+            "code id_token",
+            "token id_token",
+            "code token id_token"
+        ],
+        "grant_types_supported": [
+            "authorization_code",
+            "implicit",
+            "client_credentials",
+            "refresh_token"
+        ],
+        "token_endpoint_auth_methods_supported": [
+            "client_secret_basic",
+            "client_secret_post"
+        ]
+    }
+
+# OAuth 2.0 Protected Resource Metadata (RFC 9470)
+@app.get("/.well-known/oauth-protected-resource")
+async def oauth_protected_resource_root():
+    """
+    OAuth 2.0 Protected Resource Metadata for the root server.
+    """
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    if not auth0_domain:
+        return Response(status_code=404)
+    
+    return {
+        "resource": "https://mcp.backyardbrains.com/",
+        "authorization_servers": [f"https://{auth0_domain}/"],
+        "scopes_supported": ["mcp:read", "mcp:write"],
+        "bearer_methods_supported": ["header"],
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html"
+    }
+
+@app.get("/.well-known/oauth-protected-resource/xero")
+async def oauth_protected_resource_xero():
+    """
+    OAuth 2.0 Protected Resource Metadata for Xero MCP endpoints.
+    """
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    if not auth0_domain:
+        return Response(status_code=404)
+    
+    return {
+        "resource": "https://mcp.backyardbrains.com/xero/",
+        "authorization_servers": [f"https://{auth0_domain}/"],
+        "scopes_supported": ["mcp:read:xero", "mcp:write:xero"],
+        "bearer_methods_supported": ["header"],
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html"
+    }
+
+@app.get("/.well-known/oauth-protected-resource/metabase")
+async def oauth_protected_resource_metabase():
+    """
+    OAuth 2.0 Protected Resource Metadata for Metabase MCP endpoints.
+    """
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    if not auth0_domain:
+        return Response(status_code=404)
+    
+    return {
+        "resource": "https://mcp.backyardbrains.com/metabase/",
+        "authorization_servers": [f"https://{auth0_domain}/"],
+        "scopes_supported": ["mcp:read:metabase", "mcp:write:metabase"],
+        "bearer_methods_supported": ["header"],
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html"
+    }
+
 # Auth0 OIDC Discovery Passthrough (for Xero auth flow mostly)
 @app.get("/.well-known/openid-configuration")
 async def openid_configuration():
