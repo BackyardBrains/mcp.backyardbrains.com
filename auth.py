@@ -10,6 +10,8 @@ from utils import logger
 # Auth0 configuration
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
 AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")
+AUTH0_XERO_AUDIENCE = os.environ.get("AUTH0_XERO_AUDIENCE", "https://mcp.backyardbrains.com/xero")
+AUTH0_METABASE_AUDIENCE = os.environ.get("AUTH0_METABASE_AUDIENCE", "https://mcp.backyardbrains.com/metabase")
 AUTH0_CLIENT_ID = os.environ.get("AUTH0_CLIENT_ID")
 AUTH0_JWKS_URL = os.environ.get("AUTH0_JWKS_URL")
 AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/" if AUTH0_DOMAIN else None
@@ -35,7 +37,27 @@ def get_jwks():
             raise HTTPException(status_code=500, detail="Failed to fetch JWKS")
     return _jwks_cache
 
-def verify_jwt(token: str):
+def _gather_audiences(explicit_audiences: Optional[list[str]] = None) -> list[str]:
+    """Return unique, non-empty audiences to try when validating tokens."""
+    audiences = []
+    if explicit_audiences:
+        audiences.extend([aud for aud in explicit_audiences if aud])
+    else:
+        audiences.extend([
+            AUTH0_XERO_AUDIENCE,
+            AUTH0_METABASE_AUDIENCE,
+            AUTH0_AUDIENCE,  # Legacy fallback
+        ])
+    # Preserve order while removing duplicates/empties
+    seen = set()
+    unique_audiences = []
+    for aud in audiences:
+        if aud and aud not in seen:
+            seen.add(aud)
+            unique_audiences.append(aud)
+    return unique_audiences
+
+def verify_jwt(token: str, audiences: Optional[list[str]] = None):
     try:
         jwks = get_jwks()
         unverified_header = jwt.get_unverified_header(token)
@@ -55,20 +77,20 @@ def verify_jwt(token: str):
         
         last_error = None
         
-        # Try validating with Audience
-        if AUTH0_AUDIENCE:
+        # Try validating with configured audiences
+        for audience in _gather_audiences(audiences):
             try:
                 payload = jwt.decode(
                     token,
                     rsa_key,
                     algorithms=ALGORITHMS,
-                    audience=AUTH0_AUDIENCE,
+                    audience=audience,
                     issuer=AUTH0_ISSUER,
                     options={"verify_at_hash": False}
                 )
                 return payload
             except JWTError as e:
-                logger.warning("JWT decode with audience %s failed: %s", AUTH0_AUDIENCE, e)
+                logger.warning("JWT decode with audience %s failed: %s", audience, e)
                 last_error = e
         
         # Try validating with Client ID (sometimes used as audience)
@@ -167,7 +189,7 @@ def require_xero_auth(request: Request, creds: HTTPAuthorizationCredentials = De
             },
         )
     try:
-        payload = verify_jwt(creds.credentials)
+        payload = verify_jwt(creds.credentials, audiences=[AUTH0_XERO_AUDIENCE])
         if not check_permissions(payload, ["mcp:read:xero", "mcp:write:xero"]):
             logger.warning("Insufficient permissions for Xero MCP access for %s %s", request.method, request.url.path)
             raise HTTPException(
@@ -197,7 +219,7 @@ def require_metabase_auth(request: Request, creds: HTTPAuthorizationCredentials 
             },
         )
     try:
-        payload = verify_jwt(creds.credentials)
+        payload = verify_jwt(creds.credentials, audiences=[AUTH0_METABASE_AUDIENCE])
         if not check_permissions(payload, ["mcp:read:metabase", "mcp:write:metabase"]):
             logger.warning("Insufficient permissions for Metabase MCP access for %s %s", request.method, request.url.path)
             raise HTTPException(
