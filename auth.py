@@ -68,6 +68,7 @@ def verify_jwt(token: str):
                 )
                 return payload
             except JWTError as e:
+                logger.warning("JWT decode with audience %s failed: %s", AUTH0_AUDIENCE, e)
                 last_error = e
         
         # Try validating with Client ID (sometimes used as audience)
