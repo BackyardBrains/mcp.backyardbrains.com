@@ -20,10 +20,14 @@ from xero_python.api_client.configuration import Configuration
 
 from utils import safe_dumps, _as_float, _rpc_result, _rpc_error, logger
 
+from auth import require_xero_auth
+
 # Environment variables
 XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID")
 XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET")
 XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI")
+# XERO_SCOPES is now imported or we can keep it here if it's Xero specific but auth.py doesn't have it.
+# Wait, auth.py is generic. XERO_SCOPES should stay here.
 XERO_SCOPES = os.environ.get("XERO_SCOPES")
 
 # Encryption setup
@@ -34,109 +38,6 @@ TENANT_FILE = "tenant_id.txt"
 if not TOKEN_ENC_KEY:
     logger.warning("TOKEN_ENC_KEY not set; tokens will not be encrypted!")
 fernet = Fernet(TOKEN_ENC_KEY) if TOKEN_ENC_KEY else None
-
-# Auth0 configuration
-AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
-AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")
-AUTH0_CLIENT_ID = os.environ.get("AUTH0_CLIENT_ID")
-AUTH0_CLIENT_SECRET = os.environ.get("AUTH0_CLIENT_SECRET")
-AUTH0_ISSUER = f"https://{AUTH0_DOMAIN}/" if AUTH0_DOMAIN else None
-JWKS_URL = f"{AUTH0_ISSUER}.well-known/jwks.json" if AUTH0_ISSUER else None
-ALGORITHMS = ["RS256"]
-security = HTTPBearer(auto_error=False)
-_jwks_cache = None
-
-def get_jwks():
-    global _jwks_cache
-    if _jwks_cache is None:
-        if not JWKS_URL:
-            raise HTTPException(status_code=500, detail="Auth not configured")
-        resp = requests.get(JWKS_URL, timeout=5)
-        resp.raise_for_status()
-        _jwks_cache = resp.json()
-    return _jwks_cache
-
-def verify_jwt(token: str):
-    try:
-        jwks = get_jwks()
-        unverified_header = jwt.get_unverified_header(token)
-        rsa_key = {}
-        for key in jwks.get("keys", []):
-            if key.get("kid") == unverified_header.get("kid"):
-                rsa_key = {
-                    "kty": key.get("kty"),
-                    "kid": key.get("kid"),
-                    "use": key.get("use"),
-                    "n": key.get("n"),
-                    "e": key.get("e"),
-                }
-                break
-        if not rsa_key:
-            raise HTTPException(status_code=401, detail="Invalid token: key not found")
-        last_error = None
-        if AUTH0_AUDIENCE:
-            try:
-                payload = jwt.decode(
-                    token,
-                    rsa_key,
-                    algorithms=ALGORITHMS,
-                    audience=AUTH0_AUDIENCE,
-                    issuer=AUTH0_ISSUER,
-                    options={"verify_at_hash": False}
-                )
-                return payload
-            except JWTError as e:
-                last_error = e
-        if AUTH0_CLIENT_ID:
-            try:
-                payload = jwt.decode(
-                    token,
-                    rsa_key,
-                    algorithms=ALGORITHMS,
-                    audience=AUTH0_CLIENT_ID,
-                    issuer=AUTH0_ISSUER,
-                    options={"verify_at_hash": False}
-                )
-                return payload
-            except JWTError as e:
-                last_error = e
-        try:
-            payload = jwt.decode(
-                token,
-                rsa_key,
-                algorithms=ALGORITHMS,
-                issuer=AUTH0_ISSUER,
-                options={"verify_aud": False, "verify_at_hash": False}
-            )
-            if AUTH0_CLIENT_ID and payload.get("azp") == AUTH0_CLIENT_ID:
-                return payload
-        except JWTError as e:
-            last_error = e
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(last_error) if last_error else 'audience mismatch'}")
-    except JWTError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Token validation error: {str(e)}")
-
-def require_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
-    if creds is None or creds.scheme.lower() != "bearer":
-        logger.warning("Missing/invalid Authorization header for %s %s", request.method, request.url.path)
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization required",
-            headers={
-                "WWW-Authenticate": (
-                    'Bearer '
-                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/xero", '
-                    'scope="mcp:read:xero"'
-                )
-            },
-        )
-    try:
-        return verify_jwt(creds.credentials)
-    except HTTPException as exc:
-        logger.warning("JWT validation failed for %s %s: %s", request.method, request.url.path, exc.detail)
-        raise
 
 def encrypt_data(data: bytes) -> bytes:
     if not fernet:
@@ -1535,7 +1436,7 @@ def xero_callback(code: str = None, state: str = None):
         return JSONResponse(content={"status": "success", "message": "Xero authentication successful, but failed to auto-fetch tenant ID. It will be fetched on first use if possible."})
 
 @router.post("/mcp")
-async def handle_mcp_request(request: Request, payload: Dict = Depends(require_auth)):
+async def handle_mcp_request(request: Request, payload: Dict = Depends(require_xero_auth)):
     """
     Standard MCP endpoint for Xero tools.
     JSON-RPC 2.0
