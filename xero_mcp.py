@@ -408,13 +408,11 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
     )
 
     inv_kwargs = {}
-    if where:
-        inv_kwargs["where"] = where
     if order:
         inv_kwargs["order"] = order
     if page:
         inv_kwargs["page"] = page
-    
+
     need_line_items = False
     if not group_by and include_line_items:
         need_line_items = True
@@ -424,6 +422,16 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
         need_line_items = True
 
     inv_kwargs["summary_only"] = not need_line_items
+
+    where = _join_where(
+        _xero_where_date_range(date_from, date_to),
+        _xero_where_contact(contact_id),
+        "" if inv_kwargs["summary_only"] else 'Type=="ACCREC"',
+        ("(" + " || ".join([f'Status=="{s}"' for s in statuses]) + ")") if isinstance(statuses, list) and statuses else ""
+    )
+
+    if where:
+        inv_kwargs["where"] = where
     logger.info(f"Fetching invoices with filters: {inv_kwargs}")
     invoices = accounting_api.get_invoices(tenant_id, **inv_kwargs)
 
