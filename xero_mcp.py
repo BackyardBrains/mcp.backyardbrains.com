@@ -400,6 +400,13 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
     account_codes = _get_arg(args, "accountCodes", "account_codes")
     include_line_items = bool(_get_arg(args, "includeLineItems", "include_line_items", default=True))
 
+    where = _join_where(
+        _xero_where_date_range(date_from, date_to),
+        _xero_where_contact(contact_id),
+        'Type=="ACCREC"',
+        ("(" + " || ".join([f'Status=="{s}"' for s in statuses]) + ")") if isinstance(statuses, list) and statuses else ""
+    )
+
     inv_kwargs = {}
     if order:
         inv_kwargs["order"] = order
