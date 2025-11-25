@@ -164,7 +164,8 @@ async def oauth_protected_resource_root():
     return {
         "resource": audience,
         "authorization_servers": [f"https://{auth0_domain}/"],
-        "scopes_supported": ["mcp:read", "mcp:write"],
+        "scopes_supported": ["mcp:read:xero", "mcp:write:xero",
+            "mcp:read:metabase", "mcp:write:metabase"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
     }
