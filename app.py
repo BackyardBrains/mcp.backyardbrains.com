@@ -49,6 +49,14 @@ app.include_router(metabase_mcp.router, prefix="/metabase", tags=["metabase"])
 if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
+
+@app.get("/")
+async def root():
+    """Simple landing endpoint that points to the static helper page."""
+    if os.path.exists("static/get-token.html"):
+        return Response(status_code=307, headers={"Location": "/static/get-token.html"})
+    return {"status": "ok"}
+
 # Global MCP Manifest
 @app.get("/.well-known/mcp.json")
 async def mcp_manifest():

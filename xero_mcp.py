@@ -1392,6 +1392,23 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
+@router.get("/")
+def xero_index():
+    """Basic index endpoint so /xero/ doesn't 404 behind nginx."""
+    return {
+        "service": "xero-mcp",
+        "status": "ok",
+        "endpoints": {
+            "health": "/xero/healthz",
+            "mcp": "/xero/mcp",
+            "auth": "/xero/auth",
+        },
+    }
+
+@router.get("/healthz")
+def xero_healthz():
+    return {"status": "ok", "service": "xero"}
+
 @router.get("/auth")
 def xero_auth():
     client = get_xero_client()
