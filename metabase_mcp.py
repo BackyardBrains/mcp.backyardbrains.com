@@ -132,6 +132,36 @@ def get_metabase_client():
     return _metabase_client
 
 
+def _coerce_list_response(response: Any, data_keys: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """
+    Normalize Metabase API responses to a list of dictionaries.
+
+    Some Metabase endpoints (notably when using the API key) wrap results in a
+    top-level object such as {"data": [...]}. Previously we assumed the raw
+    response was always a list, which caused attribute errors when iterating
+    over string keys. This helper extracts common list containers and provides a
+    consistent structure for downstream processing.
+    """
+
+    if data_keys is None:
+        data_keys = ["data", "results", "items"]
+
+    if isinstance(response, list):
+        return response
+
+    if isinstance(response, dict):
+        for key in data_keys:
+            value = response.get(key)
+            if isinstance(value, list):
+                return value
+        # If it's a dict but doesn't contain a list payload, wrap it for consistency
+        return [response]
+
+    # Unknown format – return empty list to avoid downstream crashes
+    logger.warning("Unexpected Metabase response type: %s", type(response).__name__)
+    return []
+
+
 def _initialize_payload():
     """Standard MCP initialize response for Metabase."""
     return {
@@ -255,7 +285,7 @@ async def handle_metabase_tool_call(name: str, args: Dict):
 
     try:
         if name == "metabase_list_dashboards":
-            dashboards = client.request("GET", "/api/dashboard")
+            dashboards = _coerce_list_response(client.request("GET", "/api/dashboard"))
             # Simplify output
             simple_dashboards = [
                 {"id": d.get("id"), "name": d.get("name"), "description": d.get("description")}
@@ -264,7 +294,7 @@ async def handle_metabase_tool_call(name: str, args: Dict):
             return {"content": [{"type": "text", "text": safe_dumps(simple_dashboards)}]}
 
         elif name == "metabase_list_databases":
-            databases = client.request("GET", "/api/database")
+            databases = _coerce_list_response(client.request("GET", "/api/database"))
             simple_dbs = [
                 {"id": d.get("id"), "name": d.get("name"), "engine": d.get("engine")}
                 for d in databases
@@ -272,7 +302,7 @@ async def handle_metabase_tool_call(name: str, args: Dict):
             return {"content": [{"type": "text", "text": safe_dumps(simple_dbs)}]}
 
         elif name == "metabase_list_cards":
-            cards = client.request("GET", "/api/card")
+            cards = _coerce_list_response(client.request("GET", "/api/card"))
             simple_cards = [
                 {"id": c.get("id"), "name": c.get("name"), "collection_id": c.get("collection_id"), "database_id": c.get("database_id")}
                 for c in cards
@@ -357,11 +387,11 @@ def _list_metabase_resources():
     client = get_metabase_client()
     if not client:
         return {"resources": []}
-    
+
     resources = []
     try:
         # Dashboards
-        dashboards = client.request("GET", "/api/dashboard")
+        dashboards = _coerce_list_response(client.request("GET", "/api/dashboard"))
         for d in dashboards:
             resources.append({
                 "uri": f"metabase://dashboard/{d['id']}",
@@ -369,9 +399,9 @@ def _list_metabase_resources():
                 "description": d.get('description', 'Metabase Dashboard'),
                 "mimeType": "application/json"
             })
-        
+
         # Cards
-        cards = client.request("GET", "/api/card")
+        cards = _coerce_list_response(client.request("GET", "/api/card"))
         for c in cards:
             resources.append({
                 "uri": f"metabase://card/{c['id']}",
