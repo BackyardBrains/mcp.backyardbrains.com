@@ -16,6 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 load_dotenv()
 
 from utils import logger, MCP_PROTOCOL_VERSION
+from auth import AUTH0_AUDIENCE, AUTH0_XERO_AUDIENCE, AUTH0_METABASE_AUDIENCE
 import xero_mcp
 import metabase_mcp
 
@@ -65,6 +66,11 @@ async def root():
     """Simple landing endpoint that points to the token generation page."""
     return RedirectResponse(url="/auth/token", status_code=307)
 
+# Audience helpers
+def _default_audience():
+    """Choose the primary audience to use for the combined landing endpoints."""
+    return AUTH0_XERO_AUDIENCE or AUTH0_METABASE_AUDIENCE or AUTH0_AUDIENCE
+
 # Global MCP Manifest
 @app.get("/.well-known/mcp.json")
 async def mcp_manifest():
@@ -74,7 +80,7 @@ async def mcp_manifest():
     # Get tools from both modules
     xero_tools = xero_mcp._list_tools_payload().get("tools", [])
     metabase_tools = metabase_mcp._list_metabase_tools().get("tools", [])
-    
+
     # Get resources from Metabase (Xero doesn't have resources in this implementation yet)
     metabase_resources = metabase_mcp._list_metabase_resources().get("resources", [])
 
@@ -157,7 +163,7 @@ async def oauth_authorization_server(request: Request):
 @app.get("/.well-known/oauth-protected-resource")
 async def oauth_protected_resource_root():
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = os.environ.get("AUTH0_AUDIENCE")
+    audience = _default_audience()
     if not auth0_domain or not audience:
         return Response(status_code=404)
     
@@ -173,10 +179,10 @@ async def oauth_protected_resource_root():
 @app.get("/.well-known/oauth-protected-resource/xero")
 async def oauth_protected_resource_xero():
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = os.environ.get("AUTH0_AUDIENCE")
+    audience = AUTH0_XERO_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
         return Response(status_code=404)
-    
+
     return {
         "resource": audience,  # <— USE THE SAME IDENTIFIER
         "authorization_servers": [f"https://{auth0_domain}/"],
@@ -188,10 +194,10 @@ async def oauth_protected_resource_xero():
 @app.get("/.well-known/oauth-protected-resource/metabase")
 async def oauth_protected_resource_metabase():
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = os.environ.get("AUTH0_AUDIENCE")
+    audience = AUTH0_METABASE_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
         return Response(status_code=404)
-    
+
     return {
         "resource": audience,  # <— SAME HERE
         "authorization_servers": [f"https://{auth0_domain}/"],
@@ -455,7 +461,7 @@ async def auth_login(request: Request):
     """Initiate OAuth login flow."""
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
     client_id = os.environ.get("AUTH0_CLIENT_ID")
-    audience = os.environ.get("AUTH0_AUDIENCE")
+    audience = _default_audience()
     
     if not all([auth0_domain, client_id, audience]):
         raise HTTPException(status_code=500, detail="Auth0 not configured")
