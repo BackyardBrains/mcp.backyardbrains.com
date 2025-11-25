@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 
 from utils import _rpc_result, _rpc_error, logger, safe_dumps
+from auth import require_metabase_auth
 
 # Environment variables
 METABASE_URL = os.environ.get("METABASE_URL")
@@ -398,8 +399,6 @@ def _read_metabase_resource(uri: str):
         }
     else:
         raise ValueError(f"Unknown resource URI: {uri}")
-
-from auth import require_metabase_auth
 
 @router.post("/mcp")
 async def handle_metabase_mcp(request: Request, payload: Dict = Depends(require_metabase_auth)):
