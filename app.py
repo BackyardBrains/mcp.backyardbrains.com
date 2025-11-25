@@ -350,7 +350,7 @@ async def get_token_page(request: Request):
                 <button class="btn copy-btn" onclick="copyToken()">📋 Copy Token</button>
                 <a href="/auth/logout" class="btn logout-btn">Logout</a>
                 
-                {f'<div style="margin-top: 15px;"><h3 style="font-size: 14px; color: #666; margin-bottom: 8px;">Your Permissions:</h3>{"".join([f\'<span class="scope-tag">{p}</span>\' for p in mcp_perms])}</div>' if mcp_perms else ''}
+                {'<div style="margin-top: 15px;"><h3 style="font-size: 14px; color: #666; margin-bottom: 8px;">Your Permissions:</h3>' + "".join([f'<span class="scope-tag">{p}</span>' for p in mcp_perms]) + '</div>' if mcp_perms else ''}
                 
                 <div class="info">
                     <strong>How to use:</strong><br>
