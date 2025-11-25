@@ -156,53 +156,47 @@ async def oauth_authorization_server(request: Request):
 # OAuth 2.0 Protected Resource Metadata (RFC 9470)
 @app.get("/.well-known/oauth-protected-resource")
 async def oauth_protected_resource_root():
-    """
-    OAuth 2.0 Protected Resource Metadata for the root server.
-    """
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    if not auth0_domain:
+    audience = os.environ.get("AUTH0_AUDIENCE")
+    if not auth0_domain or not audience:
         return Response(status_code=404)
     
     return {
-        "resource": "https://mcp.backyardbrains.com/",
+        "resource": audience,
         "authorization_servers": [f"https://{auth0_domain}/"],
         "scopes_supported": ["mcp:read", "mcp:write"],
         "bearer_methods_supported": ["header"],
-        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html"
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
     }
 
 @app.get("/.well-known/oauth-protected-resource/xero")
 async def oauth_protected_resource_xero():
-    """
-    OAuth 2.0 Protected Resource Metadata for Xero MCP endpoints.
-    """
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    if not auth0_domain:
+    audience = os.environ.get("AUTH0_AUDIENCE")
+    if not auth0_domain or not audience:
         return Response(status_code=404)
     
     return {
-        "resource": "https://mcp.backyardbrains.com/xero/",
+        "resource": audience,  # <— USE THE SAME IDENTIFIER
         "authorization_servers": [f"https://{auth0_domain}/"],
         "scopes_supported": ["mcp:read:xero", "mcp:write:xero"],
         "bearer_methods_supported": ["header"],
-        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html"
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
     }
 
 @app.get("/.well-known/oauth-protected-resource/metabase")
 async def oauth_protected_resource_metabase():
-    """
-    OAuth 2.0 Protected Resource Metadata for Metabase MCP endpoints.
-    """
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    if not auth0_domain:
+    audience = os.environ.get("AUTH0_AUDIENCE")
+    if not auth0_domain or not audience:
         return Response(status_code=404)
     
     return {
-        "resource": "https://mcp.backyardbrains.com/metabase/",
+        "resource": audience,  # <— SAME HERE
         "authorization_servers": [f"https://{auth0_domain}/"],
         "scopes_supported": ["mcp:read:metabase", "mcp:write:metabase"],
         "bearer_methods_supported": ["header"],
-        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html"
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
     }
 
 # Auth0 OIDC Discovery Passthrough (for Xero auth flow mostly)
