@@ -15,6 +15,22 @@ METABASE_API_KEY = os.environ.get("METABASE_API_KEY")
 
 router = APIRouter()
 
+@router.get("/")
+def metabase_index():
+    """Basic index endpoint so /metabase/ doesn't 404 behind nginx."""
+    return {
+        "service": "metabase-mcp",
+        "status": "ok",
+        "endpoints": {
+            "health": "/metabase/healthz",
+            "mcp": "/metabase/mcp",
+        },
+    }
+
+@router.get("/healthz")
+def metabase_healthz():
+    return {"status": "ok", "service": "metabase"}
+
 class MetabaseClient:
     def __init__(self):
         if not METABASE_URL:
