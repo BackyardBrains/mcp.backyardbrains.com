@@ -1419,8 +1419,15 @@ def xero_healthz():
 
 @router.get("/auth")
 def xero_auth():
-    client = get_xero_client()
-    authorization_url, state = client.oauth2_connection.create_authorization_url()
+    """Redirect to Xero authorization page"""
+    oauth2_token = OAuth2Token(
+        client_id=XERO_CLIENT_ID,
+        client_secret=XERO_CLIENT_SECRET
+    )
+    authorization_url = oauth2_token.generate_url(
+        redirect_uri=XERO_REDIRECT_URI,
+        scope=XERO_SCOPES.split(" ") if XERO_SCOPES else []
+    )
     return RedirectResponse(url=authorization_url)
 
 @router.get("/callback")
@@ -1428,13 +1435,16 @@ def xero_callback(code: str = None, state: str = None):
     if not code:
         raise HTTPException(status_code=400, detail="Missing code in callback")
     
-    client = get_xero_client()
+    oauth2_token = OAuth2Token(
+        client_id=XERO_CLIENT_ID,
+        client_secret=XERO_CLIENT_SECRET
+    )
+    
     try:
         # Exchange code for token
-        token = client.oauth2_connection.fetch_token(
+        token = oauth2_token.generate_access_token(
             code=code,
-            state=state,
-            scope=XERO_SCOPES.split(" ") if XERO_SCOPES else []
+            redirect_uri=XERO_REDIRECT_URI
         )
     except Exception as e:
         logger.error(f"Xero token exchange failed: {e}")
@@ -1447,8 +1457,15 @@ def xero_callback(code: str = None, state: str = None):
     
     # Get and save tenant ID
     try:
-        # We need to get connections from identity
-        identity_api = client.identity_api
+        # Create a client with the new token to fetch connections
+        cfg = Configuration(
+            oauth2_token=OAuth2Token(client_id=XERO_CLIENT_ID, client_secret=XERO_CLIENT_SECRET),
+            debug=False,
+        )
+        api_client = ApiClient(configuration=cfg)
+        api_client.set_oauth2_token(token)
+        
+        identity_api = api_client.identity_api
         connections = identity_api.get_connections()
         if connections:
             tenant_id = connections[0].tenant_id
