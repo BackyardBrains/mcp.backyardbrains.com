@@ -140,6 +140,35 @@
             margin: 4px;
             font-family: 'Courier New', monospace;
         }
+
+        .api-selector {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f7f9fc;
+            border-radius: 8px;
+            text-align: left;
+        }
+
+        .api-selector h3 {
+            margin-bottom: 12px;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .api-option {
+            margin: 8px 0;
+            cursor: pointer;
+        }
+
+        .api-option input[type="radio"] {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .api-option label {
+            cursor: pointer;
+            color: #555;
+        }
     </style>
 </head>
 
@@ -150,8 +179,21 @@
 
         <div id="loginSection" class="login-section">
             <p style="margin-bottom: 20px; color: #666;">
-                Click below to log in with your Backyard Brains account and generate your personal MCP access token.
+                Select which API you need access to, then log in to generate your personal MCP access token.
             </p>
+
+            <div class="api-selector">
+                <h3>Select API:</h3>
+                <div class="api-option">
+                    <input type="radio" id="apiXero" name="apiChoice" value="xero" checked>
+                    <label for="apiXero">Xero API (accounting data)</label>
+                </div>
+                <div class="api-option">
+                    <input type="radio" id="apiMetabase" name="apiChoice" value="metabase">
+                    <label for="apiMetabase">Metabase API (analytics data)</label>
+                </div>
+            </div>
+
             <button id="loginBtn" class="btn">Login with Auth0</button>
 
             <div class="info" style="margin-top: 30px;">
@@ -187,18 +229,38 @@
     <script>
         const AUTH0_DOMAIN = 'login.backyardbrains.com';
         const AUTH0_CLIENT_ID = 'XBgVrhllXZi1IR3o3TiFAI6nFgwU8CYU';
-        const AUTH0_AUDIENCE = 'https://mcp.backyardbrains.com/xero';
+
+        const API_CONFIG = {
+            xero: {
+                audience: 'https://mcp.backyardbrains.com/xero',
+                scope: 'openid profile email mcp:read:xero mcp:write:xero'
+            },
+            metabase: {
+                audience: 'https://mcp.backyardbrains.com/metabase',
+                scope: 'openid profile email mcp:read:metabase mcp:write:metabase'
+            }
+        };
+
+        function getSelectedAPI() {
+            const selected = document.querySelector('input[name="apiChoice"]:checked');
+            return selected ? selected.value : 'xero';
+        }
+
+        function getAPIConfig() {
+            return API_CONFIG[getSelectedAPI()];
+        }
 
         let auth0Client;
 
         async function init() {
+            const config = getAPIConfig();
             auth0Client = await auth0.createAuth0Client({
                 domain: AUTH0_DOMAIN,
                 clientId: AUTH0_CLIENT_ID,
                 authorizationParams: {
                     redirect_uri: window.location.origin + '/static/get-token.html',
-                    audience: AUTH0_AUDIENCE,
-                    scope: 'openid profile email mcp:read:xero mcp:write:xero mcp:read:metabase mcp:write:metabase'
+                    audience: config.audience,
+                    scope: config.scope
                 }
             });
 
