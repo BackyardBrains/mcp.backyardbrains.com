@@ -242,6 +242,12 @@
         };
 
         function getSelectedAPI() {
+            // Check URL parameter first (for callback)
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('code') && localStorage.getItem('selectedAPI')) {
+                return localStorage.getItem('selectedAPI');
+            }
+
             const selected = document.querySelector('input[name="apiChoice"]:checked');
             return selected ? selected.value : 'xero';
         }
@@ -253,6 +259,12 @@
         let auth0Client;
 
         async function init() {
+            // Restore API selection if coming back from OAuth
+            const savedAPI = localStorage.getItem('selectedAPI');
+            if (savedAPI && document.getElementById('api' + savedAPI.charAt(0).toUpperCase() + savedAPI.slice(1))) {
+                document.getElementById('api' + savedAPI.charAt(0).toUpperCase() + savedAPI.slice(1)).checked = true;
+            }
+
             const config = getAPIConfig();
             auth0Client = await auth0.createAuth0Client({
                 domain: AUTH0_DOMAIN,
@@ -268,6 +280,7 @@
                 if (window.location.search.includes('code=')) {
                     await auth0Client.handleRedirectCallback();
                     window.history.replaceState({}, document.title, '/static/get-token.html');
+                    localStorage.removeItem('selectedAPI'); // Clean up
                 }
 
                 const isAuthenticated = await auth0Client.isAuthenticated();
@@ -287,6 +300,8 @@
         }
 
         document.getElementById('loginBtn').addEventListener('click', async () => {
+            // Save selected API before redirecting to OAuth
+            localStorage.setItem('selectedAPI', getSelectedAPI());
             await auth0Client.loginWithRedirect();
         });
 
