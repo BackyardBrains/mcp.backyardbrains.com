@@ -196,7 +196,7 @@
                 domain: AUTH0_DOMAIN,
                 clientId: AUTH0_CLIENT_ID,
                 authorizationParams: {
-                    redirect_uri: window.location.origin + '/get-token.html',
+                    redirect_uri: window.location.origin + '/static/get-token.html',
                     audience: AUTH0_AUDIENCE,
                     scope: 'openid profile email mcp:read:xero mcp:write:xero mcp:read:metabase mcp:write:metabase'
                 }
@@ -205,7 +205,7 @@
             try {
                 if (window.location.search.includes('code=')) {
                     await auth0Client.handleRedirectCallback();
-                    window.history.replaceState({}, document.title, '/get-token.html');
+                    window.history.replaceState({}, document.title, '/static/get-token.html');
                 }
 
                 const isAuthenticated = await auth0Client.isAuthenticated();
@@ -231,7 +231,7 @@
         document.getElementById('logoutBtn').addEventListener('click', async () => {
             await auth0Client.logout({
                 logoutParams: {
-                    returnTo: window.location.origin + '/get-token.html'
+                    returnTo: window.location.origin + '/static/get-token.html'
                 }
             });
         });
