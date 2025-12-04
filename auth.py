@@ -73,6 +73,13 @@ def verify_jwt(token: str, audiences: Optional[list[str]] = None):
                 }
                 break
         if not rsa_key:
+            # Debug logging for "key not found"
+            available_kids = [k.get("kid") for k in jwks.get("keys", [])]
+            logger.error(
+                f"JWT Key Not Found. Token Header: {unverified_header}. "
+                f"Available KIDs in JWKS: {available_kids}. "
+                f"JWKS URL: {JWKS_URL}"
+            )
             raise HTTPException(status_code=401, detail="Invalid token: key not found")
         
         last_error = None
