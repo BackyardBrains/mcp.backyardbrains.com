@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import time
@@ -35,15 +34,13 @@ def _client_secret_key(raw_secret: str) -> bytes:
     directly; otherwise attempt base64url decoding and validate the length.
     """
 
-    # Strip whitespace to avoid accidental newline/space characters from env files
-    trimmed_secret = raw_secret.strip()
-    secret_bytes = trimmed_secret.encode()
+    secret_bytes = raw_secret.encode()
     if len(secret_bytes) == 32:
         return secret_bytes
 
     try:
         # Add padding so urlsafe_b64decode can accept unpadded secrets
-        padded = trimmed_secret + "=" * (-len(trimmed_secret) % 4)
+        padded = raw_secret + "=" * (-len(raw_secret) % 4)
         decoded = base64.urlsafe_b64decode(padded)
     except Exception as exc:  # pragma: no cover - defensive guard
         logger.warning("Failed to base64url-decode AUTH0_CLIENT_SECRET: %s", exc)
@@ -105,13 +102,8 @@ def verify_jwt(token: str, audiences: Optional[list[str]] = None):
                 logger.error("Received encrypted token but AUTH0_CLIENT_SECRET is not configured")
                 raise HTTPException(status_code=401, detail="Invalid token: encryption key unavailable")
 
-            key_bytes = _client_secret_key(client_secret)
-            if len(key_bytes) != 32:  # Defensive guard; _client_secret_key should already enforce
-                logger.warning("AUTH0_CLIENT_SECRET produced a %s-byte key; expected 32", len(key_bytes))
-                raise HTTPException(status_code=401, detail="Invalid token: decrypt failed")
-
             try:
-                decrypted_bytes = jwe.decrypt(token, key_bytes)
+                decrypted_bytes = jwe.decrypt(token, client_secret)
                 payload = json.loads(decrypted_bytes)
             except Exception as e:
                 logger.warning("Failed to decrypt encrypted token: %s", e)
