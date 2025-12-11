@@ -373,9 +373,10 @@ ALGORITHMS = ["RS256"]
 security = HTTPBearer(auto_error=False)
 _jwks_cache = None
 
-def get_jwks():
+def get_jwks(force_refresh: bool = False):
     global _jwks_cache
-    if _jwks_cache is None:
+    if _jwks_cache is None or force_refresh:
+        logger.info(f"Fetching JWKS from {JWKS_URL} (force_refresh={force_refresh})")
         if not JWKS_URL:
             raise HTTPException(status_code=500, detail="Auth not configured")
         resp = requests.get(JWKS_URL, timeout=5)
@@ -387,18 +388,30 @@ def verify_jwt(token: str):
     try:
         jwks = get_jwks()
         unverified_header = jwt.get_unverified_header(token)
-        rsa_key = {}
-        for key in jwks.get("keys", []):
-            if key.get("kid") == unverified_header.get("kid"):
-                rsa_key = {
-                    "kty": key.get("kty"),
-                    "kid": key.get("kid"),
-                    "use": key.get("use"),
-                    "n": key.get("n"),
-                    "e": key.get("e"),
-                }
-                break
+        token_kid = unverified_header.get("kid")
+        
+        def find_rsa_key(keys, kid):
+            for key in keys:
+                if key.get("kid") == kid:
+                    return {
+                        "kty": key.get("kty"),
+                        "kid": key.get("kid"),
+                        "use": key.get("use"),
+                        "n": key.get("n"),
+                        "e": key.get("e"),
+                    }
+            return None
+
+        rsa_key = find_rsa_key(jwks.get("keys", []), token_kid)
+        
         if not rsa_key:
+            logger.warning(f"Key {token_kid} not found in cache. Refreshing JWKS.")
+            jwks = get_jwks(force_refresh=True)
+            rsa_key = find_rsa_key(jwks.get("keys", []), token_kid)
+            
+        if not rsa_key:
+            available_kids = [k.get("kid") for k in jwks.get("keys", [])]
+            logger.error(f"Invalid token: key {token_kid} not found in JWKS. Available: {available_kids}")
             raise HTTPException(status_code=401, detail="Invalid token: key not found")
         last_error = None
         # Try validating as API access token first (with audience)
