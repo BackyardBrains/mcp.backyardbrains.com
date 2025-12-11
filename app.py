@@ -386,58 +386,79 @@ def get_jwks(force_refresh: bool = False):
 
 
 
+def _secret_preview(secret: str | bytes | None, visible: int = 5) -> str:
+    if not secret:
+        return "<missing>"
+    if isinstance(secret, bytes):
+        secret = secret.decode("utf-8", errors="replace")
+    prefix = secret[:visible]
+    hidden_len = max(len(secret) - visible, 0)
+    suffix = "*" * min(hidden_len, 8)
+    return f"{prefix}{suffix}"
+
+
 def verify_jwt(token: str):
     try:
         unverified_header = jwt.get_unverified_header(token)
         
         # Check for JWE (Encrypted Token)
         if unverified_header.get("alg") == "dir":
-             # This is a JWE encrypted with the client secret
-             if not AUTH0_CLIENT_SECRET:
-                 logger.error("Received JWE (alg=dir) but AUTH0_CLIENT_SECRET is not configured.")
-                 raise HTTPException(status_code=500, detail="Server configuration error: missing client secret for JWE")
-             
-             try:
-                 # JWE decryption
-                 # We need to allow 'dir' and content encryption algs like 'A256GCM'
-                 # Note: python-jose might require the secret as bytes if it's treating it as a key
-                 secret_key = AUTH0_CLIENT_SECRET
-                 
-                 # Ensure secret is bytes for python-jose
-                 if isinstance(secret_key, str):
-                     secret_key = secret_key.encode('utf-8')
-                     
-                 # IMPORTANT: For JWE with alg='dir', the 'key' argument to jwt.decode is the direct secret.
-                 # python-jose's jwt.decode handles both JWS and JWE.
-                 # If decryption fails with "Signature verification failed", it might be trying to verify as JWS.
-                 
-                 payload = jwt.decode(
-                     token,
-                     secret_key,
-                     algorithms=["dir", "A256GCM", "A128GCM"], 
-                     audience=AUTH0_AUDIENCE,
-                     issuer=AUTH0_ISSUER,
-                     options={"verify_at_hash": False}
-                 )
-                 return payload
-             except Exception as e:
-                 logger.warning(f"JWE decryption with raw secret failed: {e}. Key len: {len(AUTH0_CLIENT_SECRET) if AUTH0_CLIENT_SECRET else 0}")
-                 # Try Base64URL decoding the secret (common execution for Auth0 secrets)
-                 try:
-                     # Add padding for base64 decoding if needed
-                     rem = len(AUTH0_CLIENT_SECRET) % 4
-                     if rem > 0:
-                         secret_key_b64 = AUTH0_CLIENT_SECRET + '=' * (4 - rem)
-                     else:
-                         secret_key_b64 = AUTH0_CLIENT_SECRET
-                     
-                     import base64
-                     secret_key_bytes = base64.urlsafe_b64decode(secret_key_b64)
-                     
-                     logger.info(f"Trying decryption with base64 decoded secret. Key len: {len(secret_key_bytes)}")
+            # This is a JWE encrypted with the client secret
+            if not AUTH0_CLIENT_SECRET:
+                logger.error("Received JWE (alg=dir) but AUTH0_CLIENT_SECRET is not configured.")
+                raise HTTPException(status_code=500, detail="Server configuration error: missing client secret for JWE")
 
-                     payload = jwt.decode(
-                         token,
+            try:
+                # JWE decryption
+                # We need to allow 'dir' and content encryption algs like 'A256GCM'
+                # Note: python-jose might require the secret as bytes if it's treating it as a key
+                secret_key = AUTH0_CLIENT_SECRET
+
+                # Ensure secret is bytes for python-jose
+                if isinstance(secret_key, str):
+                    secret_key = secret_key.encode("utf-8")
+
+                # IMPORTANT: For JWE with alg='dir', the 'key' argument to jwt.decode is the direct secret.
+                # python-jose's jwt.decode handles both JWS and JWE.
+                # If decryption fails with "Signature verification failed", it might be trying to verify as JWS.
+
+                payload = jwt.decode(
+                    token,
+                    secret_key,
+                    algorithms=["dir", "A256GCM", "A128GCM"],
+                    audience=AUTH0_AUDIENCE,
+                    issuer=AUTH0_ISSUER,
+                    options={"verify_at_hash": False},
+                )
+                return payload
+            except Exception as e:
+                logger.warning(
+                    "JWE decryption with raw secret failed: %s. Key len: %s. Prefix: %s",
+                    e,
+                    len(AUTH0_CLIENT_SECRET) if AUTH0_CLIENT_SECRET else 0,
+                    _secret_preview(AUTH0_CLIENT_SECRET, 5),
+                )
+                # Try Base64URL decoding the secret (common execution for Auth0 secrets)
+                try:
+                    # Add padding for base64 decoding if needed
+                    rem = len(AUTH0_CLIENT_SECRET) % 4
+                    if rem > 0:
+                        secret_key_b64 = AUTH0_CLIENT_SECRET + "=" * (4 - rem)
+                    else:
+                        secret_key_b64 = AUTH0_CLIENT_SECRET
+
+                    import base64
+
+                    secret_key_bytes = base64.urlsafe_b64decode(secret_key_b64)
+
+                    logger.info(
+                        "Trying decryption with base64 decoded secret. Key len: %s. Prefix: %s",
+                        len(secret_key_bytes),
+                        _secret_preview(secret_key_bytes, 5),
+                    )
+
+                    payload = jwt.decode(
+                        token,
                          secret_key_bytes,
                          algorithms=["dir", "A256GCM", "A128GCM"], 
                          audience=AUTH0_AUDIENCE,
