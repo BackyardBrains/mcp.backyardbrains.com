@@ -17,7 +17,7 @@ from xero_python.api_client import ApiClient
 from xero_python.api_client.oauth2 import OAuth2Token
 from xero_python.api_client.configuration import Configuration
 from urllib.parse import urlencode
-from jose import jwt, JWTError
+from jose import jwt, JWTError, jwe
 from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import httpx
@@ -373,6 +373,67 @@ ALGORITHMS = ["RS256"]
 security = HTTPBearer(auto_error=False)
 _jwks_cache = None
 
+
+def _b64url_decode(data: str) -> bytes:
+    padding = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + padding)
+
+
+def _maybe_decrypt_jwe(token: str) -> str:
+    """If the token is an encrypted JWE, attempt to decrypt it using the Auth0 client secret.
+
+    Auth0 can issue encrypted ID/Access tokens (alg=dir, enc=A256GCM). These do not carry a
+    `kid`, so RS256 verification against the JWKS will fail with "key not found". This helper
+    detects that case and decrypts the token so the inner JWT can be validated normally.
+    """
+
+    parts = token.split(".")
+    if len(parts) != 5:  # Not a compact JWE
+        return token
+
+    try:
+        header = json.loads(_b64url_decode(parts[0]).decode("utf-8"))
+    except Exception:
+        return token
+
+    # Only handle encrypted tokens; otherwise return as-is
+    if not header.get("enc"):
+        return token
+
+    if header.get("alg") != "dir":
+        raise HTTPException(
+            status_code=401,
+            detail=f"Unsupported encrypted token algorithm: {header.get('alg')}"
+        )
+
+    client_secret = os.environ.get("AUTH0_CLIENT_SECRET")
+    if not client_secret:
+        raise HTTPException(
+            status_code=401,
+            detail="Encrypted token received but AUTH0_CLIENT_SECRET is not configured",
+        )
+
+    # Auth0 provides the client secret as a base64url string. Use the raw bytes if they
+    # decode cleanly to a supported key length for A256GCM; otherwise, fall back to the
+    # literal secret string.
+    key: str | bytes = client_secret
+    try:
+        decoded = _b64url_decode(client_secret)
+        if len(decoded) in (16, 24, 32):
+            key = decoded
+    except Exception:
+        pass
+
+    try:
+        plaintext = jwe.decrypt(token, key)
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"Failed to decrypt token: {exc}")
+
+    try:
+        return plaintext.decode("utf-8") if isinstance(plaintext, (bytes, bytearray)) else str(plaintext)
+    except Exception:
+        return token
+
 def get_jwks():
     global _jwks_cache
     if _jwks_cache is None:
@@ -385,6 +446,7 @@ def get_jwks():
 
 def verify_jwt(token: str):
     try:
+        token = _maybe_decrypt_jwe(token)
         jwks = get_jwks()
         unverified_header = jwt.get_unverified_header(token)
         rsa_key = {}
