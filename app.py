@@ -421,7 +421,7 @@ def verify_jwt(token: str):
                  )
                  return payload
              except Exception as e:
-                 logger.warning(f"JWE decryption with raw secret failed: {e}")
+                 logger.warning(f"JWE decryption with raw secret failed: {e}. Key len: {len(AUTH0_CLIENT_SECRET) if AUTH0_CLIENT_SECRET else 0}")
                  # Try Base64URL decoding the secret (common execution for Auth0 secrets)
                  try:
                      # Add padding for base64 decoding if needed
@@ -434,6 +434,8 @@ def verify_jwt(token: str):
                      import base64
                      secret_key_bytes = base64.urlsafe_b64decode(secret_key_b64)
                      
+                     logger.info(f"Trying decryption with base64 decoded secret. Key len: {len(secret_key_bytes)}")
+
                      payload = jwt.decode(
                          token,
                          secret_key_bytes,
@@ -444,7 +446,7 @@ def verify_jwt(token: str):
                      )
                      return payload
                  except Exception as e2:
-                    logger.error(f"JWE decryption failed with both raw and ref-decoded secret. Raw error: {e}, B64 error: {e2}")
+                    logger.error(f"JWE decryption failed. Raw error: {e}. B64 error: {e2}. Header: {unverified_header}")
                     raise HTTPException(status_code=401, detail=f"Invalid encrypted token: {str(e2)}")
 
         jwks = get_jwks()
