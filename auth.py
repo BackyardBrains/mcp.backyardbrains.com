@@ -25,6 +25,36 @@ ALGORITHMS = ["RS256"]
 security = HTTPBearer(auto_error=False)
 _jwks_cache = None
 
+
+def _client_secret_key(raw_secret: str) -> bytes:
+    """Return a 256-bit key from the Auth0 client secret.
+
+    Auth0 client secrets for Symmetric Encryption use base64url encoding to
+    represent 256-bit keys. If the provided secret is already 32 bytes, use it
+    directly; otherwise attempt base64url decoding and validate the length.
+    """
+
+    secret_bytes = raw_secret.encode()
+    if len(secret_bytes) == 32:
+        return secret_bytes
+
+    try:
+        # Add padding so urlsafe_b64decode can accept unpadded secrets
+        padded = raw_secret + "=" * (-len(raw_secret) % 4)
+        decoded = base64.urlsafe_b64decode(padded)
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.warning("Failed to base64url-decode AUTH0_CLIENT_SECRET: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid token: decrypt failed")
+
+    if len(decoded) != 32:
+        logger.warning(
+            "Invalid AUTH0_CLIENT_SECRET length: %s bytes after decoding; expected 32",
+            len(decoded),
+        )
+        raise HTTPException(status_code=401, detail="Invalid token: decrypt failed")
+
+    return decoded
+
 def get_jwks():
     global _jwks_cache
     if _jwks_cache is None:
