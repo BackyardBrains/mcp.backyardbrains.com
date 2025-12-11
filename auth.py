@@ -1,9 +1,11 @@
+import json
 import os
+import time
 import requests
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, Request, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
+from jose import jwt, jwe, JWTError
 
 from utils import logger
 
@@ -61,6 +63,44 @@ def verify_jwt(token: str, audiences: Optional[list[str]] = None):
     try:
         jwks = get_jwks()
         unverified_header = jwt.get_unverified_header(token)
+
+        # Handle encrypted (JWE) tokens that use symmetric "dir" algorithm.
+        # ChatGPT may request tokens encrypted with the client secret instead of signed with a JWKS key.
+        if unverified_header.get("alg") == "dir" and unverified_header.get("enc"):
+            client_secret = os.environ.get("AUTH0_CLIENT_SECRET")
+            if not client_secret:
+                logger.error("Received encrypted token but AUTH0_CLIENT_SECRET is not configured")
+                raise HTTPException(status_code=401, detail="Invalid token: encryption key unavailable")
+
+            try:
+                decrypted_bytes = jwe.decrypt(token, client_secret)
+                payload = json.loads(decrypted_bytes)
+            except Exception as e:
+                logger.warning("Failed to decrypt encrypted token: %s", e)
+                raise HTTPException(status_code=401, detail="Invalid token: decrypt failed")
+
+            # Validate minimal claims for decrypted tokens
+            if AUTH0_ISSUER and payload.get("iss") != AUTH0_ISSUER:
+                raise HTTPException(status_code=401, detail="Invalid token: issuer mismatch")
+
+            aud_claim = payload.get("aud")
+            valid_audiences = _gather_audiences(audiences)
+            if aud_claim:
+                if isinstance(aud_claim, str):
+                    aud_claims = [aud_claim]
+                else:
+                    aud_claims = list(aud_claim)
+                if not any(aud in valid_audiences for aud in aud_claims):
+                    raise HTTPException(status_code=401, detail="Invalid token: audience mismatch")
+            elif valid_audiences:
+                raise HTTPException(status_code=401, detail="Invalid token: audience missing")
+
+            exp = payload.get("exp")
+            if exp and time.time() > exp:
+                raise HTTPException(status_code=401, detail="Invalid token: token expired")
+
+            return payload
+
         rsa_key = {}
         for key in jwks.get("keys", []):
             if key.get("kid") == unverified_header.get("kid"):
