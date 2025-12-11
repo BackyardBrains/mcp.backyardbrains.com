@@ -405,57 +405,92 @@ def verify_jwt(token: str):
         rsa_key = find_rsa_key(jwks.get("keys", []), token_kid)
         
         if not rsa_key:
-            logger.warning(f"Key {token_kid} not found in cache. Refreshing JWKS.")
-            jwks = get_jwks(force_refresh=True)
-            rsa_key = find_rsa_key(jwks.get("keys", []), token_kid)
-            
-        if not rsa_key:
-            available_kids = [k.get("kid") for k in jwks.get("keys", [])]
-            logger.error(f"Invalid token: key {token_kid} not found in JWKS. Available: {available_kids}")
-            raise HTTPException(status_code=401, detail="Invalid token: key not found")
+            if token_kid:
+                logger.warning(f"Key {token_kid} not found in cache. Refreshing JWKS.")
+                jwks = get_jwks(force_refresh=True)
+                rsa_key = find_rsa_key(jwks.get("keys", []), token_kid)
+            else:
+                 logger.warning(f"Token has no 'kid'. Refreshing JWKS and will try all keys.")
+                 jwks = get_jwks(force_refresh=True)
+
+        candidate_keys = []
+        if rsa_key:
+             candidate_keys.append(rsa_key)
+        else:
+            # Fallback: try ALL keys if specific key not found
+            logger.info(f"No matching key found for kid={token_kid}. Trying all {len(jwks.get('keys', []))} keys.")
+            candidate_keys = jwks.get("keys", [])
+
+        if not candidate_keys:
+             raise HTTPException(status_code=401, detail="No keys available for validation")
+
         last_error = None
-        # Try validating as API access token first (with audience)
-        if AUTH0_AUDIENCE:
+        
+        # Iterate through candidate keys
+        for key in candidate_keys:
             try:
-                payload = jwt.decode(
-                    token,
-                    rsa_key,
-                    algorithms=ALGORITHMS,
-                    audience=AUTH0_AUDIENCE,
-                    issuer=AUTH0_ISSUER,
-                    options={"verify_at_hash": False}
-                )
-                return payload
-            except JWTError as e:
+                # Convert JWK to RSA key format required by jose
+                current_rsa_key = {
+                    "kty": key.get("kty"),
+                    "kid": key.get("kid"),
+                    "use": key.get("use"),
+                    "n": key.get("n"),
+                    "e": key.get("e"),
+                }
+                
+                # Try validating as API access token first (with audience)
+                if AUTH0_AUDIENCE:
+                    try:
+                        payload = jwt.decode(
+                            token,
+                            current_rsa_key,
+                            algorithms=ALGORITHMS,
+                            audience=AUTH0_AUDIENCE,
+                            issuer=AUTH0_ISSUER,
+                            options={"verify_at_hash": False}
+                        )
+                        return payload
+                    except JWTError as e:
+                        last_error = e
+                
+                # Try validating as ID token for our client (aud == client_id)
+                if AUTH0_CLIENT_ID:
+                    try:
+                        payload = jwt.decode(
+                            token,
+                            current_rsa_key,
+                            algorithms=ALGORITHMS,
+                            audience=AUTH0_CLIENT_ID,
+                            issuer=AUTH0_ISSUER,
+                            options={"verify_at_hash": False}
+                        )
+                        return payload
+                    except JWTError as e:
+                        last_error = e
+                
+                # Fallback: accept tokens with correct issuer and signature, without audience, if azp matches our client
+                try:
+                    payload = jwt.decode(
+                        token,
+                        current_rsa_key,
+                        algorithms=ALGORITHMS,
+                        issuer=AUTH0_ISSUER,
+                        options={"verify_aud": False, "verify_at_hash": False}
+                    )
+                    if AUTH0_CLIENT_ID and payload.get("azp") == AUTH0_CLIENT_ID:
+                        return payload
+                except JWTError as e:
+                    last_error = e
+                    
+            except Exception as e:
+                # Keep trying other keys
                 last_error = e
-        # Try validating as ID token for our client (aud == client_id)
-        if AUTH0_CLIENT_ID:
-            try:
-                payload = jwt.decode(
-                    token,
-                    rsa_key,
-                    algorithms=ALGORITHMS,
-                    audience=AUTH0_CLIENT_ID,
-                    issuer=AUTH0_ISSUER,
-                    options={"verify_at_hash": False}
-                )
-                return payload
-            except JWTError as e:
-                last_error = e
-        # Fallback: accept tokens with correct issuer and signature, without audience, if azp matches our client
-        try:
-            payload = jwt.decode(
-                token,
-                rsa_key,
-                algorithms=ALGORITHMS,
-                issuer=AUTH0_ISSUER,
-                options={"verify_aud": False, "verify_at_hash": False}
-            )
-            if AUTH0_CLIENT_ID and payload.get("azp") == AUTH0_CLIENT_ID:
-                return payload
-        except JWTError as e:
-            last_error = e
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(last_error) if last_error else 'audience mismatch'}")
+                continue
+
+        # If we get here, no key worked
+        available_kids = [k.get("kid") for k in jwks.get("keys", [])]
+        logger.error(f"Token validation failed for kid={token_kid}. Header: {unverified_header}. Available keys: {available_kids}. Last error: {str(last_error)}")
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(last_error) if last_error else 'signature verification failed'}")
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
     except Exception as e:
