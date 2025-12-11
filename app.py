@@ -459,20 +459,16 @@ def verify_jwt(token: str):
 
                     payload = jwt.decode(
                         token,
-                        secret_key_bytes,
-                        algorithms=["dir", "A256GCM", "A128GCM"],
-                        audience=AUTH0_AUDIENCE,
-                        issuer=AUTH0_ISSUER,
-                        options={"verify_at_hash": False},
-                    )
-                    return payload
-                except Exception as e2:
-                    logger.error(
-                        f"JWE decryption failed. Raw error: {e}. B64 error: {e2}. Header: {unverified_header}"
-                    )
-                    raise HTTPException(
-                        status_code=401, detail=f"Invalid encrypted token: {str(e2)}"
-                    )
+                         secret_key_bytes,
+                         algorithms=["dir", "A256GCM", "A128GCM"], 
+                         audience=AUTH0_AUDIENCE,
+                         issuer=AUTH0_ISSUER,
+                         options={"verify_at_hash": False}
+                     )
+                     return payload
+                 except Exception as e2:
+                    logger.error(f"JWE decryption failed. Raw error: {e}. B64 error: {e2}. Header: {unverified_header}")
+                    raise HTTPException(status_code=401, detail=f"Invalid encrypted token: {str(e2)}")
 
         jwks = get_jwks()
         token_kid = unverified_header.get("kid")
