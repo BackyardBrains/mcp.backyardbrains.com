@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import time
@@ -104,7 +103,7 @@ def verify_jwt(token: str, audiences: Optional[list[str]] = None):
                 raise HTTPException(status_code=401, detail="Invalid token: encryption key unavailable")
 
             try:
-                decrypted_bytes = jwe.decrypt(token, _client_secret_key(client_secret))
+                decrypted_bytes = jwe.decrypt(token, client_secret)
                 payload = json.loads(decrypted_bytes)
             except Exception as e:
                 logger.warning("Failed to decrypt encrypted token: %s", e)
