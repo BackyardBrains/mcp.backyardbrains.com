@@ -1,9 +1,12 @@
+import base64
+import json
 import os
+import time
 import requests
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, Request, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
+from jose import jwt, jwe, JWTError
 
 from utils import logger
 
@@ -22,6 +25,38 @@ ALGORITHMS = ["RS256"]
 
 security = HTTPBearer(auto_error=False)
 _jwks_cache = None
+
+
+def _client_secret_key(raw_secret: str) -> bytes:
+    """Return a 256-bit key from the Auth0 client secret.
+
+    Auth0 client secrets for Symmetric Encryption use base64url encoding to
+    represent 256-bit keys. If the provided secret is already 32 bytes, use it
+    directly; otherwise attempt base64url decoding and validate the length.
+    """
+
+    # Strip whitespace to avoid accidental newline/space characters from env files
+    trimmed_secret = raw_secret.strip()
+    secret_bytes = trimmed_secret.encode()
+    if len(secret_bytes) == 32:
+        return secret_bytes
+
+    try:
+        # Add padding so urlsafe_b64decode can accept unpadded secrets
+        padded = trimmed_secret + "=" * (-len(trimmed_secret) % 4)
+        decoded = base64.urlsafe_b64decode(padded)
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.warning("Failed to base64url-decode AUTH0_CLIENT_SECRET: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid token: decrypt failed")
+
+    if len(decoded) != 32:
+        logger.warning(
+            "Invalid AUTH0_CLIENT_SECRET length: %s bytes after decoding; expected 32",
+            len(decoded),
+        )
+        raise HTTPException(status_code=401, detail="Invalid token: decrypt failed")
+
+    return decoded
 
 def get_jwks():
     global _jwks_cache
@@ -61,6 +96,49 @@ def verify_jwt(token: str, audiences: Optional[list[str]] = None):
     try:
         jwks = get_jwks()
         unverified_header = jwt.get_unverified_header(token)
+
+        # Handle encrypted (JWE) tokens that use symmetric "dir" algorithm.
+        # ChatGPT may request tokens encrypted with the client secret instead of signed with a JWKS key.
+        if unverified_header.get("alg") == "dir" and unverified_header.get("enc"):
+            client_secret = os.environ.get("AUTH0_CLIENT_SECRET")
+            if not client_secret:
+                logger.error("Received encrypted token but AUTH0_CLIENT_SECRET is not configured")
+                raise HTTPException(status_code=401, detail="Invalid token: encryption key unavailable")
+
+            key_bytes = _client_secret_key(client_secret)
+            if len(key_bytes) != 32:  # Defensive guard; _client_secret_key should already enforce
+                logger.warning("AUTH0_CLIENT_SECRET produced a %s-byte key; expected 32", len(key_bytes))
+                raise HTTPException(status_code=401, detail="Invalid token: decrypt failed")
+
+            try:
+                decrypted_bytes = jwe.decrypt(token, key_bytes)
+                payload = json.loads(decrypted_bytes)
+            except Exception as e:
+                logger.warning("Failed to decrypt encrypted token: %s", e)
+                raise HTTPException(status_code=401, detail="Invalid token: decrypt failed")
+
+            # Validate minimal claims for decrypted tokens
+            if AUTH0_ISSUER and payload.get("iss") != AUTH0_ISSUER:
+                raise HTTPException(status_code=401, detail="Invalid token: issuer mismatch")
+
+            aud_claim = payload.get("aud")
+            valid_audiences = _gather_audiences(audiences)
+            if aud_claim:
+                if isinstance(aud_claim, str):
+                    aud_claims = [aud_claim]
+                else:
+                    aud_claims = list(aud_claim)
+                if not any(aud in valid_audiences for aud in aud_claims):
+                    raise HTTPException(status_code=401, detail="Invalid token: audience mismatch")
+            elif valid_audiences:
+                raise HTTPException(status_code=401, detail="Invalid token: audience missing")
+
+            exp = payload.get("exp")
+            if exp and time.time() > exp:
+                raise HTTPException(status_code=401, detail="Invalid token: token expired")
+
+            return payload
+
         rsa_key = {}
         for key in jwks.get("keys", []):
             if key.get("kid") == unverified_header.get("kid"):
