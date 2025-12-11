@@ -421,9 +421,31 @@ def verify_jwt(token: str):
                  )
                  return payload
              except Exception as e:
-                 logger.error(f"JWE decryption failed: {e}")
-                 # Fallback/Debug: check if secret needs encoding adjustments or if audience mismatch is the cause
-                 raise HTTPException(status_code=401, detail=f"Invalid encrypted token: {str(e)}")
+                 logger.warning(f"JWE decryption with raw secret failed: {e}")
+                 # Try Base64URL decoding the secret (common execution for Auth0 secrets)
+                 try:
+                     # Add padding for base64 decoding if needed
+                     rem = len(AUTH0_CLIENT_SECRET) % 4
+                     if rem > 0:
+                         secret_key_b64 = AUTH0_CLIENT_SECRET + '=' * (4 - rem)
+                     else:
+                         secret_key_b64 = AUTH0_CLIENT_SECRET
+                     
+                     import base64
+                     secret_key_bytes = base64.urlsafe_b64decode(secret_key_b64)
+                     
+                     payload = jwt.decode(
+                         token,
+                         secret_key_bytes,
+                         algorithms=["dir", "A256GCM", "A128GCM"], 
+                         audience=AUTH0_AUDIENCE,
+                         issuer=AUTH0_ISSUER,
+                         options={"verify_at_hash": False}
+                     )
+                     return payload
+                 except Exception as e2:
+                    logger.error(f"JWE decryption failed with both raw and ref-decoded secret. Raw error: {e}, B64 error: {e2}")
+                    raise HTTPException(status_code=401, detail=f"Invalid encrypted token: {str(e2)}")
 
         jwks = get_jwks()
         token_kid = unverified_header.get("kid")
