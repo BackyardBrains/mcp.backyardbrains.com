@@ -384,10 +384,40 @@ def get_jwks(force_refresh: bool = False):
         _jwks_cache = resp.json()
     return _jwks_cache
 
+
+
 def verify_jwt(token: str):
     try:
-        jwks = get_jwks()
         unverified_header = jwt.get_unverified_header(token)
+        
+        # Check for JWE (Encrypted Token)
+        if unverified_header.get("alg") == "dir":
+             # This is a JWE encrypted with the client secret
+             if not AUTH0_CLIENT_SECRET:
+                 logger.error("Received JWE (alg=dir) but AUTH0_CLIENT_SECRET is not configured.")
+                 raise HTTPException(status_code=500, detail="Server configuration error: missing client secret for JWE")
+             
+             try:
+                 # JWE decryption
+                 # We need to allow 'dir' and content encryption algs like 'A256GCM'
+                 # Note: python-jose might require the secret as bytes if it's treating it as a key
+                 secret_key = AUTH0_CLIENT_SECRET
+                 
+                 payload = jwt.decode(
+                     token,
+                     secret_key,
+                     algorithms=["dir", "A256GCM", "A128GCM"], 
+                     audience=AUTH0_AUDIENCE,
+                     issuer=AUTH0_ISSUER,
+                     options={"verify_at_hash": False}
+                 )
+                 return payload
+             except Exception as e:
+                 logger.error(f"JWE decryption failed: {e}")
+                 # Fallback/Debug: check if secret needs encoding adjustments or if audience mismatch is the cause
+                 raise HTTPException(status_code=401, detail=f"Invalid encrypted token: {str(e)}")
+
+        jwks = get_jwks()
         token_kid = unverified_header.get("kid")
         
         def find_rsa_key(keys, kid):
