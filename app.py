@@ -403,6 +403,14 @@ def verify_jwt(token: str):
                  # Note: python-jose might require the secret as bytes if it's treating it as a key
                  secret_key = AUTH0_CLIENT_SECRET
                  
+                 # Ensure secret is bytes for python-jose
+                 if isinstance(secret_key, str):
+                     secret_key = secret_key.encode('utf-8')
+                     
+                 # IMPORTANT: For JWE with alg='dir', the 'key' argument to jwt.decode is the direct secret.
+                 # python-jose's jwt.decode handles both JWS and JWE.
+                 # If decryption fails with "Signature verification failed", it might be trying to verify as JWS.
+                 
                  payload = jwt.decode(
                      token,
                      secret_key,
