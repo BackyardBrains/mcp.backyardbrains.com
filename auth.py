@@ -91,7 +91,16 @@ def verify_jwt(token: str, audiences: Optional[list[str]] = None):
     try:
         rsa_key = _find_rsa_key(token)
         if not rsa_key:
-            raise HTTPException(status_code=401, detail="Invalid token: key not found")
+            unverified_header = jwt.get_unverified_header(token)
+            kid_hint = unverified_header.get("kid") if isinstance(unverified_header, dict) else None
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Invalid token: signing key not found. "
+                    f"Received kid={kid_hint!r}; ensure the token is issued by {AUTH0_DOMAIN} "
+                    "for the configured audience."
+                ),
+            )
         
         last_error = None
         
@@ -224,6 +233,13 @@ def require_xero_auth(request: Request, creds: HTTPAuthorizationCredentials = De
             _log_scope_claims(unverified_claims, context="Xero request (unverified)")
         except JWTError as e:
             logger.warning("Unable to parse unverified claims for %s %s: %s", request.method, request.url.path, e)
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Invalid token format: unable to parse claims. "
+                    "Ensure you are sending the Auth0-issued access token for the Xero MCP audience."
+                ),
+            )
 
         payload = verify_jwt(creds.credentials, audiences=[AUTH0_XERO_AUDIENCE])
         _log_scope_claims(payload, context="Xero request")
@@ -261,6 +277,13 @@ def require_metabase_auth(request: Request, creds: HTTPAuthorizationCredentials 
             _log_scope_claims(unverified_claims, context="Metabase request (unverified)")
         except JWTError as e:
             logger.warning("Unable to parse unverified claims for %s %s: %s", request.method, request.url.path, e)
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Invalid token format: unable to parse claims. "
+                    "Ensure you are sending the Auth0-issued access token for the Metabase MCP audience."
+                ),
+            )
 
         payload = verify_jwt(creds.credentials, audiences=[AUTH0_METABASE_AUDIENCE])
         _log_scope_claims(payload, context="Metabase request")
