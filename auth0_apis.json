@@ -1,6 +1,3 @@
-
-Verify ZPMG-BBPZ code in opened browser window to complete authentication.
-
 [
     {
         "id": "675cb68ed84f71cf1c6b0ed8",
@@ -1012,7 +1009,8 @@ Verify ZPMG-BBPZ code in opened browser window to complete authentication.
             }
         ],
         "signing_alg": "RS256",
-        "allow_offline_access": false,
+        "signing_secret": "RMqkPXAcgFpE7b9huMjBQs7vk7Ct6gHi",
+        "allow_offline_access": true,
         "token_lifetime": 86400,
         "token_lifetime_for_web": 7200,
         "skip_consent_for_verifiable_first_party_clients": true,
