@@ -23,15 +23,19 @@ ALGORITHMS = ["RS256"]
 security = HTTPBearer(auto_error=False)
 _jwks_cache = None
 
-def get_jwks():
+def get_jwks(force_refresh: bool = False):
+    """Fetch JWKS, optionally bypassing the cache when keys rotate."""
     global _jwks_cache
-    if _jwks_cache is None:
-        if not JWKS_URL:
-            raise HTTPException(status_code=500, detail="Auth not configured")
+
+    if JWKS_URL is None:
+        raise HTTPException(status_code=500, detail="Auth not configured")
+
+    if _jwks_cache is None or force_refresh:
         try:
             resp = requests.get(JWKS_URL, timeout=5)
             resp.raise_for_status()
             _jwks_cache = resp.json()
+            logger.info("JWKS fetched%s", " (force refresh)" if force_refresh else "")
         except Exception as e:
             logger.error(f"Failed to fetch JWKS: {e}")
             raise HTTPException(status_code=500, detail="Failed to fetch JWKS")
@@ -57,21 +61,35 @@ def _gather_audiences(explicit_audiences: Optional[list[str]] = None) -> list[st
             unique_audiences.append(aud)
     return unique_audiences
 
-def verify_jwt(token: str, audiences: Optional[list[str]] = None):
-    try:
-        jwks = get_jwks()
-        unverified_header = jwt.get_unverified_header(token)
-        rsa_key = {}
-        for key in jwks.get("keys", []):
+def _find_rsa_key(token: str, *, refresh_on_miss: bool = True) -> Dict[str, Any]:
+    """Locate RSA key for the token's kid, refreshing JWKS on cache misses."""
+    jwks = get_jwks(force_refresh=False)
+    unverified_header = jwt.get_unverified_header(token)
+
+    def _match_key(jwks_payload):
+        for key in jwks_payload.get("keys", []):
             if key.get("kid") == unverified_header.get("kid"):
-                rsa_key = {
+                return {
                     "kty": key.get("kty"),
                     "kid": key.get("kid"),
                     "use": key.get("use"),
                     "n": key.get("n"),
                     "e": key.get("e"),
                 }
-                break
+        return None
+
+    rsa_key = _match_key(jwks)
+    if not rsa_key and refresh_on_miss:
+        # Key rotation or stale cache — refresh once and try again
+        jwks = get_jwks(force_refresh=True)
+        rsa_key = _match_key(jwks)
+
+    return rsa_key or {}
+
+
+def verify_jwt(token: str, audiences: Optional[list[str]] = None):
+    try:
+        rsa_key = _find_rsa_key(token)
         if not rsa_key:
             raise HTTPException(status_code=401, detail="Invalid token: key not found")
         
