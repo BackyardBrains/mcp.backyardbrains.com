@@ -159,7 +159,7 @@ def check_permissions(payload: Dict[str, Any], required_scopes: list[str]) -> bo
         for scope in required_scopes:
             if scope in permissions:
                 return True
-    
+
     # Check 'scope' claim (space-separated string format)
     scope_string = payload.get("scope", "")
     if isinstance(scope_string, str):
@@ -167,8 +167,20 @@ def check_permissions(payload: Dict[str, Any], required_scopes: list[str]) -> bo
         for scope in required_scopes:
             if scope in scopes:
                 return True
-    
+
     return False
+
+
+def _log_scope_claims(payload: Dict[str, Any], *, context: str) -> None:
+    """Log permissions/scope claims for debugging."""
+    permissions = payload.get("permissions")
+    scope_string = payload.get("scope")
+    logger.info(
+        "Auth0 claims for %s: permissions=%s scope=%s",
+        context,
+        permissions if permissions is not None else "<missing>",
+        scope_string if scope_string is not None else "<missing>",
+    )
 
 def require_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
     """Base auth - just validates JWT, no scope checking"""
@@ -207,7 +219,14 @@ def require_xero_auth(request: Request, creds: HTTPAuthorizationCredentials = De
             },
         )
     try:
+        try:
+            unverified_claims = jwt.get_unverified_claims(creds.credentials)
+            _log_scope_claims(unverified_claims, context="Xero request (unverified)")
+        except JWTError as e:
+            logger.warning("Unable to parse unverified claims for %s %s: %s", request.method, request.url.path, e)
+
         payload = verify_jwt(creds.credentials, audiences=[AUTH0_XERO_AUDIENCE])
+        _log_scope_claims(payload, context="Xero request")
         if not check_permissions(payload, ["mcp:read:xero", "mcp:write:xero"]):
             logger.warning("Insufficient permissions for Xero MCP access for %s %s", request.method, request.url.path)
             raise HTTPException(
@@ -237,7 +256,14 @@ def require_metabase_auth(request: Request, creds: HTTPAuthorizationCredentials 
             },
         )
     try:
+        try:
+            unverified_claims = jwt.get_unverified_claims(creds.credentials)
+            _log_scope_claims(unverified_claims, context="Metabase request (unverified)")
+        except JWTError as e:
+            logger.warning("Unable to parse unverified claims for %s %s: %s", request.method, request.url.path, e)
+
         payload = verify_jwt(creds.credentials, audiences=[AUTH0_METABASE_AUDIENCE])
+        _log_scope_claims(payload, context="Metabase request")
         if not check_permissions(payload, ["mcp:read:metabase", "mcp:write:metabase"]):
             logger.warning("Insufficient permissions for Metabase MCP access for %s %s", request.method, request.url.path)
             raise HTTPException(
