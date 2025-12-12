@@ -1431,6 +1431,7 @@ from fastapi import APIRouter
 router = APIRouter()
 
 @router.get("/")
+@router.get("")
 def xero_index():
     """Basic index endpoint so /xero/ doesn't 404 behind nginx."""
     return {
@@ -1444,6 +1445,7 @@ def xero_index():
     }
 
 @router.post("/")
+@router.post("")
 async def xero_index_post(request: Request, payload: Dict = Depends(require_xero_auth)):
     """
     Handle MCP JSON-RPC requests at the root /xero/ endpoint.
