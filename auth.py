@@ -107,6 +107,7 @@ def _find_rsa_key(token: str, *, refresh_on_miss: bool = True) -> Dict[str, Any]
 def verify_jwt(token: str, audiences: Optional[list[str]] = None):
     try:
         rsa_key = _find_rsa_key(token)
+        logger.warning("FULL TOKEN RECEIVED: %s", token[:100])
         if not rsa_key:
             unverified_header = jwt.get_unverified_header(token)
             kid_hint = unverified_header.get("kid") if isinstance(unverified_header, dict) else None
