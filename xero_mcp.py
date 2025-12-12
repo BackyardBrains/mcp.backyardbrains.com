@@ -33,7 +33,7 @@ XERO_SCOPES = os.environ.get("XERO_SCOPES")
 # Encryption setup
 TOKEN_ENC_KEY = os.environ.get("TOKEN_ENC_KEY")
 TOKEN_STORE_PATH = os.environ.get("TOKEN_STORE_PATH", ".xero_tokens.enc")
-TENANT_FILE = "tenant_id.txt"
+TENANT_FILE = os.environ.get("TENANT_FILE", "tenant_id.txt")
 
 if not TOKEN_ENC_KEY:
     logger.warning("TOKEN_ENC_KEY not set; tokens will not be encrypted!")
