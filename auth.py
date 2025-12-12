@@ -23,6 +23,23 @@ ALGORITHMS = ["RS256"]
 security = HTTPBearer(auto_error=False)
 _jwks_cache = None
 
+
+def _validate_jwt_format(token: str, *, context: str) -> None:
+    """Basic structural validation before decoding a JWT."""
+    parts = token.split(".")
+    if len(parts) != 3:
+        logger.warning(
+            "Malformed bearer token for %s: expected 3 segments, got %s", context, len(parts)
+        )
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Invalid token format: expected a JWT access token issued by Auth0. "
+                "Make sure your MCP client is sending the access token from the /auth/token flow, "
+                "not the client secret or some other value."
+            ),
+        )
+
 def get_jwks(force_refresh: bool = False):
     """Fetch JWKS, optionally bypassing the cache when keys rotate."""
     global _jwks_cache
@@ -228,6 +245,7 @@ def require_xero_auth(request: Request, creds: HTTPAuthorizationCredentials = De
             },
         )
     try:
+        _validate_jwt_format(creds.credentials, context=f"{request.method} {request.url.path}")
         try:
             unverified_claims = jwt.get_unverified_claims(creds.credentials)
             _log_scope_claims(unverified_claims, context="Xero request (unverified)")
@@ -237,7 +255,8 @@ def require_xero_auth(request: Request, creds: HTTPAuthorizationCredentials = De
                 status_code=401,
                 detail=(
                     "Invalid token format: unable to parse claims. "
-                    "Ensure you are sending the Auth0-issued access token for the Xero MCP audience."
+                    "Ensure you are sending the Auth0-issued access token for the Xero MCP audience "
+                    "(not the client secret or a partial token)."
                 ),
             )
 
@@ -272,6 +291,7 @@ def require_metabase_auth(request: Request, creds: HTTPAuthorizationCredentials 
             },
         )
     try:
+        _validate_jwt_format(creds.credentials, context=f"{request.method} {request.url.path}")
         try:
             unverified_claims = jwt.get_unverified_claims(creds.credentials)
             _log_scope_claims(unverified_claims, context="Metabase request (unverified)")
