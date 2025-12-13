@@ -42,6 +42,15 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
             )
     except httpx.HTTPError as exc:
         logger.error("Auth0 userinfo request failed: %s", exc)
+        if cached_payload:
+            logger.warning(
+                "Serving cached /userinfo claims after Auth0 error for token: %s", exc
+            )
+            _USERINFO_CACHE[token] = (
+                now + AUTH0_USERINFO_STALE_ON_429_SECONDS,
+                cached_payload,
+            )
+            return cached_payload
         raise HTTPException(status_code=502, detail="Unable to validate token with Auth0")
 
     if response.status_code == 200:
