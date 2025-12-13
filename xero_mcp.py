@@ -1327,10 +1327,17 @@ async def handle_tool_call(name: str, args: Dict):
                 page,
             )
 
-            # Use the Account Transactions Report which works for ALL accounts
-            query = {
-                "accountID": account_id,
-            }
+            if not account_id:
+                return {
+                    "isError": True,
+                    "httpStatus": 400,
+                    "content": [{"type": "text", "text": "Account found but missing account_id"}],
+                    "metadata": {"reason": "accountIdMissing"},
+                }
+
+            # Use the Account Transactions Report. Xero expects the AccountID in the URL path,
+            # not as a query parameter, otherwise the upstream API returns 404.
+            query = {}
             if date_from:
                 query["fromDate"] = date_from
             if date_to:
@@ -1345,7 +1352,8 @@ async def handle_tool_call(name: str, args: Dict):
             # It returns the full report.
             
             try:
-                report_data = _fetch_report_by_resource(accounting_api, tenant_id, "Reports/AccountTransactions", query)
+                resource_path = f"Reports/AccountTransactions/{account_id}"
+                report_data = _fetch_report_by_resource(accounting_api, tenant_id, resource_path, query)
                 # report_data is a tuple (data, status, headers) or just data depending on _return_http_data_only
                 # _fetch_report_by_resource uses _return_http_data_only=True, so it returns the model object (ReportWithRows)
 
