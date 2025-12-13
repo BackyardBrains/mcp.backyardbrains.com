@@ -1,0 +1,114 @@
+{
+  "xero_get_balance_sheet": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"reports\": [{\"reportID\": \"report-123\", \"reportName\": \"Balance Sheet\", \"reportDate\": \"2024-12-31\", \"reportTitles\": [\"Balance Sheet\"], \"rows\": [{\"rowType\": \"Header\", \"title\": \"Balance Sheet\", \"cells\": [{\"value\": \"Balance Sheet\"}]}, {\"rowType\": \"Section\", \"title\": \"Assets\", \"rows\": [{\"rowType\": \"Row\", \"cells\": [{\"value\": \"Cash\"}, {\"value\": 1500}]}]}]}]}"
+      }
+    ]
+  },
+  "xero_get_profit_and_loss": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"reports\": [{\"reportID\": \"report-456\", \"reportName\": \"Profit and Loss\", \"reportDate\": \"2024-12-31\", \"reportTitles\": [\"Profit & Loss\"], \"rows\": [{\"rowType\": \"Header\", \"title\": \"Profit and Loss\", \"cells\": [{\"value\": \"Profit and Loss\"}]}, {\"rowType\": \"Section\", \"title\": \"Revenue\", \"rows\": [{\"rowType\": \"Row\", \"cells\": [{\"value\": \"Sales\"}, {\"value\": 2400}]}]}]}]}"
+      }
+    ]
+  },
+  "xero_get_cash_summary": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"reports\": [{\"reportID\": \"report-789\", \"reportName\": \"Cash Summary\", \"reportDate\": \"2024-12-31\", \"reportTitles\": [\"Cash Summary\"], \"rows\": [{\"rowType\": \"Header\", \"title\": \"Cash Summary\", \"cells\": [{\"value\": \"Cash Summary\"}]}, {\"rowType\": \"Section\", \"title\": \"Cash Movements\", \"rows\": [{\"rowType\": \"Row\", \"cells\": [{\"value\": \"Opening Balance\"}, {\"value\": 1000}]}]}]}]}"
+      }
+    ]
+  },
+  "xero_list_accounts": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"accounts\": [{\"account_id\": \"acc-1\", \"code\": \"100\", \"name\": \"Cash at Bank\", \"type\": \"BANK\", \"status\": \"ACTIVE\"}, {\"account_id\": \"acc-2\", \"code\": \"200\", \"name\": \"Sales\", \"type\": \"REVENUE\", \"status\": \"ACTIVE\"}]}"
+      }
+    ]
+  },
+  "xero_list_contacts": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"contacts\": [{\"contact_id\": \"con-1\", \"name\": \"Contact One\", \"email_address\": \"contact1@example.com\", \"addresses\": [{\"address_type\": \"POBOX\", \"city\": \"Detroit\", \"region\": \"MI\", \"country\": \"USA\"}]}]}"
+      }
+    ]
+  },
+  "xero_list_invoices": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"invoices\": [{\"invoice_id\": \"inv-1\", \"invoice_number\": \"INV-001\", \"date\": \"2024-01-05\", \"due_date\": \"2024-01-20\", \"contact\": {\"contact_id\": \"con-1\", \"name\": \"Contact One\"}, \"status\": \"AUTHORISED\", \"total\": 150.0, \"sub_total\": 130.0, \"total_tax\": 20.0, \"line_items\": [{\"description\": \"Widget\", \"quantity\": 2, \"unit_amount\": 50, \"line_amount\": 100, \"tax_amount\": 10, \"account_code\": \"200\"}]}, {\"invoice_id\": \"inv-2\", \"invoice_number\": \"INV-002\", \"date\": \"2024-02-01\", \"due_date\": \"2024-02-15\", \"contact\": {\"contact_id\": \"con-2\", \"name\": \"Contact Two\"}, \"status\": \"PAID\", \"total\": 200.0, \"sub_total\": 180.0, \"total_tax\": 20.0, \"line_items\": [{\"description\": \"Service\", \"quantity\": 1, \"unit_amount\": 180, \"line_amount\": 180, \"tax_amount\": 20, \"account_code\": \"400\"}]}]}"
+      }
+    ]
+  },
+  "xero_list_bills": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"invoices\": [{\"invoice_id\": \"bill-1\", \"invoice_number\": \"BILL-001\", \"date\": \"2024-01-10\", \"due_date\": \"2024-01-25\", \"status\": \"AUTHORISED\", \"total\": 75.0, \"sub_total\": 70.0, \"total_tax\": 5.0, \"type\": \"ACCPAY\", \"line_items\": [{\"description\": \"Supplies\", \"quantity\": 5, \"unit_amount\": 10, \"line_amount\": 50, \"tax_amount\": 5}]}]}"
+      }
+    ]
+  },
+  "xero_list_payments": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"payments\": [{\"payment_id\": \"pay-1\", \"date\": \"2024-01-15\", \"invoice\": {\"invoice_id\": \"inv-1\"}, \"amount\": 150.0, \"status\": \"AUTHORISED\"}]}"
+      }
+    ]
+  },
+  "xero_list_bank_transactions": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"bank_transactions\": [{\"bank_transaction_id\": \"bt-1\", \"date\": \"2024-01-20\", \"type\": \"SPEND\", \"total\": 50.0, \"currency_rate\": 1.0}]}"
+      }
+    ]
+  },
+  "xero_list_manual_journals": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"manual_journals\": [{\"manual_journal_id\": \"mj-1\", \"date\": \"2024-01-31\", \"narration\": \"Adjusting entry\", \"status\": \"POSTED\", \"journal_lines\": [{\"line_amount\": 100.0, \"account_code\": \"200\"}, {\"line_amount\": -100.0, \"account_code\": \"300\"}]}]}"
+      }
+    ]
+  },
+  "xero_list_tracking_categories": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"tracking_categories\": [{\"tracking_category_id\": \"tc-1\", \"name\": \"Who Pays\", \"status\": \"ACTIVE\", \"tracking_options\": [{\"tracking_option_id\": \"opt-1\", \"name\": \"Grant\", \"status\": \"ACTIVE\"}, {\"tracking_option_id\": \"opt-2\", \"name\": \"Customer\", \"status\": \"ACTIVE\"}]}]}"
+      }
+    ]
+  },
+  "xero_list_quotes": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"quotes\": [{\"quote_id\": \"quo-1\", \"quote_number\": \"QUO-001\", \"date\": \"2024-01-02\", \"status\": \"DRAFT\", \"total\": 99.0}]}"
+      }
+    ]
+  },
+  "xero_list_items": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"items\": [{\"item_id\": \"item-1\", \"code\": \"WIDGET\", \"name\": \"Widget\", \"is_sold\": true, \"is_tracked_as_inventory\": false}]}"
+      }
+    ]
+  },
+  "xero_get_account_transactions": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"transactions\": [{\"account_id\": \"acc-1\", \"date\": \"2024-01-01\", \"amount\": -25.0, \"description\": \"Bank fee\"}]}"
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "contacts": [
+    {
+      "addresses": [
+        {
+          "address_type": "POBOX",
+          "city": "Detroit",
+          "country": "USA",
+          "region": "MI"
+        }
+      ],
+      "contact_id": "con-1",
+      "email_address": "contact1@example.com",
+      "name": "Contact One"
+    }
+  ]
+}

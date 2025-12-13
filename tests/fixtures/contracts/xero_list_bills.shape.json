@@ -1,0 +1,24 @@
+{
+  "invoices": [
+    {
+      "date": "<date>",
+      "due_date": "<date>",
+      "invoice_id": "bill-1",
+      "invoice_number": "BILL-001",
+      "line_items": [
+        {
+          "description": "Supplies",
+          "line_amount": "<number>",
+          "quantity": "<number>",
+          "tax_amount": "<number>",
+          "unit_amount": "<number>"
+        }
+      ],
+      "status": "AUTHORISED",
+      "sub_total": "<number>",
+      "total": "<number>",
+      "total_tax": "<number>",
+      "type": "ACCPAY"
+    }
+  ]
+}

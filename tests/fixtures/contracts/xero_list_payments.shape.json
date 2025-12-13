@@ -1,0 +1,13 @@
+{
+  "payments": [
+    {
+      "amount": "<number>",
+      "date": "<date>",
+      "invoice": {
+        "invoice_id": "inv-1"
+      },
+      "payment_id": "pay-1",
+      "status": "AUTHORISED"
+    }
+  ]
+}

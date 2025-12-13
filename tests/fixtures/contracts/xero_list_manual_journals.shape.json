@@ -1,0 +1,20 @@
+{
+  "manual_journals": [
+    {
+      "date": "<date>",
+      "journal_lines": [
+        {
+          "account_code": "200",
+          "line_amount": "<number>"
+        },
+        {
+          "account_code": "300",
+          "line_amount": "<number>"
+        }
+      ],
+      "manual_journal_id": "mj-1",
+      "narration": "Adjusting entry",
+      "status": "POSTED"
+    }
+  ]
+}

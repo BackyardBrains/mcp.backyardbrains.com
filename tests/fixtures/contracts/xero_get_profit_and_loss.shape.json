@@ -1,0 +1,40 @@
+{
+  "reports": [
+    {
+      "reportDate": "<date>",
+      "reportID": "report-456",
+      "reportName": "Profit and Loss",
+      "reportTitles": [
+        "Profit & Loss"
+      ],
+      "rows": [
+        {
+          "cells": [
+            {
+              "value": "Profit and Loss"
+            }
+          ],
+          "rowType": "Header",
+          "title": "Profit and Loss"
+        },
+        {
+          "rowType": "Section",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "value": "Sales"
+                },
+                {
+                  "value": "<number>"
+                }
+              ],
+              "rowType": "Row"
+            }
+          ],
+          "title": "Revenue"
+        }
+      ]
+    }
+  ]
+}

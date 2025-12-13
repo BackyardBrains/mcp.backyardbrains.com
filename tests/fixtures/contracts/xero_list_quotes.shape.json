@@ -1,0 +1,11 @@
+{
+  "quotes": [
+    {
+      "date": "<date>",
+      "quote_id": "quo-1",
+      "quote_number": "QUO-001",
+      "status": "DRAFT",
+      "total": "<number>"
+    }
+  ]
+}

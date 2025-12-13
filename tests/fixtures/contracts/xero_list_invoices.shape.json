@@ -1,0 +1,52 @@
+{
+  "invoices": [
+    {
+      "contact": {
+        "contact_id": "con-1",
+        "name": "Contact One"
+      },
+      "date": "<date>",
+      "due_date": "<date>",
+      "invoice_id": "inv-1",
+      "invoice_number": "INV-001",
+      "line_items": [
+        {
+          "account_code": "200",
+          "description": "Widget",
+          "line_amount": "<number>",
+          "quantity": "<number>",
+          "tax_amount": "<number>",
+          "unit_amount": "<number>"
+        }
+      ],
+      "status": "AUTHORISED",
+      "sub_total": "<number>",
+      "total": "<number>",
+      "total_tax": "<number>"
+    },
+    {
+      "contact": {
+        "contact_id": "con-2",
+        "name": "Contact Two"
+      },
+      "date": "<date>",
+      "due_date": "<date>",
+      "invoice_id": "inv-2",
+      "invoice_number": "INV-002",
+      "line_items": [
+        {
+          "account_code": "400",
+          "description": "Service",
+          "line_amount": "<number>",
+          "quantity": "<number>",
+          "tax_amount": "<number>",
+          "unit_amount": "<number>"
+        }
+      ],
+      "status": "PAID",
+      "sub_total": "<number>",
+      "total": "<number>",
+      "total_tax": "<number>"
+    }
+  ]
+}

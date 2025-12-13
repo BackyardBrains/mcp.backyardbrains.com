@@ -1,0 +1,11 @@
+{
+  "items": [
+    {
+      "code": "WIDGET",
+      "is_sold": "<number>",
+      "is_tracked_as_inventory": "<number>",
+      "item_id": "item-1",
+      "name": "Widget"
+    }
+  ]
+}

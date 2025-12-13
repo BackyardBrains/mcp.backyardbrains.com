@@ -1,0 +1,11 @@
+{
+  "bank_transactions": [
+    {
+      "bank_transaction_id": "bt-1",
+      "currency_rate": "<number>",
+      "date": "<date>",
+      "total": "<number>",
+      "type": "SPEND"
+    }
+  ]
+}
