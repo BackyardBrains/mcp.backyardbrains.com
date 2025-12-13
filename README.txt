@@ -281,37 +281,7 @@ Shows Q3 2025 compared to previous 4 quarters.
 
 ---
 
-## 🔍 Accounts & Transaction Details
-
-### 10. Account Transactions (Bank Accounts Only)
- 
- **Purpose:** See all transactions affecting a specific **Account** (Bank, Expense, Revenue, etc.).
-
-**Tool:** `xero_get_account_transactions`
-
-**Example (Sales Revenue Account):**
-```json
-{
-  "accountCode": "4000",
-  "dateFrom": "2025-01-01",
-  "dateTo": "2025-03-31"
-}
-```
-
-**Example (Accounts Receivable):**
-```json
-{
-  "accountCode": "1200",
-  "dateFrom": "2025-11-01",
-  "dateTo": "2025-11-30"
-}
-```
-
-First get the chart of accounts with `xero_list_accounts` to find the account code you need.
-
----
-
-### 11. Product Catalog (Items)
+### 9. Product Catalog (Items)
 
 **Purpose:** Retrieve product/service catalog with cost and sales prices for margin analysis.
 
@@ -332,9 +302,8 @@ First get the chart of accounts with `xero_list_accounts` to find the account co
 **For margin analysis:**
 Calculate: `(SalesPrice - CostPrice) / SalesPrice * 100` for margin percentage.
 
----
 
-### 12. Bills (Accounts Payable)
+### 10. Bills (Accounts Payable)
 
 **Purpose:** Find unpaid or overdue bills to manage cash flow.
 

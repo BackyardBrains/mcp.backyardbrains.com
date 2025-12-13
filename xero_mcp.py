@@ -908,22 +908,6 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero_get_account_transactions",
-                "description": "Retrieve Account Transactions report for any account (Bank, Asset, Liability, Expense, Revenue, Equity) over a date range.",
-                "inputSchema": {
-                    "type": "object",
-                    "required": ["accountCode"],
-                    "properties": {
-                        "accountCode": {"type": "string", "description": "Account code from chart of accounts (e.g., '1200' for AR, '4000' for Sales)"},
-                        "dateFrom": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
-                        "dateTo": {"type": "string", "description": "End date (YYYY-MM-DD)"}
-                    }
-                },
-                "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
-                ]
-            },
-            {
                 "name": "xero_list_items",
                 "description": "Retrieve items (products/services) with details like cost price and sales price.",
                 "inputSchema": {
@@ -1290,108 +1274,6 @@ async def handle_tool_call(name: str, args: Dict):
 
             quotes = accounting_api.get_quotes(tenant_id, **q_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([q.to_dict() for q in quotes.quotes])}]}
-        elif name == "xero_get_account_transactions":
-            # Get all transactions affecting a specific account
-            account_code = _get_arg(args, "accountCode", "account_code")
-            if not account_code:
-                return {
-                    "isError": True,
-                    "httpStatus": 400,
-                    "content": [{"type": "text", "text": "accountCode is required"}],
-                    "metadata": {"reason": "missingParameter"}
-                }
-            
-            date_from = _get_arg(args, "dateFrom", "date_from")
-            date_to = _get_arg(args, "dateTo", "date_to")
-            page = _get_arg(args, "page")
-            
-            # First, get the account details to validate and get account ID
-            accounts_response = accounting_api.get_accounts(tenant_id, where=f'Code=="{account_code}"')
-            if not accounts_response.accounts:
-                return {
-                    "isError": True,
-                    "httpStatus": 404,
-                    "content": [{"type": "text", "text": f"Account {account_code} not found"}],
-                    "metadata": {"reason": "accountNotFound"}
-                }
-            
-            account = accounts_response.accounts[0]
-            account_id = getattr(account, "account_id", None)
-
-            logger.info(
-                "Fetching Account Transactions report for account_code=%s account_id=%s date_from=%s date_to=%s page=%s",
-                account_code,
-                account_id,
-                date_from,
-                date_to,
-                page,
-            )
-
-            if not account_id:
-                return {
-                    "isError": True,
-                    "httpStatus": 400,
-                    "content": [{"type": "text", "text": "Account found but missing account_id"}],
-                    "metadata": {"reason": "accountIdMissing"},
-                }
-
-            # Use the Account Transactions Report. Xero expects the AccountID in the URL path,
-            # not as a query parameter, otherwise the upstream API returns 404.
-            query = {}
-            if date_from:
-                query["fromDate"] = date_from
-            if date_to:
-                query["toDate"] = date_to
-
-            logger.info(
-                "Account Transactions query params prepared: %s",
-                safe_dumps(query),
-            )
-            
-            # Note: The report endpoint doesn't support standard pagination like 'page' parameter in the same way as list endpoints.
-            # It returns the full report.
-            
-            try:
-                resource_path = f"Reports/AccountTransactions/{account_id}"
-                report_data = _fetch_report_by_resource(accounting_api, tenant_id, resource_path, query)
-                # report_data is a tuple (data, status, headers) or just data depending on _return_http_data_only
-                # _fetch_report_by_resource uses _return_http_data_only=True, so it returns the model object (ReportWithRows)
-
-                # The SDK returns a Reports object containing a list of Report objects
-                if hasattr(report_data, "reports") and report_data.reports:
-                    report = report_data.reports[0]
-                    return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(report))}]}
-                else:
-                    return {"content": [{"type": "text", "text": safe_dumps({})}]}
-
-            except HTTPStatusException as e:
-                headers = getattr(e, "headers", {}) or {}
-                correlation_id = headers.get("Xero-Correlation-Id") or headers.get("xero-correlation-id")
-                logger.warning(
-                    "HTTP error fetching Account Transactions report: status=%s correlation_id=%s headers=%s body=%s",
-                    getattr(e, "status", None),
-                    correlation_id,
-                    headers,
-                    getattr(e, "body", None),
-                )
-                message = safe_exception_message(e)
-                logger.warning(
-                    "Failed to fetch Account Transactions report: status=%s correlation_id=%s", getattr(e, "status", None), correlation_id
-                )
-                return {
-                    "isError": True,
-                    "httpStatus": getattr(e, "status", 502),
-                    "content": [{"type": "text", "text": f"Failed to fetch report: {message}"}],
-                    "metadata": {"reason": "reportError", "statusCode": getattr(e, "status", None), "correlationId": correlation_id}
-                }
-            except Exception as e:
-                logger.exception("Failed to fetch Account Transactions report")
-                return {
-                    "isError": True,
-                    "httpStatus": 502,
-                    "content": [{"type": "text", "text": f"Failed to fetch report: {safe_exception_message(e)}"}],
-                    "metadata": {"reason": "reportError"}
-                }
         elif name == "xero_list_items":
             updated_since = _get_arg(args, "updatedSince", "updated_since")
             i_kwargs = {}

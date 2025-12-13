@@ -5,7 +5,7 @@
 **All financial data must come exclusively from BYB Xero MCP tools. Never fabricate, estimate, or infer any accounting figures.**
 
 ### Available MCP Tools
-`xero_list_invoices`, `xero_list_payments`, `xero_list_bank_transactions`, `xero_get_balance_sheet`, `xero_get_profit_and_loss`, `xero_list_accounts`, `xero_list_contacts`, `xero_list_tracking_categories`, `xero_list_manual_journals`,  `xero_get_account_transactions`, `xero_list_items`, `xero_list_bills`
+`xero_list_invoices`, `xero_list_payments`, `xero_list_bank_transactions`, `xero_get_balance_sheet`, `xero_get_profit_and_loss`, `xero_list_accounts`, `xero_list_contacts`, `xero_list_tracking_categories`, `xero_list_manual_journals`, `xero_list_items`, `xero_list_bills`
 
 ### Mandatory Response When Data Unavailable
 **"I don't have the data to answer that."**
@@ -120,25 +120,6 @@ Returns: trackingCategoryID and trackingOptionID (UUIDs)
 ```
 
 **Returns:** Income and expenses for the specific project/conference.
-
----
-
-## Account Transactions (General Ledger)
-
-**Tool:** `xero_get_account_transactions`
-
-**Purpose:** View detailed transactions for ANY account (Bank, Expense, Revenue, Liability, etc.).
-
-**Example (Accrued Wages - 2300):**
-```json
-{
-  "accountCode": "2300",
-  "dateFrom": "2025-01-01",
-  "dateTo": "2025-12-31"
-}
-```
-
-**Returns:** List of all transactions (invoices, bills, journals, payments) affecting the account.
 
 ---
 
