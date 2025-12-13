@@ -995,22 +995,21 @@
         }
     },
     {
-        "id": "692602edf762325a3579bf30",
-        "name": "mcp.backyardbrains.com/xero",
-        "identifier": "https://mcp.backyardbrains.com/xero",
+        "id": "69260309559d8725db037ba9",
+        "name": "mcp.backyardbrains.com/metabase",
+        "identifier": "https://mcp.backyardbrains.com/metabase",
         "scopes": [
             {
-                "value": "mcp:read:xero",
-                "description": "Read Xero data"
+                "value": "mcp:read:metabase",
+                "description": "Read Metabase data"
             },
             {
-                "value": "mcp:write:xero",
-                "description": "Write Xero data"
+                "value": "mcp:write:metabase",
+                "description": "Write Metabase data"
             }
         ],
         "signing_alg": "RS256",
-        "signing_secret": "RMqkPXAcgFpE7b9huMjBQs7vk7Ct6gHi",
-        "allow_offline_access": true,
+        "allow_offline_access": false,
         "token_lifetime": 86400,
         "token_lifetime_for_web": 7200,
         "skip_consent_for_verifiable_first_party_clients": true,
@@ -1026,17 +1025,47 @@
         }
     },
     {
-        "id": "69260309559d8725db037ba9",
-        "name": "mcp.backyardbrains.com/metabase",
-        "identifier": "https://mcp.backyardbrains.com/metabase",
+        "id": "693c585f4d5d5e8c1f61f6d6",
+        "name": "mcp.backyardbrains.com/xero",
+        "identifier": "https://mcp.backyardbrains.com/xero",
         "scopes": [
             {
-                "value": "mcp:read:metabase",
-                "description": "Read Metabase data"
+                "value": "mcp:read:xero",
+                "description": "Read Xero Data"
             },
             {
-                "value": "mcp:write:metabase",
-                "description": "Write Metabase data"
+                "value": "mcp:write:xero",
+                "description": "Write Xero Data"
+            }
+        ],
+        "signing_alg": "RS256",
+        "allow_offline_access": false,
+        "token_lifetime": 86400,
+        "token_lifetime_for_web": 7200,
+        "skip_consent_for_verifiable_first_party_clients": true,
+        "enforce_policies": false,
+        "token_dialect": "access_token",
+        "subject_type_authorization": {
+            "user": {
+                "policy": "allow_all"
+            },
+            "client": {
+                "policy": "require_client_grant"
+            }
+        }
+    },
+    {
+        "id": "693cac82f4ccd4b63637a1e6",
+        "name": "mcp.backyardbrains.com/meta",
+        "identifier": "https://mcp.backyardbrains.com/meta",
+        "scopes": [
+            {
+                "value": "mcp:read:meta",
+                "description": "Read Meta Marketing"
+            },
+            {
+                "value": "mcp:write:meta",
+                "description": "Write Meta Marketing"
             }
         ],
         "signing_alg": "RS256",
