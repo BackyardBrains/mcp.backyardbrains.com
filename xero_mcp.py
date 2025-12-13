@@ -382,6 +382,7 @@ def _fetch_report_by_resource(accounting_api, tenant_id: str, resource: str, que
         "Accept": accounting_api.api_client.select_header_accept(["application/json"]),
     }
     resource_path = resource if resource.startswith("/") else f"/{resource}"
+    logger.info("Calling Xero report resource: path=%s query_params=%s", resource_path, query_params)
     return accounting_api.api_client.call_api(
         accounting_api.get_resource_url(resource_path),
         "GET",
@@ -1317,6 +1318,15 @@ async def handle_tool_call(name: str, args: Dict):
             account = accounts_response.accounts[0]
             account_id = getattr(account, "account_id", None)
 
+            logger.info(
+                "Fetching Account Transactions report for account_code=%s account_id=%s date_from=%s date_to=%s page=%s",
+                account_code,
+                account_id,
+                date_from,
+                date_to,
+                page,
+            )
+
             # Use the Account Transactions Report which works for ALL accounts
             query = {
                 "accountID": account_id,
@@ -1325,6 +1335,11 @@ async def handle_tool_call(name: str, args: Dict):
                 query["fromDate"] = date_from
             if date_to:
                 query["toDate"] = date_to
+
+            logger.info(
+                "Account Transactions query params prepared: %s",
+                safe_dumps(query),
+            )
             
             # Note: The report endpoint doesn't support standard pagination like 'page' parameter in the same way as list endpoints.
             # It returns the full report.
@@ -1339,11 +1354,18 @@ async def handle_tool_call(name: str, args: Dict):
                     report = report_data.reports[0]
                     return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(report))}]}
                 else:
-                     return {"content": [{"type": "text", "text": safe_dumps({})}]}
+                    return {"content": [{"type": "text", "text": safe_dumps({})}]}
 
             except HTTPStatusException as e:
                 headers = getattr(e, "headers", {}) or {}
                 correlation_id = headers.get("Xero-Correlation-Id") or headers.get("xero-correlation-id")
+                logger.warning(
+                    "HTTP error fetching Account Transactions report: status=%s correlation_id=%s headers=%s body=%s",
+                    getattr(e, "status", None),
+                    correlation_id,
+                    headers,
+                    getattr(e, "body", None),
+                )
                 message = safe_exception_message(e)
                 logger.warning(
                     "Failed to fetch Account Transactions report: status=%s correlation_id=%s", getattr(e, "status", None), correlation_id
