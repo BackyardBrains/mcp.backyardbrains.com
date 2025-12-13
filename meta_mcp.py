@@ -69,56 +69,65 @@ async def meta_gateway_any(request: Request):
         return Response(status_code=403, content="Insufficient permissions")
 
     # 4) Proxy to upstream
-    # Read body if it exists (for POST)
     body = await request.body()
     
+    # Forward client's Accept header so upstream knows what to return
     accept = request.headers.get("accept") or "application/json, text/event-stream"
     headers = {
         "Content-Type": request.headers.get("content-type", "application/json"),
         "Accept": accept,
     }
 
-    wants_stream = "text/event-stream" in accept
+    # Use a long timeout for SSE
+    client = httpx.AsyncClient(timeout=300)
+    
+    # We must stream the request to inspect headers before deciding response type
+    upstream_req = client.build_request(method, META_MCP_UPSTREAM, content=body, headers=headers)
+    
+    try:
+        r = await client.send(upstream_req, stream=True)
+    except Exception as e:
+        await client.aclose()
+        logger.error(f"Upstream connection failed: {e}")
+        return Response(status_code=502, content=f"Upstream unavailable: {e}")
 
-    if wants_stream:
-        # Streaming proxy for SSE
-        client = httpx.AsyncClient(timeout=300)
-        async def stream_response():
+    upstream_content_type = r.headers.get("content-type", "")
+    logger.info(f"Upstream response: {r.status_code} type={upstream_content_type}")
+
+    if "text/event-stream" in upstream_content_type:
+        # Pass through the stream for SSE
+        async def iterate_stream():
             try:
-                # Use the same method as the incoming request (GET for SSE handshake typically)
-                # But upstream 'streamable-http' usually expects GET for SSE subscription 
-                # or POST for messages. 
-                # For safety, if it is an SSE *connect* (GET), we proxy as GET.
-                # If it is a POST with streaming accept, we proxy as POST.
-                upstream_method = method
-                
-                async with client.stream(upstream_method, META_MCP_UPSTREAM, content=body, headers=headers) as resp:
-                    logger.info(f"Upstream SSE started: {resp.status_code}")
-                    async for chunk in resp.aiter_bytes():
-                        yield chunk
+                async for chunk in r.aiter_bytes():
+                    yield chunk
             except Exception as e:
-                 logger.error(f"Stream error: {e}")
+                logger.error(f"Stream error: {e}")
             finally:
+                await r.aclose()
                 await client.aclose()
 
         return StreamingResponse(
-            stream_response(),
+            iterate_stream(),
+            status_code=r.status_code,
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            headers={
+                "Cache-Control": "no-cache", 
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive"
+            },
         )
     else:
-        # Standard request/response for JSON
-        async with httpx.AsyncClient(timeout=60) as client:
-            try:
-                upstream = await client.request(method, META_MCP_UPSTREAM, content=body, headers=headers)
-                logger.info(f"Upstream response: {upstream.status_code} len={len(upstream.content)}")
-                logger.info(f"Upstream body partial: {upstream.content[:500]!r}")
-            except Exception as e:
-                logger.error(f"Upstream request failed: {e}")
-                return Response(status_code=502, content=f"Upstream Error: {e}")
+        # Standard response (JSON/text)
+        # Read the whole body so we can release the client
+        try:
+            content = await r.aread()
+        finally:
+            await r.aclose()
+            await client.aclose()
 
+        logger.info(f"Upstream body len={len(content)}")
         return Response(
-            content=upstream.content,
-            status_code=upstream.status_code,
-            media_type=upstream.headers.get("content-type", "application/json"),
+            content=content,
+            status_code=r.status_code,
+            media_type=upstream_content_type or "application/json",
         )
