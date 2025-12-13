@@ -47,49 +47,57 @@ from fastapi import HTTPException
 
 from utils import logger
 
-@router.post("/meta/")
-async def meta_gateway(request: Request):
+@router.any("/meta/")
+async def meta_gateway_any(request: Request):
+    method = request.method
     # 1) Require bearer
     auth_header = request.headers.get("authorization", "")
     if not auth_header.lower().startswith("bearer "):
         return _challenge_401()
     token = auth_header.split(" ", 1)[1].strip()
 
-    # 2) Validate Token (using auth.py logic for consistency/opaque support)
+    # 2) Validate Token
     try:
         claims = await validate_opaque_token(token)
     except Exception as e:
         logger.warning(f"Meta token validation failed: {e}")
         return _challenge_401()
 
-    # 3) Enforce scope (require mcp:read:meta or mcp:write:meta)
+    # 3) Enforce scope
     if not check_permissions(claims, ["mcp:read:meta", "mcp:write:meta"]):
         logger.warning(f"Insufficient permissions. Claims: {claims}")
         return Response(status_code=403, content="Insufficient permissions")
 
-    # 4) Proxy body to meta container MCP endpoint
+    # 4) Proxy to upstream
+    # Read body if it exists (for POST)
     body = await request.body()
-
-    # Meta MCP requires Accept include both types
+    
     accept = request.headers.get("accept") or "application/json, text/event-stream"
-
     headers = {
         "Content-Type": request.headers.get("content-type", "application/json"),
         "Accept": accept,
     }
 
-    # Check if client expects streaming (SSE)
     wants_stream = "text/event-stream" in accept
 
     if wants_stream:
-        # Streaming proxy for SSE responses
+        # Streaming proxy for SSE
         client = httpx.AsyncClient(timeout=300)
-
         async def stream_response():
             try:
-                async with client.stream("POST", META_MCP_UPSTREAM, content=body, headers=headers) as resp:
+                # Use the same method as the incoming request (GET for SSE handshake typically)
+                # But upstream 'streamable-http' usually expects GET for SSE subscription 
+                # or POST for messages. 
+                # For safety, if it is an SSE *connect* (GET), we proxy as GET.
+                # If it is a POST with streaming accept, we proxy as POST.
+                upstream_method = method
+                
+                async with client.stream(upstream_method, META_MCP_UPSTREAM, content=body, headers=headers) as resp:
+                    logger.info(f"Upstream SSE started: {resp.status_code}")
                     async for chunk in resp.aiter_bytes():
                         yield chunk
+            except Exception as e:
+                 logger.error(f"Stream error: {e}")
             finally:
                 await client.aclose()
 
@@ -101,7 +109,13 @@ async def meta_gateway(request: Request):
     else:
         # Standard request/response for JSON
         async with httpx.AsyncClient(timeout=60) as client:
-            upstream = await client.post(META_MCP_UPSTREAM, content=body, headers=headers)
+            try:
+                upstream = await client.request(method, META_MCP_UPSTREAM, content=body, headers=headers)
+                logger.info(f"Upstream response: {upstream.status_code} len={len(upstream.content)}")
+                logger.info(f"Upstream body partial: {upstream.content[:500]!r}")
+            except Exception as e:
+                logger.error(f"Upstream request failed: {e}")
+                return Response(status_code=502, content=f"Upstream Error: {e}")
 
         return Response(
             content=upstream.content,
