@@ -47,7 +47,7 @@ from fastapi import HTTPException
 
 from utils import logger
 
-@router.any("/meta/")
+@router.api_route("/meta/", methods=["GET", "POST"])
 async def meta_gateway_any(request: Request):
     method = request.method
     # 1) Require bearer
