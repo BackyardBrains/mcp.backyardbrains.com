@@ -10,9 +10,9 @@ from utils import logger
 
 # Auth0 configuration
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
-AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")
 AUTH0_XERO_AUDIENCE = os.environ.get("AUTH0_XERO_AUDIENCE", "https://mcp.backyardbrains.com/xero")
 AUTH0_METABASE_AUDIENCE = os.environ.get("AUTH0_METABASE_AUDIENCE", "https://mcp.backyardbrains.com/metabase")
+AUTH0_META_AUDIENCE = os.environ.get("AUTH0_META_AUDIENCE", "https://mcp.backyardbrains.com/meta")
 AUTH0_NAMESPACE = "https://mcp.backyardbrains.com"
 
 security = HTTPBearer(auto_error=False)

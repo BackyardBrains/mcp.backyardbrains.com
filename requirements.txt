@@ -6,4 +6,5 @@ cryptography==43.0.3
 python-dotenv==1.2.1
 python-jose[cryptography]==3.3.0
 httpx==0.28.1
-itsdangerous
+PyJWT>=2.8.0
+itsdangerous==2.2.0
