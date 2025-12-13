@@ -1,0 +1,425 @@
+[
+    {
+        "name": "api.backyardbrains.com",
+        "client_id": "VxSYVFqMVd9al5DEzND3Nr0psPjUMcLU",
+        "app_type": "non_interactive",
+        "logo_uri": "https://api.backyardbrains.com/static/images/byblogo150.png",
+        "is_first_party": true,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": false,
+        "callbacks": [],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "alg": "RS256",
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "cross_origin_authentication": false,
+        "grant_types": [
+            "client_credentials"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    },
+    {
+        "name": " blog.backyardbrains.com",
+        "client_id": "ht6b1ze2jL3Nc1r3jHVxqXb1FqdjSSuG",
+        "app_type": "regular_web",
+        "logo_uri": "https://api.backyardbrains.com/static/images/byblogo150-admin.png",
+        "is_first_party": true,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://blog.backyardbrains.com/index.php?auth0=1"
+        ],
+        "web_origins": [
+            "https://blog.backyardbrains.com/"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "allowed_logout_urls": [
+            "https://blog.backyardbrains.com/"
+        ],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "alg": "RS256",
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "cross_origin_authentication": false,
+        "grant_types": [
+            "authorization_code",
+            "implicit",
+            "refresh_token",
+            "client_credentials"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "initiate_login_uri": "https://blog.backyardbrains.com/wp-login.php",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    },
+    {
+        "name": " forum.backyardbrains.com",
+        "client_id": "eqIm5qDfldjLUQwB2FiswudottmpeFfB",
+        "app_type": "regular_web",
+        "logo_uri": "https://api.backyardbrains.com/static/images/byblogo150.png",
+        "is_first_party": true,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://forum.backyardbrains.com/auth/oauth2_basic/callback"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "allowed_logout_urls": [
+            "https://forum.backyardbrains.com/logout"
+        ],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "alg": "RS256",
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "cross_origin_authentication": false,
+        "grant_types": [
+            "authorization_code",
+            "implicit",
+            "refresh_token",
+            "client_credentials"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "initiate_login_uri": "https://forum.backyardbrains.com",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    },
+    {
+        "name": "shop.backyardbrains.com",
+        "client_id": "nbFq5lFXgVWfYZjEbOHQzYl1yBvPD4p0",
+        "app_type": "regular_web",
+        "logo_uri": "https://api.backyardbrains.com/static/images/byblogo150.png",
+        "is_first_party": true,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://store.xecurify.com/moas/broker/login/saml/acs/33257"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "alg": "RS256",
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "cross_origin_authentication": false,
+        "grant_types": [
+            "authorization_code",
+            "implicit",
+            "refresh_token",
+            "client_credentials"
+        ],
+        "custom_login_page_on": true,
+        "addons": {
+            "samlp": {
+                "mappings": {
+                    "email": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+                    "first_name": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname",
+                    "last_name": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname"
+                },
+                "audience": "https://store.xecurify.com/moas",
+                "recipient": "https://store.xecurify.com/moas/broker/login/saml/acs/33257",
+                "createUpnClaim": true,
+                "passthroughClaimsWithNoMapping": true,
+                "typedAttributes": true,
+                "includeAttributeNameFormat": true,
+                "logout": {
+                    "callback": "https://store.xecurify.com/moas/broker/login/saml_logout/33257/",
+                    "slo_enabled": true
+                }
+            }
+        },
+        "token_endpoint_auth_method": "client_secret_post",
+        "initiate_login_uri": "https://shop.backyardbrains.com/account",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    },
+    {
+        "name": "cloud.digitalocean.com",
+        "client_id": "TByVTbOHdkEi5kEI3bCOQ8Ve7G4QysPR",
+        "app_type": "regular_web",
+        "logo_uri": "https://cdn.iconscout.com/icon/free/png-256/free-digitalocean-logo-icon-svg-png-download-2285028.png",
+        "is_first_party": true,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://cloud.digitalocean.com/sessions/sso/callback"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "allowed_logout_urls": [
+            "https://cloud.digitalocean.com/"
+        ],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "alg": "RS256",
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "cross_origin_authentication": false,
+        "grant_types": [
+            "authorization_code",
+            "implicit",
+            "refresh_token",
+            "client_credentials"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    },
+    {
+        "name": "mcp.backyardbrains.com",
+        "client_id": "XBgVrhllXZi1IR3o3TiFAI6nFgwU8CYU",
+        "app_type": "regular_web",
+        "logo_uri": "https://api.backyardbrains.com/static/images/byblogo150-admin.png",
+        "is_first_party": true,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": false,
+        "callbacks": [
+            "https://claude.ai/api/mcp/auth_callback",
+            "https://claude.com/api/mcp/auth_callback",
+            "https://mcp.backyardbrains.com/xero/callback",
+            "https://chatgpt.com/connector_platform_oauth_redirect",
+            "https://chat.openai.com/connector_platform_oauth_redirect",
+            "https://mcp.backyardbrains.com/auth/callback",
+            "https://mcp.backyardbrains.com/static/get-token.html",
+            "http://localhost:6274/oauth/callback",
+            "http://localhost:6274/oauth/callback/debug",
+            "https://www.typingmind.com"
+        ],
+        "web_origins": [
+            "https://chatgpt.com",
+            "https://chat.openai.com/",
+            "https://claude.ai/",
+            "https://mcp.backyardbrains.com/"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "allowed_logout_urls": [],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "alg": "RS256",
+            "lifetime_in_seconds": 36000
+        },
+        "sso": true,
+        "sso_disabled": false,
+        "cross_origin_authentication": false,
+        "grant_types": [
+            "authorization_code",
+            "implicit",
+            "refresh_token",
+            "client_credentials"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    },
+    {
+        "name": "schema.backyardbrains.com",
+        "client_id": "cijU0VFGcMO1Pp2GNCq7e64Qo6XXdPrS",
+        "app_type": "regular_web",
+        "logo_uri": "https://api.backyardbrains.com/static/images/byblogo150.png",
+        "is_first_party": true,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://schema.backyardbrains.com/api/auth/callback"
+        ],
+        "web_origins": [
+            "https://schema.backyardbrains.com"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "allowed_logout_urls": [
+            "https://schema.backyardbrains.com/results"
+        ],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "alg": "RS256",
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "cross_origin_authentication": false,
+        "grant_types": [
+            "authorization_code",
+            "implicit",
+            "refresh_token",
+            "client_credentials"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "initiate_login_uri": "https://schema.backyardbrains.com/results",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        },
+        "async_approval_notification_channels": [
+            "guardian-push"
+        ]
+    },
+    {
+        "name": "Test",
+        "client_id": "qSLsS6fznjYLgfwvgvi25uQbWv4hXJcf",
+        "app_type": "regular_web",
+        "is_first_party": true,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://chatgpt.com/connector_platform_oauth_redirect"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "alg": "RS256",
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "cross_origin_authentication": false,
+        "grant_types": [
+            "authorization_code",
+            "implicit",
+            "refresh_token",
+            "client_credentials"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    }
+]
