@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Optional, Dict, Any
 
 import httpx
@@ -16,13 +17,23 @@ AUTH0_NAMESPACE = "https://mcp.backyardbrains.com"
 
 security = HTTPBearer(auto_error=False)
 
+# Cache /userinfo responses to avoid hammering Auth0 and hitting rate limits
+_USERINFO_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
+AUTH0_USERINFO_CACHE_SECONDS = int(os.environ.get("AUTH0_USERINFO_CACHE_SECONDS", "300"))
+AUTH0_USERINFO_STALE_ON_429_SECONDS = int(os.environ.get("AUTH0_USERINFO_STALE_ON_429_SECONDS", "60"))
+
 async def validate_opaque_token(token: str) -> Dict[str, Any]:
     """Validate an opaque/JWE token by calling Auth0's /userinfo endpoint."""
 
     if not AUTH0_DOMAIN:
         raise HTTPException(status_code=500, detail="Auth0 domain not configured")
 
-    logger.warning("FULL TOKEN RECEIVED: %s", token[:100])
+    now = time.time()
+    cached = _USERINFO_CACHE.get(token)
+    cached_payload = cached[1] if cached else None
+    if cached and cached[0] > now:
+        return cached_payload
+
     userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
 
     try:
@@ -33,15 +44,44 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
             )
     except httpx.HTTPError as exc:
         logger.error("Auth0 userinfo request failed: %s", exc)
+        if cached_payload:
+            logger.warning(
+                "Serving cached /userinfo claims after Auth0 error for token: %s", exc
+            )
+            _USERINFO_CACHE[token] = (
+                now + AUTH0_USERINFO_STALE_ON_429_SECONDS,
+                cached_payload,
+            )
+            return cached_payload
         raise HTTPException(status_code=502, detail="Unable to validate token with Auth0")
 
     if response.status_code == 200:
         payload = response.json()
         _log_scope_claims(payload, context="userinfo")
+        _USERINFO_CACHE[token] = (now + AUTH0_USERINFO_CACHE_SECONDS, payload)
         return payload
 
     if response.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    if response.status_code == 429:
+        retry_after = response.headers.get("Retry-After")
+        if cached_payload:
+            logger.warning(
+                "Auth0 rate limit hit for /userinfo: status=%s retry_after=%s -- serving cached claims",
+                response.status_code,
+                retry_after,
+            )
+            _USERINFO_CACHE[token] = (
+                now + AUTH0_USERINFO_STALE_ON_429_SECONDS,
+                cached_payload,
+            )
+            return cached_payload
+
+        logger.warning(
+            "Auth0 rate limit hit for /userinfo: status=%s retry_after=%s", response.status_code, retry_after
+        )
+        raise HTTPException(status_code=429, detail="Auth0 rate limit on /userinfo")
 
     logger.warning(
         "Unexpected response from Auth0 userinfo: %s %s",

@@ -17,6 +17,7 @@ from xero_python.accounting import AccountingApi, Contact, Contacts, BankTransac
 from xero_python.api_client import ApiClient
 from xero_python.api_client.oauth2 import OAuth2Token
 from xero_python.api_client.configuration import Configuration
+from xero_python.exceptions.http_status_exceptions import HTTPStatusException
 
 from utils import MCP_PROTOCOL_VERSION, safe_dumps, _as_float, _rpc_result, _rpc_error, logger
 
@@ -381,6 +382,11 @@ def _fetch_report_by_resource(accounting_api, tenant_id: str, resource: str, que
         "Accept": accounting_api.api_client.select_header_accept(["application/json"]),
     }
     resource_path = resource if resource.startswith("/") else f"/{resource}"
+    logger.info(
+        "Calling Xero report resource: path=%s query_params=%s",
+        resource_path,
+        query_params,
+    )
     return accounting_api.api_client.call_api(
         accounting_api.get_resource_url(resource_path),
         "GET",
@@ -1191,7 +1197,7 @@ async def handle_tool_call(name: str, args: Dict):
 
             where = _join_where(
                 mj_where if isinstance(mj_where, str) and mj_where.strip() else "",
-                _xero_where_date_field("JournalDate", mj_date_from, mj_date_to),
+                _xero_where_date_field("Date", mj_date_from, mj_date_to),
             )
 
             mj_kwargs = {}
@@ -1294,6 +1300,7 @@ async def handle_tool_call(name: str, args: Dict):
             if not account_code:
                 return {
                     "isError": True,
+                    "httpStatus": 400,
                     "content": [{"type": "text", "text": "accountCode is required"}],
                     "metadata": {"reason": "missingParameter"}
                 }
@@ -1307,16 +1314,25 @@ async def handle_tool_call(name: str, args: Dict):
             if not accounts_response.accounts:
                 return {
                     "isError": True,
+                    "httpStatus": 404,
                     "content": [{"type": "text", "text": f"Account {account_code} not found"}],
                     "metadata": {"reason": "accountNotFound"}
                 }
             
             account = accounts_response.accounts[0]
-            account_id = getattr(account, "account_id", None)
+            account_id = getattr(account, "account_id", None) or account.to_dict().get("account_id")
+            if not account_id:
+                # Fail fast if the account record somehow omitted the GUID; without it the report 404s
+                return {
+                    "isError": True,
+                    "httpStatus": 502,
+                    "content": [{"type": "text", "text": f"Account {account_code} is missing an AccountID"}],
+                    "metadata": {"reason": "accountMissingId"},
+                }
 
             # Use the Account Transactions Report which works for ALL accounts
             query = {
-                "account": account_id,
+                "accountID": account_id,
             }
             if date_from:
                 query["fromDate"] = date_from
@@ -1330,18 +1346,34 @@ async def handle_tool_call(name: str, args: Dict):
                 report_data = _fetch_report_by_resource(accounting_api, tenant_id, "Reports/AccountTransactions", query)
                 # report_data is a tuple (data, status, headers) or just data depending on _return_http_data_only
                 # _fetch_report_by_resource uses _return_http_data_only=True, so it returns the model object (ReportWithRows)
-                
+
                 # The SDK returns a Reports object containing a list of Report objects
                 if hasattr(report_data, "reports") and report_data.reports:
                     report = report_data.reports[0]
                     return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(report))}]}
                 else:
-                     return {"content": [{"type": "text", "text": safe_dumps({})}]}
+                    return {"content": [{"type": "text", "text": safe_dumps({})}]}
 
+            except HTTPStatusException as e:
+                headers = getattr(e, "headers", {}) or {}
+                correlation_id = headers.get("Xero-Correlation-Id") or headers.get("xero-correlation-id")
+                message = safe_exception_message(e)
+                logger.warning(
+                    "Failed to fetch Account Transactions report: status=%s correlation_id=%s", getattr(e, "status", None), correlation_id
+                )
+                if correlation_id:
+                    message = f"{message} (correlation_id={correlation_id})"
+                return {
+                    "isError": True,
+                    "httpStatus": getattr(e, "status", 502),
+                    "content": [{"type": "text", "text": f"Failed to fetch report: {message}"}],
+                    "metadata": {"reason": "reportError", "statusCode": getattr(e, "status", None), "correlationId": correlation_id}
+                }
             except Exception as e:
                 logger.exception("Failed to fetch Account Transactions report")
                 return {
                     "isError": True,
+                    "httpStatus": 502,
                     "content": [{"type": "text", "text": f"Failed to fetch report: {safe_exception_message(e)}"}],
                     "metadata": {"reason": "reportError"}
                 }
@@ -1551,6 +1583,9 @@ async def handle_mcp_request(request: Request, payload: Dict = Depends(require_x
         name = params.get("name")
         args = params.get("arguments", {})
         result = await handle_tool_call(name, args)
+        if isinstance(result, dict) and result.get("isError"):
+            status = int(result.get("httpStatus", 502))
+            return JSONResponse(status_code=status, content=_rpc_result(rpc_id, result))
         return _rpc_result(rpc_id, result)
 
     elif method == "resources/list":
