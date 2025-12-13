@@ -10,9 +10,9 @@ from utils import logger
 
 # Auth0 configuration
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
-AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")
 AUTH0_XERO_AUDIENCE = os.environ.get("AUTH0_XERO_AUDIENCE", "https://mcp.backyardbrains.com/xero")
 AUTH0_METABASE_AUDIENCE = os.environ.get("AUTH0_METABASE_AUDIENCE", "https://mcp.backyardbrains.com/metabase")
+AUTH0_META_AUDIENCE = os.environ.get("AUTH0_META_AUDIENCE", "https://mcp.backyardbrains.com/meta")
 AUTH0_NAMESPACE = "https://mcp.backyardbrains.com"
 
 security = HTTPBearer(auto_error=False)
@@ -20,7 +20,6 @@ security = HTTPBearer(auto_error=False)
 # Cache /userinfo responses to avoid hammering Auth0 and hitting rate limits
 _USERINFO_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
 AUTH0_USERINFO_CACHE_SECONDS = int(os.environ.get("AUTH0_USERINFO_CACHE_SECONDS", "300"))
-AUTH0_USERINFO_STALE_ON_429_SECONDS = int(os.environ.get("AUTH0_USERINFO_STALE_ON_429_SECONDS", "60"))
 
 async def validate_opaque_token(token: str) -> Dict[str, Any]:
     """Validate an opaque/JWE token by calling Auth0's /userinfo endpoint."""
@@ -30,9 +29,8 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
 
     now = time.time()
     cached = _USERINFO_CACHE.get(token)
-    cached_payload = cached[1] if cached else None
     if cached and cached[0] > now:
-        return cached_payload
+        return cached[1]
 
     userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
 
@@ -66,18 +64,6 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
 
     if response.status_code == 429:
         retry_after = response.headers.get("Retry-After")
-        if cached_payload:
-            logger.warning(
-                "Auth0 rate limit hit for /userinfo: status=%s retry_after=%s -- serving cached claims",
-                response.status_code,
-                retry_after,
-            )
-            _USERINFO_CACHE[token] = (
-                now + AUTH0_USERINFO_STALE_ON_429_SECONDS,
-                cached_payload,
-            )
-            return cached_payload
-
         logger.warning(
             "Auth0 rate limit hit for /userinfo: status=%s retry_after=%s", response.status_code, retry_after
         )

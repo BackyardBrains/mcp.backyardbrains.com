@@ -382,11 +382,7 @@ def _fetch_report_by_resource(accounting_api, tenant_id: str, resource: str, que
         "Accept": accounting_api.api_client.select_header_accept(["application/json"]),
     }
     resource_path = resource if resource.startswith("/") else f"/{resource}"
-    logger.info(
-        "Calling Xero report resource: path=%s query_params=%s",
-        resource_path,
-        query_params,
-    )
+    logger.info("Calling Xero report resource: path=%s query_params=%s", resource_path, query_params)
     return accounting_api.api_client.call_api(
         accounting_api.get_resource_url(resource_path),
         "GET",
@@ -1330,20 +1326,42 @@ async def handle_tool_call(name: str, args: Dict):
                     "metadata": {"reason": "accountMissingId"},
                 }
 
-            # Use the Account Transactions Report which works for ALL accounts
-            query = {
-                "accountID": account_id,
-            }
+            logger.info(
+                "Fetching Account Transactions report for account_code=%s account_id=%s date_from=%s date_to=%s page=%s",
+                account_code,
+                account_id,
+                date_from,
+                date_to,
+                page,
+            )
+
+            if not account_id:
+                return {
+                    "isError": True,
+                    "httpStatus": 400,
+                    "content": [{"type": "text", "text": "Account found but missing account_id"}],
+                    "metadata": {"reason": "accountIdMissing"},
+                }
+
+            # Use the Account Transactions Report. Xero expects the AccountID in the URL path,
+            # not as a query parameter, otherwise the upstream API returns 404.
+            query = {}
             if date_from:
                 query["fromDate"] = date_from
             if date_to:
                 query["toDate"] = date_to
+
+            logger.info(
+                "Account Transactions query params prepared: %s",
+                safe_dumps(query),
+            )
             
             # Note: The report endpoint doesn't support standard pagination like 'page' parameter in the same way as list endpoints.
             # It returns the full report.
             
             try:
-                report_data = _fetch_report_by_resource(accounting_api, tenant_id, "Reports/AccountTransactions", query)
+                resource_path = f"Reports/AccountTransactions/{account_id}"
+                report_data = _fetch_report_by_resource(accounting_api, tenant_id, resource_path, query)
                 # report_data is a tuple (data, status, headers) or just data depending on _return_http_data_only
                 # _fetch_report_by_resource uses _return_http_data_only=True, so it returns the model object (ReportWithRows)
 
@@ -1357,12 +1375,17 @@ async def handle_tool_call(name: str, args: Dict):
             except HTTPStatusException as e:
                 headers = getattr(e, "headers", {}) or {}
                 correlation_id = headers.get("Xero-Correlation-Id") or headers.get("xero-correlation-id")
+                logger.warning(
+                    "HTTP error fetching Account Transactions report: status=%s correlation_id=%s headers=%s body=%s",
+                    getattr(e, "status", None),
+                    correlation_id,
+                    headers,
+                    getattr(e, "body", None),
+                )
                 message = safe_exception_message(e)
                 logger.warning(
                     "Failed to fetch Account Transactions report: status=%s correlation_id=%s", getattr(e, "status", None), correlation_id
                 )
-                if correlation_id:
-                    message = f"{message} (correlation_id={correlation_id})"
                 return {
                     "isError": True,
                     "httpStatus": getattr(e, "status", 502),
