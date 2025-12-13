@@ -42,7 +42,10 @@ def _has_scope(claims: dict, scope: str) -> bool:
     scopes = (claims.get("scope") or "").split()
     return scope in perms or scope in scopes
 
-from auth import check_permissions
+from auth import check_permissions, validate_opaque_token
+from fastapi import HTTPException
+
+from utils import logger
 
 @router.post("/meta/")
 async def meta_gateway(request: Request):
@@ -52,15 +55,16 @@ async def meta_gateway(request: Request):
         return _challenge_401()
     token = auth_header.split(" ", 1)[1].strip()
 
-    # 2) Validate JWT
+    # 2) Validate Token (using auth.py logic for consistency/opaque support)
     try:
-        claims = _validate(token)
+        claims = await validate_opaque_token(token)
     except Exception as e:
-        # logger.warning(f"Meta JWT validation failed: {e}")
+        logger.warning(f"Meta token validation failed: {e}")
         return _challenge_401()
 
     # 3) Enforce scope (require mcp:read:meta or mcp:write:meta)
     if not check_permissions(claims, ["mcp:read:meta", "mcp:write:meta"]):
+        logger.warning(f"Insufficient permissions. Claims: {claims}")
         return Response(status_code=403, content="Insufficient permissions")
 
     # 4) Proxy body to meta container MCP endpoint
