@@ -1,0 +1,10 @@
+{
+  "transactions": [
+    {
+      "account_id": "acc-1",
+      "amount": "<number>",
+      "date": "<date>",
+      "description": "Bank fee"
+    }
+  ]
+}

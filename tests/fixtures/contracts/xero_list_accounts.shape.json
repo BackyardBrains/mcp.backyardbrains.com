@@ -1,0 +1,18 @@
+{
+  "accounts": [
+    {
+      "account_id": "acc-1",
+      "code": "100",
+      "name": "Cash at Bank",
+      "status": "ACTIVE",
+      "type": "BANK"
+    },
+    {
+      "account_id": "acc-2",
+      "code": "200",
+      "name": "Sales",
+      "status": "ACTIVE",
+      "type": "REVENUE"
+    }
+  ]
+}
