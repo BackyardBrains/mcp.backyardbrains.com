@@ -1,0 +1,40 @@
+{
+  "reports": [
+    {
+      "reportDate": "<date>",
+      "reportID": "report-789",
+      "reportName": "Cash Summary",
+      "reportTitles": [
+        "Cash Summary"
+      ],
+      "rows": [
+        {
+          "cells": [
+            {
+              "value": "Cash Summary"
+            }
+          ],
+          "rowType": "Header",
+          "title": "Cash Summary"
+        },
+        {
+          "rowType": "Section",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "value": "Opening Balance"
+                },
+                {
+                  "value": "<number>"
+                }
+              ],
+              "rowType": "Row"
+            }
+          ],
+          "title": "Cash Movements"
+        }
+      ]
+    }
+  ]
+}

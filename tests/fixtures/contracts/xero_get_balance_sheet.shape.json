@@ -1,0 +1,40 @@
+{
+  "reports": [
+    {
+      "reportDate": "<date>",
+      "reportID": "report-123",
+      "reportName": "Balance Sheet",
+      "reportTitles": [
+        "Balance Sheet"
+      ],
+      "rows": [
+        {
+          "cells": [
+            {
+              "value": "Balance Sheet"
+            }
+          ],
+          "rowType": "Header",
+          "title": "Balance Sheet"
+        },
+        {
+          "rowType": "Section",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "value": "Cash"
+                },
+                {
+                  "value": "<number>"
+                }
+              ],
+              "rowType": "Row"
+            }
+          ],
+          "title": "Assets"
+        }
+      ]
+    }
+  ]
+}

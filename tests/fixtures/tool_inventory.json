@@ -1,0 +1,485 @@
+[
+  {
+    "name": "xero_list_invoices",
+    "schema": {
+      "properties": {
+        "contactId": {
+          "description": "Xero ContactID (UUID)",
+          "type": "string"
+        },
+        "dateFrom": {
+          "description": "ISO date start (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "dateTo": {
+          "description": "ISO date end (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "groupBy": {
+          "description": "Group results by one or more dimensions",
+          "items": {
+            "enum": [
+              "product",
+              "country",
+              "customer",
+              "status",
+              "month",
+              "quarter",
+              "year"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "includeLineItems": {
+          "description": "Return full line items in results (when not summarizing)",
+          "type": "boolean"
+        },
+        "itemCodes": {
+          "description": "Only include line items with these item codes",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "metrics": {
+          "description": "Metrics to compute per group",
+          "items": {
+            "enum": [
+              "countInvoices",
+              "quantity",
+              "subtotal",
+              "tax",
+              "total",
+              "amountDue"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "order": {
+          "description": "Order clause, e.g. Date DESC",
+          "type": "string"
+        },
+        "page": {
+          "description": "Page number (Xero pagination)",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "statuses": {
+          "description": "Invoice statuses (e.g., AUTHORISED, PAID)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "summarizeBy": {
+          "description": "DEPRECATED: use groupBy for multiple dimensions",
+          "enum": [
+            "product",
+            "quarter",
+            "month",
+            "year"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_get_balance_sheet",
+    "schema": {
+      "properties": {
+        "date": {
+          "description": "Report date (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "paymentsOnly": {
+          "type": "boolean"
+        },
+        "periods": {
+          "description": "Number of periods",
+          "type": "integer"
+        },
+        "standardLayout": {
+          "type": "boolean"
+        },
+        "timeframe": {
+          "description": "Period granularity",
+          "enum": [
+            "MONTH",
+            "QUARTER",
+            "YEAR"
+          ],
+          "type": "string"
+        },
+        "trackingCategoryID": {
+          "description": "Tracking Category ID (UUID)",
+          "type": "string"
+        },
+        "trackingOptionID": {
+          "description": "Tracking Option ID (UUID)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_get_profit_and_loss",
+    "schema": {
+      "properties": {
+        "fromDate": {
+          "description": "Start date (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "paymentsOnly": {
+          "description": "Cash basis (payments only)",
+          "type": "boolean"
+        },
+        "periods": {
+          "description": "Number of comparative periods",
+          "type": "integer"
+        },
+        "standardLayout": {
+          "description": "Use standard layout",
+          "type": "boolean"
+        },
+        "timeframe": {
+          "description": "Comparative timeframe",
+          "enum": [
+            "MONTH",
+            "QUARTER",
+            "YEAR"
+          ],
+          "type": "string"
+        },
+        "toDate": {
+          "description": "End date (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "trackingCategoryID": {
+          "description": "Primary tracking category ID",
+          "type": "string"
+        },
+        "trackingCategoryID2": {
+          "description": "Secondary tracking category ID",
+          "type": "string"
+        },
+        "trackingOptionID": {
+          "description": "Primary tracking option ID",
+          "type": "string"
+        },
+        "trackingOptionID2": {
+          "description": "Secondary tracking option ID",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_get_cash_summary",
+    "schema": {
+      "properties": {
+        "fromDate": {
+          "description": "Start date (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "periods": {
+          "description": "Number of comparative periods",
+          "type": "integer"
+        },
+        "timeframe": {
+          "description": "Comparative timeframe",
+          "enum": [
+            "MONTH",
+            "QUARTER",
+            "YEAR"
+          ],
+          "type": "string"
+        },
+        "toDate": {
+          "description": "End date (YYYY-MM-DD)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_list_contacts",
+    "schema": {
+      "properties": {
+        "includeArchived": {
+          "type": "boolean"
+        },
+        "isCustomer": {
+          "type": "boolean"
+        },
+        "isSupplier": {
+          "type": "boolean"
+        },
+        "modifiedSince": {
+          "description": "Only contacts updated since this ISO datetime",
+          "type": "string"
+        },
+        "page": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "searchTerm": {
+          "description": "Search across name/email/etc.",
+          "type": "string"
+        },
+        "summaryOnly": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_create_contacts",
+    "schema": {
+      "properties": {
+        "contacts": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_list_bank_transactions",
+    "schema": {
+      "properties": {
+        "accountId": {
+          "description": "Bank AccountID (UUID)",
+          "type": "string"
+        },
+        "dateFrom": {
+          "description": "Start date (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "dateTo": {
+          "description": "End date (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "order": {
+          "description": "Order clause",
+          "type": "string"
+        },
+        "page": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_create_bank_transactions",
+    "schema": {
+      "properties": {
+        "bank_transactions": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_list_accounts",
+    "schema": {
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_list_manual_journals",
+    "schema": {
+      "properties": {
+        "dateFrom": {
+          "description": "JournalDate start (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "dateTo": {
+          "description": "JournalDate end (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "order": {
+          "type": "string"
+        },
+        "page": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "where": {
+          "description": "Xero where clause to filter manual journals",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_list_organisations",
+    "schema": {
+      "properties": {},
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_list_payments",
+    "schema": {
+      "properties": {
+        "accountId": {
+          "description": "AccountID to filter (UUID)",
+          "type": "string"
+        },
+        "dateFrom": {
+          "description": "Payment date start (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "dateTo": {
+          "description": "Payment date end (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "invoiceId": {
+          "description": "InvoiceID to filter (UUID)",
+          "type": "string"
+        },
+        "isReconciled": {
+          "type": "boolean"
+        },
+        "modifiedSince": {
+          "description": "Only payments updated since this ISO datetime",
+          "type": "string"
+        },
+        "order": {
+          "type": "string"
+        },
+        "page": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_list_tracking_categories",
+    "schema": {
+      "properties": {
+        "includeArchived": {
+          "description": "Include archived categories",
+          "type": "boolean"
+        },
+        "order": {
+          "description": "Order clause",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_list_quotes",
+    "schema": {
+      "properties": {
+        "contactId": {
+          "description": "ContactID (UUID)",
+          "type": "string"
+        },
+        "dateFrom": {
+          "description": "Quote date start (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "dateTo": {
+          "description": "Quote date end (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "expiryDateFrom": {
+          "description": "Expiry date start (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "expiryDateTo": {
+          "description": "Expiry date end (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "order": {
+          "type": "string"
+        },
+        "page": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "statuses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_list_items",
+    "schema": {
+      "properties": {
+        "updatedSince": {
+          "description": "Filter by updated date (ISO)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_list_bills",
+    "schema": {
+      "properties": {
+        "dateFrom": {
+          "description": "Bill date start",
+          "type": "string"
+        },
+        "dateTo": {
+          "description": "Bill date end",
+          "type": "string"
+        },
+        "dueDateTo": {
+          "description": "Find bills due on or before this date (YYYY-MM-DD)",
+          "type": "string"
+        },
+        "order": {
+          "type": "string"
+        },
+        "overdue": {
+          "description": "Convenience: Find bills due before today",
+          "type": "boolean"
+        },
+        "page": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "statuses": {
+          "description": "Bill statuses (e.g. AUTHORISED, PAID)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  }
+]
