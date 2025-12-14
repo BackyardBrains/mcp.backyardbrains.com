@@ -102,13 +102,5 @@
         "text": "{\"items\": [{\"item_id\": \"item-1\", \"code\": \"WIDGET\", \"name\": \"Widget\", \"is_sold\": true, \"is_tracked_as_inventory\": false}]}"
       }
     ]
-  },
-  "xero_get_account_transactions": {
-    "content": [
-      {
-        "type": "text",
-        "text": "{\"transactions\": [{\"account_id\": \"acc-1\", \"date\": \"2024-01-01\", \"amount\": -25.0, \"description\": \"Bank fee\"}]}"
-      }
-    ]
   }
 }

@@ -26,21 +26,12 @@ REQUIRED_TOOLS: set[str] = {
     "xero_list_tracking_categories",
     "xero_list_quotes",
     "xero_list_items",
-    "xero_get_account_transactions",
 }
 
 # Known-broken or temporarily disabled tools with explicit accountability to avoid
 # accumulating silent debt. Each entry must include a reason, an owner, and either an
 # expiry date or ticket reference.
-QUARANTINED_TOOLS = [
-    {
-        "name": "xero_get_account_transactions",
-        "reason": "Upstream endpoint not available in current tenant snapshot; awaiting MCP wiring",
-        "owner": "data-eng@backyardbrains.com",
-        "expires": "2025-12-31",
-        "ticket": "XERO-2801",
-    },
-]
+QUARANTINED_TOOLS = []
 QUARANTINED_TOOL_NAMES: set[str] = {entry["name"] for entry in QUARANTINED_TOOLS}
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"

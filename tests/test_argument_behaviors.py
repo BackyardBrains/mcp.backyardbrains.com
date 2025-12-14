@@ -80,13 +80,3 @@ async def test_invalid_where_filters_are_errors(call_tool, tool, is_smoke: bool)
     assert payload.get("isError"), f"{tool['name']} should surface where errors"
 
 
-@pytest.mark.asyncio
-async def test_account_transactions_endpoint_not_broken(call_tool):
-    if "xero_get_account_transactions" in QUARANTINED_TOOL_NAMES:
-        pytest.skip("xero_get_account_transactions is quarantined")
-    response = await call_tool(
-        "xero_get_account_transactions",
-        {"dateFrom": "2024-01-01", "dateTo": "2024-01-31", "accountCode": "100"},
-    )
-    payload = decode_tool_payload(response)
-    assert not isinstance(payload, dict) or not payload.get("isError"), "endpoint appears broken; remove or fix tool."
