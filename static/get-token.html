@@ -179,17 +179,17 @@
 
         <div id="loginSection" class="login-section">
             <p style="margin-bottom: 20px; color: #666;">
-                Select which API you need access to, then log in to generate your personal MCP access token.
+                Select which API(s) you need access to, then log in to generate your personal MCP access token.
             </p>
 
             <div class="api-selector">
-                <h3>Select API:</h3>
+                <h3>Select API(s):</h3>
                 <div class="api-option">
-                    <input type="radio" id="apiXero" name="apiChoice" value="xero" checked>
+                    <input type="checkbox" id="apiXero" name="apiChoice" value="xero" checked>
                     <label for="apiXero">Xero API (accounting data)</label>
                 </div>
                 <div class="api-option">
-                    <input type="radio" id="apiMetabase" name="apiChoice" value="metabase">
+                    <input type="checkbox" id="apiMetabase" name="apiChoice" value="metabase">
                     <label for="apiMetabase">Metabase API (analytics data)</label>
                 </div>
             </div>
@@ -241,46 +241,60 @@
             }
         };
 
-        function getSelectedAPI() {
-            // Check URL parameter first (for callback)
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.has('code') && localStorage.getItem('selectedAPI')) {
-                return localStorage.getItem('selectedAPI');
-            }
-
-            const selected = document.querySelector('input[name="apiChoice"]:checked');
-            return selected ? selected.value : 'xero';
+        function getSelectedAPIsFromDOM() {
+            const checked = Array.from(document.querySelectorAll('input[name="apiChoice"]:checked')).map(el => el.value);
+            return checked.length ? checked : ['xero'];
         }
 
-        function getAPIConfig() {
-            return API_CONFIG[getSelectedAPI()];
+        function getSelectedAPIsFromStorage() {
+            const saved = localStorage.getItem('selectedAPIs');
+            if (!saved) return null;
+            try {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed) && parsed.length) {
+                    return parsed;
+                }
+            } catch (e) {
+                console.warn('Failed to parse saved APIs', e);
+            }
+            return null;
+        }
+
+        function buildAuthParams(selectedAPIs) {
+            const selections = selectedAPIs && selectedAPIs.length ? selectedAPIs : ['xero'];
+            const primary = selections[0];
+            const scopes = Array.from(new Set(
+                selections.flatMap(api => (API_CONFIG[api]?.scope || '').split(' ')).filter(Boolean)
+            ));
+            return {
+                redirect_uri: window.location.origin + '/static/get-token.html',
+                audience: API_CONFIG[primary]?.audience || API_CONFIG.xero.audience,
+                scope: scopes.join(' ')
+            };
         }
 
         let auth0Client;
 
         async function init() {
-            // Restore API selection if coming back from OAuth
-            const savedAPI = localStorage.getItem('selectedAPI');
-            if (savedAPI && document.getElementById('api' + savedAPI.charAt(0).toUpperCase() + savedAPI.slice(1))) {
-                document.getElementById('api' + savedAPI.charAt(0).toUpperCase() + savedAPI.slice(1)).checked = true;
+            const savedAPIs = getSelectedAPIsFromStorage();
+            if (savedAPIs) {
+                document.querySelectorAll('input[name="apiChoice"]').forEach(el => {
+                    el.checked = savedAPIs.includes(el.value);
+                });
             }
 
-            const config = getAPIConfig();
+            const config = buildAuthParams(savedAPIs || getSelectedAPIsFromDOM());
             auth0Client = await auth0.createAuth0Client({
                 domain: AUTH0_DOMAIN,
                 clientId: AUTH0_CLIENT_ID,
-                authorizationParams: {
-                    redirect_uri: window.location.origin + '/static/get-token.html',
-                    audience: config.audience,
-                    scope: config.scope
-                }
+                authorizationParams: config
             });
 
             try {
                 if (window.location.search.includes('code=')) {
                     await auth0Client.handleRedirectCallback();
                     window.history.replaceState({}, document.title, '/static/get-token.html');
-                    localStorage.removeItem('selectedAPI'); // Clean up
+                    localStorage.removeItem('selectedAPI'); // Legacy cleanup for single-selection keys
                 }
 
                 const isAuthenticated = await auth0Client.isAuthenticated();
@@ -300,9 +314,10 @@
         }
 
         document.getElementById('loginBtn').addEventListener('click', async () => {
-            // Save selected API before redirecting to OAuth
-            localStorage.setItem('selectedAPI', getSelectedAPI());
-            await auth0Client.loginWithRedirect();
+            const selectedAPIs = getSelectedAPIsFromDOM();
+            localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+            const params = buildAuthParams(selectedAPIs);
+            await auth0Client.loginWithRedirect({ authorizationParams: params });
         });
 
         document.getElementById('logoutBtn').addEventListener('click', async () => {

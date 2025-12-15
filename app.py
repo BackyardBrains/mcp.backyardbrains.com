@@ -43,6 +43,8 @@ app.add_middleware(
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         logger.info(f"Incoming request: {request.method} {request.url}")
+        if request.method.upper() == "POST" and request.url.path.endswith("/mcp"):
+            logger.debug("Routing MCP tool call for path=%s", request.url.path)
         try:
             response = await call_next(request)
             logger.info(f"Request completed: {response.status_code}")

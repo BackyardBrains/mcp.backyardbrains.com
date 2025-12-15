@@ -102,5 +102,21 @@
         "text": "{\"items\": [{\"item_id\": \"item-1\", \"code\": \"WIDGET\", \"name\": \"Widget\", \"is_sold\": true, \"is_tracked_as_inventory\": false}]}"
       }
     ]
+  },
+  "xero_get_journals": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"journals\": [{\"journal\": {\"journal_id\": \"jrnl-1\"}, \"filteredLines\": [{\"accountCode\": \"200\"}]}]}"
+      }
+    ]
+  },
+  "xero_create_manual_journal": {
+    "content": [
+      {
+        "type": "text",
+        "text": "[{\"manualJournalID\": \"mj-2\", \"narration\": \"Sample entry\", \"status\": \"POSTED\"}]"
+      }
+    ]
   }
 }

@@ -1,0 +1,14 @@
+{
+  "journals": [
+    {
+      "filteredLines": [
+        {
+          "accountCode": "200"
+        }
+      ],
+      "journal": {
+        "journal_id": "jrnl-1"
+      }
+    }
+  ]
+}

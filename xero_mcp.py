@@ -367,6 +367,174 @@ def _report_to_dict(report) -> Dict[str, Any]:
         "summary": getattr(report, "summary", None).to_dict() if getattr(report, "summary", None) else None,
     }
 
+
+def _extract_account_codes_from_rows(rows: List[Dict[str, Any]]) -> List[str]:
+    codes: List[str] = []
+    for row in rows or []:
+        for cell in row.get("cells", []) or []:
+            attrs = (cell or {}).get("attributes", {}) or {}
+            account_code = attrs.get("accountcode") or attrs.get("account_code")
+            if account_code:
+                codes.append(account_code)
+        codes.extend(_extract_account_codes_from_rows(row.get("rows", []) or []))
+    return codes
+
+
+def _filter_rows_by_account_codes(rows: List[Dict[str, Any]], account_codes: List[str]) -> List[Dict[str, Any]]:
+    if not account_codes:
+        return rows
+
+    filtered = []
+    for row in rows or []:
+        child_rows = _filter_rows_by_account_codes(row.get("rows", []), account_codes)
+        has_account = any(
+            (cell or {}).get("attributes", {}).get("accountcode") in account_codes
+            or (cell or {}).get("attributes", {}).get("account_code") in account_codes
+            for cell in row.get("cells", []) or []
+        )
+
+        if has_account or child_rows:
+            new_row = dict(row)
+            if child_rows:
+                new_row["rows"] = child_rows
+            filtered.append(new_row)
+    return filtered
+
+
+def _extract_text_payload(result: Dict[str, Any]) -> Any:
+    try:
+        content = (result or {}).get("content") or []
+        if content and isinstance(content[0], dict):
+            text = content[0].get("text")
+            if text is None:
+                return None
+            return json.loads(text)
+    except Exception as exc:
+        logger.warning("Failed to decode nested tool payload: %s", exc)
+    return None
+
+
+def _filter_journal_entries(journals, account_codes: List[str], date_from=None, date_to=None) -> List[Dict[str, Any]]:
+    filtered: List[Dict[str, Any]] = []
+    for journal in getattr(journals, "journals", None) or journals or []:
+        j_date = getattr(journal, "journal_date", None)
+        if hasattr(j_date, "date"):
+            j_date = j_date.date()
+        elif isinstance(j_date, str):
+            parsed = _parse_iso_date(j_date)
+            j_date = parsed or j_date
+        if date_from and j_date and j_date < date_from:
+            continue
+        if date_to and j_date and j_date > date_to:
+            continue
+        lines = []
+        for line in getattr(journal, "journal_lines", None) or []:
+            code = getattr(line, "account_code", None)
+            if account_codes and code not in account_codes:
+                continue
+            try:
+                lines.append(line.to_dict())
+            except Exception:
+                lines.append({"accountCode": code})
+        if lines:
+            entry = {"journal": journal.to_dict() if hasattr(journal, "to_dict") else journal}
+            entry["filteredLines"] = lines
+            filtered.append(entry)
+    return filtered
+
+
+def _fetch_bills_by_account(accounting_api, tenant_id: str, account_codes: List[str], date_from=None, date_to=None, page=None):
+    where_parts = ['Type=="ACCPAY"']
+    date_clause = _xero_where_date_range(date_from, date_to)
+    if date_clause:
+        where_parts.append(date_clause)
+
+    inv_kwargs: Dict[str, Any] = {"where": " && ".join([p for p in where_parts if p])}
+    if page:
+        inv_kwargs["page"] = page
+    inv_kwargs["summary_only"] = False
+
+    invoices = accounting_api.get_invoices(tenant_id, **inv_kwargs)
+    results = []
+    for inv in getattr(invoices, "invoices", None) or []:
+        inv_dict = inv.to_dict() if hasattr(inv, "to_dict") else inv
+        line_items = []
+        for li in getattr(inv, "line_items", None) or []:
+            code = getattr(li, "account_code", None)
+            if account_codes and code not in account_codes:
+                continue
+            try:
+                line_items.append(li.to_dict())
+            except Exception:
+                line_items.append({"accountCode": code})
+        if account_codes and not line_items:
+            continue
+        if line_items:
+            inv_dict["line_items"] = line_items
+        results.append(inv_dict)
+    return results
+
+
+async def _drill_down_section(api, tenant_id: str, section: Dict[str, Any], args: Dict[str, Any], level: str, include_tx: bool):
+    sub_data: Dict[str, Any] = {}
+    account_codes = list(dict.fromkeys(_extract_account_codes_from_rows(section.get("rows", []))))
+    if not account_codes:
+        return sub_data
+
+    try:
+        accounts = api.get_accounts(tenant_id)
+        sub_accounts = [acc.to_dict() for acc in getattr(accounts, "accounts", None) or [] if getattr(acc, "code", None) in account_codes]
+        if sub_accounts:
+            sub_data["subAccounts"] = sub_accounts
+    except Exception as exc:
+        logger.warning("Account drill-down failed for %s: %s", section.get("title"), exc)
+
+    if level != "transactions" or not include_tx:
+        return sub_data
+
+    date_from = _parse_iso_date(_get_arg(args, "fromDate", "from_date"))
+    date_to = _parse_iso_date(_get_arg(args, "toDate", "to_date"))
+    page = _get_arg(args, "page")
+    title = section.get("title") or ""
+
+    try:
+        tx_args = {
+            "dateFrom": date_from.isoformat() if isinstance(date_from, date) else date_from,
+            "dateTo": date_to.isoformat() if isinstance(date_to, date) else date_to,
+            "accountCodes": account_codes,
+            "includeLineItems": True,
+        }
+        if page:
+            tx_args["page"] = page
+
+        if "Revenue" in title or "Income" in title:
+            invoices_result = await _process_invoices_with_grouping(api, tenant_id, tx_args)
+            parsed = _extract_text_payload(invoices_result)
+            if parsed is not None:
+                sub_data["transactions"] = parsed
+        elif "Expense" in title:
+            bills = _fetch_bills_by_account(api, tenant_id, account_codes, date_from, date_to, page=page)
+            if bills is not None:
+                sub_data["transactions"] = bills
+    except Exception as exc:
+        logger.warning("Transaction drill-down failed for %s: %s", title, exc)
+
+    try:
+        j_kwargs = {}
+        if page:
+            j_kwargs["offset"] = page
+        payments_only = _get_arg(args, "paymentsOnly", "payments_only")
+        if payments_only is not None:
+            j_kwargs["payments_only"] = payments_only
+        journals = api.get_journals(tenant_id, **j_kwargs)
+        journals_filtered = _filter_journal_entries(journals, account_codes, date_from=date_from, date_to=date_to)
+        if journals_filtered:
+            sub_data["journals"] = journals_filtered
+    except Exception as exc:
+        logger.warning("Journal drill-down failed for %s: %s", title, exc)
+
+    return sub_data
+
 def _fetch_report_by_resource(accounting_api, tenant_id: str, resource: str, query: Dict[str, Any] | None = None):
     query_params: List[Tuple[str, Any]] = []
     if query:
@@ -741,7 +909,22 @@ def _list_tools_payload():
                         "trackingCategoryID2": {"type": "string", "description": "Secondary tracking category ID"},
                         "trackingOptionID2": {"type": "string", "description": "Secondary tracking option ID"},
                         "standardLayout": {"type": "boolean", "description": "Use standard layout"},
-                        "paymentsOnly": {"type": "boolean", "description": "Cash basis (payments only)"}
+                        "paymentsOnly": {"type": "boolean", "description": "Cash basis (payments only)"},
+                        "accountCodes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Filter to specific account codes (e.g., ['200', '400']) for targeted P&L sections"
+                        },
+                        "detailLevel": {
+                            "type": "string",
+                            "enum": ["summary", "accounts", "transactions"],
+                            "description": "Level of detail: 'summary' (default, high-level), 'accounts' (sub-accounts), 'transactions' (full drill with journals/invoices)"
+                        },
+                        "includeTransactions": {
+                            "type": "boolean",
+                            "description": "Include linked transactions/journals in response (for detailLevel='transactions')"
+                        },
+                        "page": {"type": "integer", "minimum": 1, "description": "Pagination for transaction drill-down"}
                     }
                 },
                 "securitySchemes": [
@@ -758,6 +941,25 @@ def _list_tools_payload():
                         "toDate": {"type": "string", "description": "End date (YYYY-MM-DD)"},
                         "periods": {"type": "integer", "description": "Number of comparative periods"},
                         "timeframe": {"type": "string", "enum": ["MONTH", "QUARTER", "YEAR"], "description": "Comparative timeframe"}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
+            },
+
+            {
+                "name": "xero_get_journals",
+                "description": "Retrieve journals for transaction drill-down (e.g., from P&L accounts).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "offset": {"type": "integer", "description": "Journal number offset (for pagination)"},
+                        "paymentsOnly": {"type": "boolean"},
+                        "modifiedSince": {"type": "string", "description": "Journals modified after this ISO datetime"},
+                        "accountCodes": {"type": "array", "items": {"type": "string"}, "description": "Filter by account codes (client-side)"},
+                        "dateFrom": {"type": "string"},
+                        "dateTo": {"type": "string"}
                     }
                 },
                 "securitySchemes": [
@@ -840,6 +1042,14 @@ def _list_tools_payload():
                 },
                 "securitySchemes": [
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ]
+            },
+            {
+                "name": "xero_create_manual_journal",
+                "description": "Creates one or more manual journals",
+                "inputSchema": {"type": "object", "properties": {"manualJournals": {"type": "array", "items": {"type": "object"}}}},
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:write:xero"] }
                 ]
             },
             {
@@ -963,6 +1173,8 @@ _TOOL_NAME_ALIASES = {
     "xero.list_quotes": "xero_list_quotes",
     "xero.list_items": "xero_list_items",
     "xero.list_bills": "xero_list_bills",
+    "xero.get_journals": "xero_get_journals",
+    "xero.create_manual_journal": "xero_create_manual_journal",
 }
 
 async def handle_tool_call(name: str, args: Dict):
@@ -1058,6 +1270,11 @@ async def handle_tool_call(name: str, args: Dict):
             pl_to2 = _get_arg(args, "trackingOptionID2", "tracking_option_id2")
             pl_std = _get_arg(args, "standardLayout", "standard_layout")
             pl_pay = _get_arg(args, "paymentsOnly", "payments_only")
+            pl_account_codes = _get_arg(args, "accountCodes", "account_codes")
+            if isinstance(pl_account_codes, str):
+                pl_account_codes = [pl_account_codes]
+            detail_level = (_get_arg(args, "detailLevel", "detail_level", default="summary") or "summary").lower()
+            include_tx = bool(_get_arg(args, "includeTransactions", "include_transactions", default=False))
 
             if isinstance(pl_from, str):
                 d = _parse_iso_date(pl_from)
@@ -1089,9 +1306,32 @@ async def handle_tool_call(name: str, args: Dict):
                 pl_kwargs["payments_only"] = pl_pay
 
             pl_report = accounting_api.get_report_profit_and_loss(tenant_id, **pl_kwargs)
-            return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(pl_report.reports[0]))}]}
-            pl_report = accounting_api.get_report_profit_and_loss(tenant_id, **pl_kwargs)
-            return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(pl_report.reports[0]))}]}
+            report_dict = _report_to_dict(pl_report.reports[0])
+
+            if pl_account_codes:
+                report_dict["rows"] = _filter_rows_by_account_codes(report_dict.get("rows", []), pl_account_codes)
+
+            if detail_level != "summary":
+                for section in report_dict.get("rows", []):
+                    if section.get("rowType") == "Section" and section.get("title") in [
+                        "Revenue",
+                        "Expenses",
+                        "Other Income",
+                        "Other Expenses",
+                    ]:
+                        try:
+                            section["subDetails"] = await _drill_down_section(
+                                accounting_api,
+                                tenant_id,
+                                section,
+                                args,
+                                detail_level,
+                                include_tx,
+                            )
+                        except Exception as exc:
+                            logger.warning("Drill-down enrichment failed for %s: %s", section.get("title"), exc)
+
+            return {"content": [{"type": "text", "text": safe_dumps(report_dict)}]}
 
         elif name == "xero_list_contacts":
             search_term = _get_arg(args, "searchTerm", "search_term")
@@ -1197,6 +1437,30 @@ async def handle_tool_call(name: str, args: Dict):
                     }
                 ]
             }
+        elif name == "xero_get_journals":
+            offset = _get_arg(args, "offset", default=0) or 0
+            payments_only = _get_arg(args, "paymentsOnly")
+            modified_since = _parse_iso_datetime(_get_arg(args, "modifiedSince"))
+            account_codes = _get_arg(args, "accountCodes") or []
+            if isinstance(account_codes, str):
+                account_codes = [account_codes]
+            date_from = _parse_iso_date(_get_arg(args, "dateFrom", "date_from"))
+            date_to = _parse_iso_date(_get_arg(args, "dateTo", "date_to"))
+
+            j_kwargs = {"offset": offset}
+            if payments_only is not None:
+                j_kwargs["payments_only"] = payments_only
+            if modified_since:
+                j_kwargs["if_modified_since"] = modified_since
+
+            journals = accounting_api.get_journals(tenant_id, **j_kwargs)
+            filtered = _filter_journal_entries(journals, account_codes, date_from=date_from, date_to=date_to)
+            return {"content": [{"type": "text", "text": safe_dumps({"journals": filtered})}]}
+        elif name == "xero_create_manual_journal":
+            manual_journals_data = _get_arg(args, "manualJournals", "manual_journals") or []
+            manual_journal_obj = ManualJournals(manual_journals=[ManualJournal(**data) for data in manual_journals_data])
+            created = accounting_api.create_manual_journals(tenant_id, manual_journal_obj)
+            return {"content": [{"type": "text", "text": safe_dumps([j.to_dict() for j in created.manual_journals])}]}
         elif name == "xero_list_organisations":
             organisations = accounting_api.get_organisations(tenant_id)
             return {"content": [{"type": "text", "text": safe_dumps([o.to_dict() for o in organisations.organisations])}]}
@@ -1479,6 +1743,7 @@ async def handle_mcp_request(request: Request, payload: Dict = Depends(require_x
     elif method == "tools/call":
         name = params.get("name")
         args = params.get("arguments", {})
+        logger.debug("xero.tools/call name=%s keys=%s", name, list(args.keys()) if isinstance(args, dict) else args)
         result = await handle_tool_call(name, args)
         if isinstance(result, dict) and result.get("isError"):
             status = int(result.get("httpStatus", 502))

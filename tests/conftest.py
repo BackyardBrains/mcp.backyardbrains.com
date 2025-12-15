@@ -23,6 +23,8 @@ REQUIRED_TOOLS: set[str] = {
     "xero_list_payments",
     "xero_list_bank_transactions",
     "xero_list_manual_journals",
+    "xero_get_journals",
+    "xero_create_manual_journal",
     "xero_list_tracking_categories",
     "xero_list_quotes",
     "xero_list_items",
