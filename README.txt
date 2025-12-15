@@ -255,6 +255,18 @@ Find "Who Pays" and note its trackingCategoryId
 ```
 Shows Q3 2025 compared to previous 4 quarters.
 
+**Drill-down by account/transactions:**
+```json
+{
+  "fromDate": "2025-01-01",
+  "toDate": "2025-03-31",
+  "detailLevel": "transactions",
+  "includeTransactions": true,
+  "accountCodes": ["200"]
+}
+```
+Returns standard P&L rows plus `subDetails` that include matching sub-accounts, linked invoices/bills, and journals filtered to the same account codes. Chain the account codes into `xero_get_journals` for an even deeper ledger view.
+
 ---
 
 ### 8. Balance Sheet

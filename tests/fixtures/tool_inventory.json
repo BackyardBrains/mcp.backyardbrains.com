@@ -130,9 +130,34 @@
     "name": "xero_get_profit_and_loss",
     "schema": {
       "properties": {
+        "accountCodes": {
+          "description": "Filter to specific account codes (e.g., ['200', '400']) for targeted P&L sections",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "detailLevel": {
+          "description": "Level of detail: 'summary' (default, high-level), 'accounts' (sub-accounts), 'transactions' (full drill with journals/invoices)",
+          "enum": [
+            "summary",
+            "accounts",
+            "transactions"
+          ],
+          "type": "string"
+        },
         "fromDate": {
           "description": "Start date (YYYY-MM-DD)",
           "type": "string"
+        },
+        "includeTransactions": {
+          "description": "Include linked transactions/journals in response (for detailLevel='transactions')",
+          "type": "boolean"
+        },
+        "page": {
+          "description": "Pagination for transaction drill-down",
+          "minimum": 1,
+          "type": "integer"
         },
         "paymentsOnly": {
           "description": "Cash basis (payments only)",
@@ -203,6 +228,38 @@
         "toDate": {
           "description": "End date (YYYY-MM-DD)",
           "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_get_journals",
+    "schema": {
+      "properties": {
+        "accountCodes": {
+          "description": "Filter by account codes (client-side)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dateFrom": {
+          "type": "string"
+        },
+        "dateTo": {
+          "type": "string"
+        },
+        "modifiedSince": {
+          "description": "Journals modified after this ISO datetime",
+          "type": "string"
+        },
+        "offset": {
+          "description": "Journal number offset (for pagination)",
+          "type": "integer"
+        },
+        "paymentsOnly": {
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -325,6 +382,20 @@
         "where": {
           "description": "Xero where clause to filter manual journals",
           "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "xero_create_manual_journal",
+    "schema": {
+      "properties": {
+        "manualJournals": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
         }
       },
       "type": "object"
