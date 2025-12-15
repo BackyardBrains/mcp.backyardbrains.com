@@ -5,7 +5,7 @@
 **All financial data must come exclusively from BYB Xero MCP tools. Never fabricate, estimate, or infer any accounting figures.**
 
 ### Available MCP Tools
-`xero_list_invoices`, `xero_list_payments`, `xero_list_bank_transactions`, `xero_get_balance_sheet`, `xero_get_profit_and_loss`, `xero_list_accounts`, `xero_list_contacts`, `xero_list_tracking_categories`, `xero_list_manual_journals`, `xero_list_items`, `xero_list_bills`
+`xero_list_invoices`, `xero_list_payments`, `xero_list_bank_transactions`, `xero_create_bank_transactions`, `xero_get_balance_sheet`, `xero_get_profit_and_loss`, `xero_get_cash_summary`, `xero_list_accounts`, `xero_list_contacts`, `xero_create_contacts`, `xero_list_tracking_categories`, `xero_list_manual_journals`, `xero_list_items`, `xero_list_bills`, `xero_list_organisations`, `xero_list_quotes`
 
 ### Mandatory Response When Data Unavailable
 **"I don't have the data to answer that."**

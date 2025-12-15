@@ -259,13 +259,14 @@
         }
     },
     {
-        "name": "mcp.backyardbrains.com",
+        "name": "old.mcp.backyardbrains.com",
+        "description": "No Longer used.  We now use Actions to handle placing permissions from https://mcp.backyardbrains.com APIs into logged in users.",
         "client_id": "XBgVrhllXZi1IR3o3TiFAI6nFgwU8CYU",
         "app_type": "regular_web",
         "logo_uri": "https://api.backyardbrains.com/static/images/byblogo150-admin.png",
         "is_first_party": true,
         "is_token_endpoint_ip_header_trusted": false,
-        "oidc_conformant": false,
+        "oidc_conformant": true,
         "callbacks": [
             "https://claude.ai/api/mcp/auth_callback",
             "https://claude.com/api/mcp/auth_callback",
@@ -378,15 +379,56 @@
         ]
     },
     {
-        "name": "Test",
-        "client_id": "qSLsS6fznjYLgfwvgvi25uQbWv4hXJcf",
-        "app_type": "regular_web",
-        "is_first_party": true,
+        "name": "Claude - Greg - Meta Ads",
+        "client_id": "TOZY4DzTXqUnYMZhSAy7Ly7wm9v7bU1g",
+        "logo_uri": "https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/dark/claude-color.png",
+        "is_first_party": false,
         "is_token_endpoint_ip_header_trusted": false,
         "oidc_conformant": true,
         "callbacks": [
-            "https://chatgpt.com/connector_platform_oauth_redirect"
+            "https://claude.ai/api/mcp/auth_callback"
         ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "grant_types": [
+            "authorization_code",
+            "refresh_token"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    },
+    {
+        "name": "mcp.backyardbrains.com",
+        "description": "Needed for MCP Server - Used in Actions -\u003e mcp.backyardbrains.com/permissions (needs read:users)",
+        "client_id": "BBB7ggKtuDWqMlFs034fB4SNkNWP6RBh",
+        "app_type": "non_interactive",
+        "logo_uri": "https://api.backyardbrains.com/static/images/byblogo150-admin.png",
+        "is_first_party": true,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [],
         "client_aliases": [],
         "allowed_clients": [],
         "jwt_configuration": {
@@ -397,10 +439,253 @@
         "sso_disabled": false,
         "cross_origin_authentication": false,
         "grant_types": [
-            "authorization_code",
-            "implicit",
-            "refresh_token",
             "client_credentials"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    },
+    {
+        "name": "ChatGPT - Greg - Meta Ads",
+        "client_id": "6oC5hafUabxOcE2OYDsIKOlVyNt49Ud1",
+        "logo_uri": "https://1000logos.net/wp-content/uploads/2023/02/ChatGPT-Logo-1536x864.png",
+        "is_first_party": false,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://chatgpt.com/connector_platform_oauth_redirect"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "grant_types": [
+            "authorization_code",
+            "refresh_token"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    },
+    {
+        "name": "ChatGPT - Greg - Xero",
+        "client_id": "MlAbib1f1DVNMbabkopU2PVfUa5Ap5yI",
+        "logo_uri": "https://1000logos.net/wp-content/uploads/2023/02/ChatGPT-Logo-1536x864.png",
+        "is_first_party": false,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://chatgpt.com/connector_platform_oauth_redirect"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "grant_types": [
+            "authorization_code",
+            "refresh_token"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    },
+    {
+        "name": "ChatGPT - Greg - Metabase",
+        "client_id": "g7NhaxgzSgxZd0NNgstoi6yBkHgEq2cK",
+        "logo_uri": "https://1000logos.net/wp-content/uploads/2023/02/ChatGPT-Logo-1536x864.png",
+        "is_first_party": false,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://chatgpt.com/connector_platform_oauth_redirect"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "grant_types": [
+            "authorization_code",
+            "refresh_token"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "client_secret_post",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 31557600,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 2592000
+        }
+    },
+    {
+        "name": "TypingMind - Greg - Xero",
+        "client_id": "EfBgBshwk66rkdqH2wMvUewiFwVpQlGX",
+        "logo_uri": "https://www.typingmind.com/logo.png",
+        "is_first_party": false,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://www.typingmind.com"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "grant_types": [
+            "authorization_code",
+            "refresh_token"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "none",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 2592000,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 1296000
+        }
+    },
+    {
+        "name": "TypingMind - Greg - Metabase",
+        "client_id": "CM95mf7pJzF9MxPr7YbarHoSFNRZryaF",
+        "logo_uri": "https://www.typingmind.com/logo.png",
+        "is_first_party": false,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://www.typingmind.com"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "grant_types": [
+            "authorization_code",
+            "refresh_token"
+        ],
+        "custom_login_page_on": true,
+        "token_endpoint_auth_method": "none",
+        "native_social_login": {
+            "apple": {
+                "enabled": false
+            },
+            "facebook": {
+                "enabled": false
+            }
+        },
+        "refresh_token": {
+            "rotation_type": "non-rotating",
+            "expiration_type": "non-expiring",
+            "leeway": 0,
+            "token_lifetime": 2592000,
+            "infinite_token_lifetime": true,
+            "infinite_idle_token_lifetime": true,
+            "idle_token_lifetime": 1296000
+        }
+    },
+    {
+        "name": "Claude - Greg - Xero",
+        "client_id": "WJjPEoqGX6G5V9pRogJwbQekyA4Q9YiF",
+        "logo_uri": "https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/dark/claude-color.png",
+        "is_first_party": false,
+        "is_token_endpoint_ip_header_trusted": false,
+        "oidc_conformant": true,
+        "callbacks": [
+            "https://claude.ai/api/mcp/auth_callback"
+        ],
+        "client_aliases": [],
+        "allowed_clients": [],
+        "jwt_configuration": {
+            "secret_encoded": false,
+            "lifetime_in_seconds": 36000
+        },
+        "sso_disabled": false,
+        "grant_types": [
+            "authorization_code",
+            "refresh_token"
         ],
         "custom_login_page_on": true,
         "token_endpoint_auth_method": "client_secret_post",

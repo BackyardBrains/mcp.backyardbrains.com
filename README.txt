@@ -382,10 +382,15 @@ Calculate: `(SalesPrice - CostPrice) / SalesPrice * 100` for margin percentage.
 ## 🔧 Other Useful Tools
 
 - `xero_list_contacts` - Get customer/supplier details
+- `xero_create_contacts` - Create new contacts
 - `xero_list_bank_transactions` - Bank account transactions
+- `xero_create_bank_transactions` - Create bank transactions
 - `xero_list_payments` - Payment records
 - `xero_list_accounts` - Chart of accounts
 - `xero_list_manual_journals` - Manual journals with flexible filtering
+- `xero_get_cash_summary` - Retrieve Cash Summary report
+- `xero_list_organisations` - Get organisation details
+- `xero_list_quotes` - Retrieve quotes
 
 
 ---
