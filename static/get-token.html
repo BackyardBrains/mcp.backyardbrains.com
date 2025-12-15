@@ -303,12 +303,18 @@
                 }
             } catch (e) {
                 console.error('Auth0 init/redirect error:', e);
+
+                // Show error state
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('tokenSection').classList.remove('hidden');
+
                 const box = document.getElementById('tokenBox');
                 if (box) {
                     box.textContent =
                         'Auth error: ' +
                         (e.error || '') + ' ' +
-                        (e.error_description || '');
+                        (e.error_description || '') +
+                        (e.message ? (' (' + e.message + ')') : '');
                 }
             }
         }
