@@ -1,0 +1,21 @@
+{
+  "tracking_categories": [
+    {
+      "name": "Who Pays",
+      "status": "ACTIVE",
+      "tracking_category_id": "tc-1",
+      "tracking_options": [
+        {
+          "name": "Grant",
+          "status": "ACTIVE",
+          "tracking_option_id": "opt-1"
+        },
+        {
+          "name": "Customer",
+          "status": "ACTIVE",
+          "tracking_option_id": "opt-2"
+        }
+      ]
+    }
+  ]
+}

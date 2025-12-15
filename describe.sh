@@ -27,7 +27,7 @@ echo "Generating $OUTPUT_FILE..."
   echo "===== Project Tree ====="
   tree -a . \
     -I 'node_modules|\.git|\.DS_Store|.*\.lock|venv|webgazer\.js' \
-    -P '*.py|*.js|*.html|*.css|.env|.env.*|README*' \
+    -P '*.py|*.js|*.html|*.css|.env|*.config|*.json|README*' \
     --prune \
     --noreport
   echo -e "\n===== Begin Code Excerpts =====\n"
@@ -47,7 +47,7 @@ echo "Collected tree output."
 tree_files=$(
   tree -afi . \
     -I 'node_modules|\.git|\.DS_Store|.*\.lock|venv|webgazer\.js' \
-    -P '*.py|*.js|*.html|*.css|.env|.env.*|README*' \
+    -P '*.py|*.js|*.html|*.css|.env|*.config|*.json|README*' \
     --prune \
     --noreport \
   | sed -e '/\/$/d' \

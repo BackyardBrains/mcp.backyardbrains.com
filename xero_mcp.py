@@ -17,6 +17,7 @@ from xero_python.accounting import AccountingApi, Contact, Contacts, BankTransac
 from xero_python.api_client import ApiClient
 from xero_python.api_client.oauth2 import OAuth2Token
 from xero_python.api_client.configuration import Configuration
+from xero_python.exceptions.http_status_exceptions import HTTPStatusException
 
 from utils import MCP_PROTOCOL_VERSION, safe_dumps, _as_float, _rpc_result, _rpc_error, logger
 
@@ -33,7 +34,7 @@ XERO_SCOPES = os.environ.get("XERO_SCOPES")
 # Encryption setup
 TOKEN_ENC_KEY = os.environ.get("TOKEN_ENC_KEY")
 TOKEN_STORE_PATH = os.environ.get("TOKEN_STORE_PATH", ".xero_tokens.enc")
-TENANT_FILE = "tenant_id.txt"
+TENANT_FILE = os.environ.get("TENANT_FILE", "tenant_id.txt")
 
 if not TOKEN_ENC_KEY:
     logger.warning("TOKEN_ENC_KEY not set; tokens will not be encrypted!")
@@ -381,6 +382,7 @@ def _fetch_report_by_resource(accounting_api, tenant_id: str, resource: str, que
         "Accept": accounting_api.api_client.select_header_accept(["application/json"]),
     }
     resource_path = resource if resource.startswith("/") else f"/{resource}"
+    logger.info("Calling Xero report resource: path=%s query_params=%s", resource_path, query_params)
     return accounting_api.api_client.call_api(
         accounting_api.get_resource_url(resource_path),
         "GET",
@@ -906,22 +908,6 @@ def _list_tools_payload():
                 ]
             },
             {
-                "name": "xero_get_account_transactions",
-                "description": "Retrieve Account Transactions report for any account (Bank, Asset, Liability, Expense, Revenue, Equity) over a date range.",
-                "inputSchema": {
-                    "type": "object",
-                    "required": ["accountCode"],
-                    "properties": {
-                        "accountCode": {"type": "string", "description": "Account code from chart of accounts (e.g., '1200' for AR, '4000' for Sales)"},
-                        "dateFrom": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
-                        "dateTo": {"type": "string", "description": "End date (YYYY-MM-DD)"}
-                    }
-                },
-                "securitySchemes": [
-                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
-                ]
-            },
-            {
                 "name": "xero_list_items",
                 "description": "Retrieve items (products/services) with details like cost price and sales price.",
                 "inputSchema": {
@@ -1191,7 +1177,7 @@ async def handle_tool_call(name: str, args: Dict):
 
             where = _join_where(
                 mj_where if isinstance(mj_where, str) and mj_where.strip() else "",
-                _xero_where_date_field("JournalDate", mj_date_from, mj_date_to),
+                _xero_where_date_field("Date", mj_date_from, mj_date_to),
             )
 
             mj_kwargs = {}
@@ -1288,63 +1274,6 @@ async def handle_tool_call(name: str, args: Dict):
 
             quotes = accounting_api.get_quotes(tenant_id, **q_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([q.to_dict() for q in quotes.quotes])}]}
-        elif name == "xero_get_account_transactions":
-            # Get all transactions affecting a specific account
-            account_code = _get_arg(args, "accountCode", "account_code")
-            if not account_code:
-                return {
-                    "isError": True,
-                    "content": [{"type": "text", "text": "accountCode is required"}],
-                    "metadata": {"reason": "missingParameter"}
-                }
-            
-            date_from = _get_arg(args, "dateFrom", "date_from")
-            date_to = _get_arg(args, "dateTo", "date_to")
-            page = _get_arg(args, "page")
-            
-            # First, get the account details to validate and get account ID
-            accounts_response = accounting_api.get_accounts(tenant_id, where=f'Code=="{account_code}"')
-            if not accounts_response.accounts:
-                return {
-                    "isError": True,
-                    "content": [{"type": "text", "text": f"Account {account_code} not found"}],
-                    "metadata": {"reason": "accountNotFound"}
-                }
-            
-            account = accounts_response.accounts[0]
-            account_id = getattr(account, "account_id", None)
-
-            # Use the Account Transactions Report which works for ALL accounts
-            query = {
-                "account": account_id,
-            }
-            if date_from:
-                query["fromDate"] = date_from
-            if date_to:
-                query["toDate"] = date_to
-            
-            # Note: The report endpoint doesn't support standard pagination like 'page' parameter in the same way as list endpoints.
-            # It returns the full report.
-            
-            try:
-                report_data = _fetch_report_by_resource(accounting_api, tenant_id, "Reports/AccountTransactions", query)
-                # report_data is a tuple (data, status, headers) or just data depending on _return_http_data_only
-                # _fetch_report_by_resource uses _return_http_data_only=True, so it returns the model object (ReportWithRows)
-                
-                # The SDK returns a Reports object containing a list of Report objects
-                if hasattr(report_data, "reports") and report_data.reports:
-                    report = report_data.reports[0]
-                    return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(report))}]}
-                else:
-                     return {"content": [{"type": "text", "text": safe_dumps({})}]}
-
-            except Exception as e:
-                logger.exception("Failed to fetch Account Transactions report")
-                return {
-                    "isError": True,
-                    "content": [{"type": "text", "text": f"Failed to fetch report: {safe_exception_message(e)}"}],
-                    "metadata": {"reason": "reportError"}
-                }
         elif name == "xero_list_items":
             updated_since = _get_arg(args, "updatedSince", "updated_since")
             i_kwargs = {}
@@ -1431,6 +1360,7 @@ from fastapi import APIRouter
 router = APIRouter()
 
 @router.get("/")
+@router.get("")
 def xero_index():
     """Basic index endpoint so /xero/ doesn't 404 behind nginx."""
     return {
@@ -1444,6 +1374,7 @@ def xero_index():
     }
 
 @router.post("/")
+@router.post("")
 async def xero_index_post(request: Request, payload: Dict = Depends(require_xero_auth)):
     """
     Handle MCP JSON-RPC requests at the root /xero/ endpoint.
@@ -1549,6 +1480,9 @@ async def handle_mcp_request(request: Request, payload: Dict = Depends(require_x
         name = params.get("name")
         args = params.get("arguments", {})
         result = await handle_tool_call(name, args)
+        if isinstance(result, dict) and result.get("isError"):
+            status = int(result.get("httpStatus", 502))
+            return JSONResponse(status_code=status, content=_rpc_result(rpc_id, result))
         return _rpc_result(rpc_id, result)
 
     elif method == "resources/list":

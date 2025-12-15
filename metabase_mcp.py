@@ -17,6 +17,7 @@ METABASE_API_KEY = os.environ.get("METABASE_API_KEY")
 router = APIRouter()
 
 @router.get("/")
+@router.get("")
 def metabase_index():
     """Basic index endpoint so /metabase/ doesn't 404 behind nginx."""
     return {
@@ -29,6 +30,7 @@ def metabase_index():
     }
 
 @router.post("/")
+@router.post("")
 async def metabase_index_post(request: Request, payload: Dict = Depends(require_metabase_auth)):
     """
     Handle MCP JSON-RPC requests at the root /metabase/ endpoint.
