@@ -192,6 +192,10 @@
                     <input type="checkbox" id="apiMetabase" name="apiChoice" value="metabase">
                     <label for="apiMetabase">Metabase API (analytics data)</label>
                 </div>
+                <div class="api-option">
+                    <input type="checkbox" id="apiMeta" name="apiChoice" value="meta">
+                    <label for="apiMeta">Meta API (Meta Ads)</label>
+                </div>
             </div>
 
             <button id="loginBtn" class="btn">Login with Auth0</button>
@@ -238,6 +242,10 @@
             metabase: {
                 audience: 'https://mcp.backyardbrains.com/metabase',
                 scope: 'openid profile email mcp:read:metabase mcp:write:metabase'
+            },
+            meta: {
+                audience: 'https://mcp.backyardbrains.com/meta',
+                scope: 'openid profile email mcp:read:meta mcp:write:meta'
             }
         };
 
