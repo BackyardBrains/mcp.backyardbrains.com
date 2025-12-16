@@ -329,7 +329,11 @@ def _ensure_redirects_whitelisted(redirect_uris: list[str], auth0_domain: str, s
     missing_callbacks = [uri for uri in redirect_uris if uri not in callbacks]
 
     if not missing_callbacks:
-        logger.info("All redirect URIs already allowed for %s", AUTH0_NATIVE_APP_NAME)
+        logger.info(
+            "All redirect URIs already allowed for %s (client_id=%s)",
+            AUTH0_NATIVE_APP_NAME,
+            static_client_id,
+        )
         return
 
     updated_callbacks = callbacks + missing_callbacks
@@ -369,8 +373,10 @@ async def fake_dcr_endpoint(reg_request: DynamicRegistrationRequest):
         raise HTTPException(status_code=500, detail="Server misconfigured: Missing Auth0 settings")
 
     logger.info(
-        "Interceptor: Preventing new App creation. Returning static ID for client: %s",
+        "Interceptor: Preventing new App creation. Returning static ID for client: %s redirect_uris=%s grant_types=%s",
         reg_request.client_name,
+        reg_request.redirect_uris,
+        reg_request.grant_types,
     )
 
     _ensure_redirects_whitelisted(reg_request.redirect_uris or [], auth0_domain, static_client_id)
