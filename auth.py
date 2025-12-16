@@ -21,6 +21,14 @@ security = HTTPBearer(auto_error=False)
 _USERINFO_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
 AUTH0_USERINFO_CACHE_SECONDS = int(os.environ.get("AUTH0_USERINFO_CACHE_SECONDS", "300"))
 
+
+def _mask_token(token: str) -> str:
+    """Return a redacted token string for safe logging."""
+
+    if len(token) <= 10:
+        return "<token:redacted>"
+    return f"{token[:6]}...{token[-4:]}"
+
 async def validate_opaque_token(token: str) -> Dict[str, Any]:
     """Validate an opaque/JWE token by calling Auth0's /userinfo endpoint."""
 
@@ -29,10 +37,16 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
 
     now = time.time()
     cached = _USERINFO_CACHE.get(token)
+    cached_payload = cached[1] if cached else None
     if cached and cached[0] > now:
+        logger.info("/userinfo cache hit for token=%s", _mask_token(token))
         return cached[1]
 
     userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
+
+    logger.info(
+        "Validating opaque token against Auth0 userinfo: domain=%s token=%s", AUTH0_DOMAIN, _mask_token(token)
+    )
 
     try:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -56,10 +70,18 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
     if response.status_code == 200:
         payload = response.json()
         _log_scope_claims(payload, context="userinfo")
+        logger.info(
+            "Caching /userinfo payload for %ss (token=%s)",
+            AUTH0_USERINFO_CACHE_SECONDS,
+            _mask_token(token),
+        )
         _USERINFO_CACHE[token] = (now + AUTH0_USERINFO_CACHE_SECONDS, payload)
         return payload
 
     if response.status_code == 401:
+        logger.warning(
+            "Auth0 rejected token via /userinfo: status=401 token=%s", _mask_token(token)
+        )
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     if response.status_code == 429:
