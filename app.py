@@ -1,8 +1,11 @@
 import os
+import time
 import logging
 import uvicorn
 import requests
 import secrets
+from typing import Optional
+from pydantic import BaseModel
 from urllib.parse import urlencode
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response, HTTPException
@@ -20,6 +23,12 @@ from auth import AUTH0_XERO_AUDIENCE, AUTH0_METABASE_AUDIENCE, AUTH0_META_AUDIEN
 import xero_mcp
 import metabase_mcp
 import meta_mcp
+
+AUTH0_M2M_APP_NAME = os.environ.get("AUTH0_M2M_APP_NAME", "service.mcp.backyardbrains.com")
+AUTH0_NATIVE_APP_NAME = os.environ.get("AUTH0_NATIVE_APP_NAME", "mcp.backyardbrains.com")
+AUTH0_MGMT_CLIENT_ID = os.environ.get("AUTH0_MGMT_CLIENT_ID")
+AUTH0_MGMT_CLIENT_SECRET = os.environ.get("AUTH0_MGMT_CLIENT_SECRET")
+AUTH0_MGMT_AUDIENCE = os.environ.get("AUTH0_MGMT_AUDIENCE")
 
 # Initialize FastAPI app
 app = FastAPI(title="BYB Xero & Metabase MCP Server", version="1.0.0")
@@ -123,16 +132,18 @@ async def oauth_authorization_server(request: Request, api: str = "xero"):
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
     if not auth0_domain:
         return Response(status_code=404)
-    
+
     base_url = f"https://{auth0_domain}"
-    
+    base_server_url = str(request.base_url).rstrip("/")
+    fake_registration_url = f"{base_server_url}/auth/fake-register"
+
     return {
         "issuer": f"{base_url}/",
         "authorization_endpoint": f"{base_url}/authorize",
         "token_endpoint": f"{base_url}/oauth/token",
         "userinfo_endpoint": f"{base_url}/userinfo",
         "jwks_uri": f"{base_url}/.well-known/jwks.json",
-        "registration_endpoint": f"{base_url}/oidc/register",
+        "registration_endpoint": fake_registration_url,
         "scopes_supported": [
             "openid",
             "profile",
@@ -238,6 +249,142 @@ async def openid_configuration():
     
     resp = requests.get(f"https://{auth0_domain}/.well-known/openid-configuration")
     return Response(content=resp.content, media_type="application/json", status_code=resp.status_code)
+
+
+class DynamicRegistrationRequest(BaseModel):
+    client_name: Optional[str] = None
+    redirect_uris: list[str] = []
+    grant_types: list[str] = []
+
+
+_MGMT_TOKEN_CACHE: dict[str, float | str] = {}
+
+
+def _get_auth0_management_token(auth0_domain: str) -> str:
+    if not AUTH0_MGMT_CLIENT_ID or not AUTH0_MGMT_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=500,
+            detail="Server misconfigured: Missing Auth0 management client credentials",
+        )
+
+    now = time.time()
+    cached_token = _MGMT_TOKEN_CACHE.get("access_token")
+    expires_at = _MGMT_TOKEN_CACHE.get("expires_at", 0)
+    if cached_token and expires_at - 60 > now:
+        return cached_token  # type: ignore[return-value]
+
+    token_url = f"https://{auth0_domain}/oauth/token"
+    audience = AUTH0_MGMT_AUDIENCE or f"https://{auth0_domain}/api/v2/"
+
+    try:
+        response = requests.post(
+            token_url,
+            json={
+                "grant_type": "client_credentials",
+                "client_id": AUTH0_MGMT_CLIENT_ID,
+                "client_secret": AUTH0_MGMT_CLIENT_SECRET,
+                "audience": audience,
+            },
+            timeout=10,
+        )
+    except requests.RequestException as exc:
+        logger.error("Auth0 management token request failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Unable to reach Auth0 for management token")
+
+    if response.status_code != 200:
+        logger.error("Auth0 management token request returned %s: %s", response.status_code, response.text)
+        raise HTTPException(status_code=502, detail="Failed to obtain Auth0 management token")
+
+    payload = response.json()
+    access_token = payload.get("access_token")
+    expires_in = payload.get("expires_in", 300)
+    if not access_token:
+        logger.error("Auth0 management token missing in response: %s", payload)
+        raise HTTPException(status_code=502, detail="Auth0 management token missing in response")
+
+    _MGMT_TOKEN_CACHE["access_token"] = access_token
+    _MGMT_TOKEN_CACHE["expires_at"] = now + expires_in
+    return access_token
+
+
+def _ensure_redirects_whitelisted(redirect_uris: list[str], auth0_domain: str, static_client_id: str) -> None:
+    if not redirect_uris:
+        return
+
+    management_token = _get_auth0_management_token(auth0_domain)
+    headers = {"Authorization": f"Bearer {management_token}"}
+    client_url = f"https://{auth0_domain}/api/v2/clients/{static_client_id}"
+
+    try:
+        client_resp = requests.get(client_url, headers=headers, timeout=10)
+    except requests.RequestException as exc:
+        logger.error("Failed to fetch Auth0 client callbacks: %s", exc)
+        raise HTTPException(status_code=502, detail="Unable to query Auth0 client callbacks")
+
+    if client_resp.status_code != 200:
+        logger.error("Auth0 client lookup failed: %s %s", client_resp.status_code, client_resp.text)
+        raise HTTPException(status_code=502, detail="Auth0 client lookup failed")
+
+    callbacks = client_resp.json().get("callbacks") or []
+    missing_callbacks = [uri for uri in redirect_uris if uri not in callbacks]
+
+    if not missing_callbacks:
+        logger.info("All redirect URIs already allowed for %s", AUTH0_NATIVE_APP_NAME)
+        return
+
+    updated_callbacks = callbacks + missing_callbacks
+
+    try:
+        patch_resp = requests.patch(
+            client_url,
+            headers=headers,
+            json={"callbacks": updated_callbacks},
+            timeout=10,
+        )
+    except requests.RequestException as exc:
+        logger.error("Failed to update Auth0 callbacks: %s", exc)
+        raise HTTPException(status_code=502, detail="Unable to update Auth0 callbacks")
+
+    if patch_resp.status_code not in (200, 201):
+        logger.error("Auth0 callback update failed: %s %s", patch_resp.status_code, patch_resp.text)
+        raise HTTPException(status_code=502, detail="Auth0 callback update failed")
+
+    logger.info(
+        "Added %s redirect URIs to %s (%s)",
+        len(missing_callbacks),
+        AUTH0_NATIVE_APP_NAME,
+        static_client_id,
+    )
+
+
+@app.post("/auth/fake-register")
+async def fake_dcr_endpoint(reg_request: DynamicRegistrationRequest):
+    """Intercept dynamic registration and return static credentials."""
+
+    static_client_id = os.environ.get("AUTH0_CLIENT_ID")
+    static_client_secret = os.environ.get("AUTH0_CLIENT_SECRET")
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+
+    if not static_client_id or not auth0_domain:
+        raise HTTPException(status_code=500, detail="Server misconfigured: Missing Auth0 settings")
+
+    logger.info(
+        "Interceptor: Preventing new App creation. Returning static ID for client: %s",
+        reg_request.client_name,
+    )
+
+    _ensure_redirects_whitelisted(reg_request.redirect_uris or [], auth0_domain, static_client_id)
+
+    return {
+        "client_id": static_client_id,
+        "client_secret": static_client_secret,
+        "client_id_issued_at": int(time.time()),
+        "client_secret_expires_at": 0,
+        "client_name": reg_request.client_name or "MCP Static App",
+        "grant_types": reg_request.grant_types or ["authorization_code", "refresh_token"],
+        "redirect_uris": reg_request.redirect_uris or [],
+        "token_endpoint_auth_method": "client_secret_post",
+    }
 
 @app.get("/.well-known/jwks.json")
 async def jwks_json():

@@ -14,6 +14,32 @@ source ./venv/bin/activate
 uvicorn app:app --host 0.0.0.0 --port 8087 --log-level info
 ```
 
+## Auth0 Dynamic Registration Interceptor Setup (JIT Callback Whitelisting)
+
+To stop new Auth0 apps from being created and instead reuse the existing **Survivor** app,
+configure the fake registration endpoint to Just-in-Time whitelist callback URLs via the Auth0
+Management API.
+
+1. **Auth0 Apps**
+   - Native client (Survivor app): `mcp.backyardbrains.com`
+   - Management M2M client: `service.mcp.backyardbrains.com`
+
+2. **Management API Scopes** (for the M2M client)
+   - `read:clients`
+   - `update:clients`
+
+3. **.env variables**
+   - `AUTH0_DOMAIN` – your Auth0 tenant domain
+   - `AUTH0_CLIENT_ID` / `AUTH0_CLIENT_SECRET` – credentials for the Survivor app (returned to clients)
+   - `AUTH0_MGMT_CLIENT_ID` / `AUTH0_MGMT_CLIENT_SECRET` – credentials for the `service.mcp.backyardbrains.com` M2M app
+   - `AUTH0_MGMT_AUDIENCE` (optional) – defaults to `https://<AUTH0_DOMAIN>/api/v2/`
+   - `AUTH0_NATIVE_APP_NAME` (optional) – defaults to `mcp.backyardbrains.com`
+   - `AUTH0_M2M_APP_NAME` (optional) – defaults to `service.mcp.backyardbrains.com`
+
+With these in place, `/auth/fake-register` will add any incoming redirect URI to the Survivor app’s
+callback allowlist through Auth0’s Management API, then return the static client credentials instead
+of creating a new Auth0 application.
+
 ---
 
 # 📊 LLM USAGE GUIDE: Key Xero Reports & Tracking Categories
