@@ -30,6 +30,14 @@ def _mask_token(token: str) -> str:
         return "<token:redacted>"
     return f"{token[:6]}...{token[-4:]}"
 
+
+def _mask_token(token: str) -> str:
+    """Return a redacted token string for safe logging."""
+
+    if len(token) <= 10:
+        return "<token:redacted>"
+    return f"{token[:6]}...{token[-4:]}"
+
 async def validate_opaque_token(token: str) -> Dict[str, Any]:
     """Validate an opaque/JWE token by calling Auth0's /userinfo endpoint."""
 
@@ -72,7 +80,7 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
 
     if response.status_code == 200:
         payload = response.json()
-        _log_identity_claims(payload, context="userinfo")
+        _log_scope_claims(payload, context="userinfo")
         logger.info(
             "Caching /userinfo payload for %ss (token=%s)",
             AUTH0_USERINFO_CACHE_SECONDS,
