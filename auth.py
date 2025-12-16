@@ -20,6 +20,15 @@ security = HTTPBearer(auto_error=False)
 # Cache /userinfo responses to avoid hammering Auth0 and hitting rate limits
 _USERINFO_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
 AUTH0_USERINFO_CACHE_SECONDS = int(os.environ.get("AUTH0_USERINFO_CACHE_SECONDS", "300"))
+AUTH0_USERINFO_STALE_ON_429_SECONDS = int(os.environ.get("AUTH0_USERINFO_STALE_ON_429_SECONDS", "30"))
+
+
+def _mask_token(token: str) -> str:
+    """Return a redacted token string for safe logging."""
+
+    if len(token) <= 10:
+        return "<token:redacted>"
+    return f"{token[:6]}...{token[-4:]}"
 
 
 def _mask_token(token: str) -> str:
@@ -58,7 +67,9 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
         logger.error("Auth0 userinfo request failed: %s", exc)
         if cached_payload:
             logger.warning(
-                "Serving cached /userinfo claims after Auth0 error for token: %s", exc
+                "Serving cached /userinfo claims after Auth0 error for token: %s (stale window %ss)",
+                exc,
+                AUTH0_USERINFO_STALE_ON_429_SECONDS,
             )
             _USERINFO_CACHE[token] = (
                 now + AUTH0_USERINFO_STALE_ON_429_SECONDS,
@@ -126,6 +137,13 @@ def check_permissions(payload: Dict[str, Any], required_scopes: list[str]) -> bo
             if scope in scopes:
                 return True
 
+    logger.info(
+        "Permission check failed. required=%s namespaced_permissions=%s permissions=%s scope=%s",
+        required_scopes,
+        namespaced_permissions if namespaced_permissions is not None else "<missing>",
+        permissions if permissions is not None else "<missing>",
+        scope_string if scope_string is not None else "<missing>",
+    )
     return False
 
 
@@ -140,6 +158,19 @@ def _log_scope_claims(payload: Dict[str, Any], *, context: str) -> None:
         namespaced_permissions if namespaced_permissions is not None else "<missing>",
         permissions if permissions is not None else "<missing>",
         scope_string if scope_string is not None else "<missing>",
+    )
+
+
+def _log_identity_claims(payload: Dict[str, Any], *, context: str) -> None:
+    """Log user identity-related claims to help correlate which Auth0 app was used."""
+
+    _log_scope_claims(payload, context=context)
+    logger.info(
+        "Auth0 identity for %s: sub=%s aud=%s azp=%s", 
+        context,
+        payload.get("sub", "<missing>"),
+        payload.get("aud", "<missing>"),
+        payload.get("azp", "<missing>"),
     )
 
 
