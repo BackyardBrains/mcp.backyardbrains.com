@@ -40,6 +40,40 @@ With these in place, `/auth/fake-register` will add any incoming redirect URI to
 callback allowlist through Auth0’s Management API, then return the static client credentials instead
 of creating a new Auth0 application.
 
+### What the discovery document should look like
+
+When you query `/.well-known/oauth-authorization-server` (optionally with `/xero`, `/metabase`, or
+`/meta`), the server builds the response from your `.env` values:
+
+- `issuer`, `authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, and `jwks_uri` all come
+  from `AUTH0_DOMAIN`, so they point at your Auth0 tenant (e.g., `https://login.backyardbrains.com`).
+- `registration_endpoint` defaults to `https://<this-server>/auth/fake-register`, not Auth0. That
+  ensures MCP clients register through the fake endpoint, which whitelists redirect URLs and reuses
+  the Survivor app instead of creating new Auth0 clients. Set `AUTH0_REGISTRATION_ENDPOINT` if you
+  need to override this.
+- Supported scopes, response types, grant types, and auth methods are static in the app code.
+
+If you see the fake registration URL in the discovery JSON, the interceptor is active. If that value
+ever points at Auth0 directly, revisit the `.env` settings or ensure the request is hitting this
+server rather than Auth0’s own discovery endpoints.
+
+## Troubleshooting MCP client onboarding
+
+- **Why are third-party connectors getting created?**
+  - The MCP well-known metadata (`/.well-known/oauth-authorization-server`) advertises the local fake
+    registration endpoint as the `registration_endpoint` (or `AUTH0_REGISTRATION_ENDPOINT` if set) so
+    clients register against `/auth/fake-register` instead of hitting Auth0 directly. That endpoint
+    whitelists the redirect URIs on the existing Survivor app and returns the static
+    `AUTH0_CLIENT_ID`/`AUTH0_CLIENT_SECRET`, preventing new Auth0 apps from being created. If you
+    still see new apps, double-check the environment variables above and confirm clients are pointed
+    at this server’s metadata rather than Auth0’s default URLs.
+- **Why do I see 401s on POSTs?**
+  - Requests like `POST /xero` must include a valid `Authorization: Bearer <token>` header. Missing or
+    invalid tokens are rejected immediately, which is normal during unauthenticated probes.
+- **What about the `//ping` or `//clients` 404s?**
+  - Double-slash paths are not routed; they usually come from preflight or discovery attempts. They
+    can be ignored unless you intend to expose those routes.
+
 ---
 
 # 📊 LLM USAGE GUIDE: Key Xero Reports & Tracking Categories

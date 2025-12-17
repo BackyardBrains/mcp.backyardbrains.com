@@ -136,6 +136,7 @@ async def oauth_authorization_server(request: Request, api: str = "xero"):
     base_url = f"https://{auth0_domain}"
     base_server_url = str(request.base_url).rstrip("/")
     fake_registration_url = f"{base_server_url}/auth/fake-register"
+    registration_endpoint = os.environ.get("AUTH0_REGISTRATION_ENDPOINT", fake_registration_url)
 
     return {
         "issuer": f"{base_url}/",
@@ -143,7 +144,7 @@ async def oauth_authorization_server(request: Request, api: str = "xero"):
         "token_endpoint": f"{base_url}/oauth/token",
         "userinfo_endpoint": f"{base_url}/userinfo",
         "jwks_uri": f"{base_url}/.well-known/jwks.json",
-        "registration_endpoint": fake_registration_url,
+        "registration_endpoint": registration_endpoint,
         "scopes_supported": [
             "openid",
             "profile",
