@@ -621,7 +621,16 @@ class AuthenticatedMCPApp:
                 await response(scope, receive, send)
                 return
 
-        await self.app(scope, receive, send)
+        try:
+            await self.app(scope, receive, send)
+        except Exception:
+            logger.exception(
+                "Unhandled exception in Xero MCP SDK app: method=%s path=%s client=%s",
+                scope.get("method"),
+                scope.get("path"),
+                scope.get("client"),
+            )
+            raise
 
 
 sdk_app = FastAPI(title="Xero MCP SDK", version="1.0.0")
