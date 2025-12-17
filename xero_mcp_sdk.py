@@ -14,6 +14,8 @@ from enum import Enum
 from uuid import UUID
 import re
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from cryptography.fernet import Fernet, InvalidToken
@@ -634,52 +636,8 @@ class AuthenticatedMCPApp:
 
 
 streamable_app = server.streamable_http_app()
-
-
-# Mounted Starlette/FastAPI sub-apps do not run their own lifespan events, so we
-# keep a single session-manager context and expose helpers that can be attached
-# to whichever parent app owns the process lifecycle (e.g., the root app in
-# app.py).
-_mcp_lifespan_cm = server.session_manager.run()
-_mcp_lifespan_started = False
-_mcp_lifespan_lock = asyncio.Lock()
-
-
-async def _start_mcp_lifespan() -> None:
-    global _mcp_lifespan_started
-    async with _mcp_lifespan_lock:
-        if not _mcp_lifespan_started:
-            await _mcp_lifespan_cm.__aenter__()
-            _mcp_lifespan_started = True
-
-
-async def _stop_mcp_lifespan() -> None:
-    global _mcp_lifespan_started
-    async with _mcp_lifespan_lock:
-        if _mcp_lifespan_started:
-            await _mcp_lifespan_cm.__aexit__(None, None, None)
-            _mcp_lifespan_started = False
-
-
-async def _sdk_lifespan(app):
-    await _start_mcp_lifespan()
-    try:
-        yield
-    finally:
-        await _stop_mcp_lifespan()
-
-
-def register_mcp_lifecycle(parent_app: FastAPI) -> None:
-    """Attach MCP session manager lifecycle to the owning FastAPI app."""
-
-    @parent_app.on_event("startup")
-    async def _start() -> None:  # pragma: no cover - lifecycle wiring
-        await _start_mcp_lifespan()
-
-    @parent_app.on_event("shutdown")
-    async def _stop() -> None:  # pragma: no cover - lifecycle wiring
-        await _stop_mcp_lifespan()
-
-
-sdk_app = FastAPI(title="Xero MCP SDK", version="1.0.0", lifespan=_sdk_lifespan)
+sdk_app = FastAPI(title="Xero MCP SDK", version="1.0.0")
+# Instantiate the MCP ASGI app before wrapping it so FastAPI mounts a callable app
+# rather than the uncalled bound method (which raised a TypeError).
+streamable_app = server.streamable_http_app()
 sdk_app.mount("/", AuthenticatedMCPApp(streamable_app))
