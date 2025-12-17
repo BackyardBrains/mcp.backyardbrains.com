@@ -635,14 +635,8 @@ class AuthenticatedMCPApp:
             raise
 
 
-@asynccontextmanager
-async def sdk_lifespan(_: FastAPI):
-    # Initialize the StreamableHTTP session manager (task group) so requests
-    # are handled after the ASGI app is mounted on FastAPI.
-    async with server.session_manager.run():
-        yield
-
-
+sdk_app = FastAPI(title="Xero MCP SDK", version="1.0.0")
+# Instantiate the MCP ASGI app before wrapping it so FastAPI mounts a callable app
+# rather than the uncalled bound method (which raised a TypeError).
 streamable_app = server.streamable_http_app()
-sdk_app = FastAPI(title="Xero MCP SDK", version="1.0.0", lifespan=sdk_lifespan)
 sdk_app.mount("/", AuthenticatedMCPApp(streamable_app))
