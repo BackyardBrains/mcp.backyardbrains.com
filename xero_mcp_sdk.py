@@ -14,6 +14,8 @@ from enum import Enum
 from uuid import UUID
 import re
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from cryptography.fernet import Fernet, InvalidToken
@@ -635,25 +637,7 @@ class AuthenticatedMCPApp:
 
 streamable_app = server.streamable_http_app()
 sdk_app = FastAPI(title="Xero MCP SDK", version="1.0.0")
-
-# Manually drive the MCP session manager lifecycle because mounted ASGI apps do
-# not run their own lifespan events under FastAPI.
-_mcp_lifespan = None
-
-
-@sdk_app.on_event("startup")
-async def start_mcp_session_manager() -> None:
-    global _mcp_lifespan
-    _mcp_lifespan = server.session_manager.run()
-    await _mcp_lifespan.__aenter__()
-
-
-@sdk_app.on_event("shutdown")
-async def stop_mcp_session_manager() -> None:
-    global _mcp_lifespan
-    if _mcp_lifespan is not None:
-        await _mcp_lifespan.__aexit__(None, None, None)
-        _mcp_lifespan = None
-
-
+# Instantiate the MCP ASGI app before wrapping it so FastAPI mounts a callable app
+# rather than the uncalled bound method (which raised a TypeError).
+streamable_app = server.streamable_http_app()
 sdk_app.mount("/", AuthenticatedMCPApp(streamable_app))
