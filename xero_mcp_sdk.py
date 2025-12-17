@@ -634,4 +634,7 @@ class AuthenticatedMCPApp:
 
 
 sdk_app = FastAPI(title="Xero MCP SDK", version="1.0.0")
-sdk_app.mount("/", AuthenticatedMCPApp(server.streamable_http_app))
+# Instantiate the MCP ASGI app before wrapping it so FastAPI mounts a callable app
+# rather than the uncalled bound method (which raised a TypeError).
+streamable_app = server.streamable_http_app()
+sdk_app.mount("/", AuthenticatedMCPApp(streamable_app))
