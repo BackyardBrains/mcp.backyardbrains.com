@@ -14,6 +14,9 @@ AUTH0_XERO_AUDIENCE = os.environ.get("AUTH0_XERO_AUDIENCE", "https://mcp.backyar
 AUTH0_METABASE_AUDIENCE = os.environ.get("AUTH0_METABASE_AUDIENCE", "https://mcp.backyardbrains.com/metabase")
 AUTH0_META_AUDIENCE = os.environ.get("AUTH0_META_AUDIENCE", "https://mcp.backyardbrains.com/meta")
 AUTH0_NAMESPACE = "https://mcp.backyardbrains.com"
+AUTH0_USERINFO_STALE_ON_429_SECONDS = int(
+    os.environ.get("AUTH0_USERINFO_STALE_ON_429_SECONDS", "30")
+)
 
 security = HTTPBearer(auto_error=False)
 
@@ -29,8 +32,9 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
 
     now = time.time()
     cached = _USERINFO_CACHE.get(token)
+    cached_payload = cached[1] if cached else None
     if cached and cached[0] > now:
-        return cached[1]
+        return cached_payload
 
     userinfo_url = f"https://{AUTH0_DOMAIN}/userinfo"
 
@@ -41,7 +45,7 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
                 headers={"Authorization": f"Bearer {token}"},
             )
     except httpx.HTTPError as exc:
-        logger.error("Auth0 userinfo request failed: %s", exc)
+        logger.error("Auth0 userinfo request failed: %s", exc, exc_info=True)
         if cached_payload:
             logger.warning(
                 "Serving cached /userinfo claims after Auth0 error for token: %s", exc
