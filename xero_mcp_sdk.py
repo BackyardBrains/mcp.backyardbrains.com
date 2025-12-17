@@ -14,6 +14,8 @@ from enum import Enum
 from uuid import UUID
 import re
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from cryptography.fernet import Fernet, InvalidToken
@@ -633,5 +635,14 @@ class AuthenticatedMCPApp:
             raise
 
 
-sdk_app = FastAPI(title="Xero MCP SDK", version="1.0.0")
-sdk_app.mount("/", AuthenticatedMCPApp(server.streamable_http_app))
+@asynccontextmanager
+async def sdk_lifespan(_: FastAPI):
+    # Initialize the StreamableHTTP session manager (task group) so requests
+    # are handled after the ASGI app is mounted on FastAPI.
+    async with server.session_manager.run():
+        yield
+
+
+streamable_app = server.streamable_http_app()
+sdk_app = FastAPI(title="Xero MCP SDK", version="1.0.0", lifespan=sdk_lifespan)
+sdk_app.mount("/", AuthenticatedMCPApp(streamable_app))
