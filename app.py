@@ -57,6 +57,7 @@ app.add_middleware(RequestLoggingMiddleware)
 # Mount Routers
 app.include_router(xero_mcp.router, prefix="/xero", tags=["xero"])
 app.mount("/xero-sdk", xero_mcp_sdk.sdk_app)
+xero_mcp_sdk.register_mcp_lifecycle(app)
 app.include_router(metabase_mcp.router, prefix="/metabase", tags=["metabase"])
 app.include_router(meta_mcp.router, prefix="", tags=["meta"])
 
