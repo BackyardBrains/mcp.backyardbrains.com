@@ -14,7 +14,7 @@ from enum import Enum
 from uuid import UUID
 import re
 
-from fastapi import HTTPException, Depends, APIRouter
+from fastapi import FastAPI, HTTPException, Depends, APIRouter
 from cryptography.fernet import Fernet, InvalidToken
 
 from xero_python.accounting import AccountingApi, Contact, Contacts, BankTransaction, BankTransactions, ManualJournals, Quote, Account, Organisation
@@ -134,7 +134,7 @@ def get_xero_client():
 
     @client.oauth2_token_getter
     def _getter():
-        return load_tokens() or {{}}
+        return load_tokens() or {}
 
     @client.oauth2_token_saver
     def _saver(token):
@@ -198,7 +198,7 @@ def _join_where(*clauses: str) -> str | None:
 
 def _report_to_dict(report) -> Dict[str, Any]:
     if report is None:
-        return {{}}
+        return {}
     columns = []
     for idx, col in enumerate(getattr(report, "columns", None) or []):
         columns.append(
@@ -231,7 +231,7 @@ def _cell_to_dict(cell) -> Dict[str, Any]:
     }
     attrs = getattr(cell, "attributes", None)
     if attrs:
-        attr_map = {{}}
+        attr_map = {}
         for attr in attrs:
             name = getattr(attr, "name", None)
             value = getattr(attr, "value", None)
@@ -285,7 +285,7 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
         (" + ".join([f'Status=="{s}"' for s in statuses]) + ")") if isinstance(statuses, list) and statuses else ""
     )
 
-    inv_kwargs = {{}}
+    inv_kwargs = {}
     if order: inv_kwargs["order"] = order
     if page: inv_kwargs["page"] = page
     if where: inv_kwargs["where"] = where
@@ -302,7 +302,7 @@ async def _process_invoices_with_grouping(accounting_api, tenant_id, args: Dict)
             for r in result: r.pop("line_items", None)
         return {"content": [{"type": "text", "text": safe_dumps(result)}]}
 
-    buckets = {{}}
+    buckets = {}
     for inv in inv_objs:
         key_parts = []
         for group in group_by:
@@ -377,15 +377,15 @@ TOOL_SCHEMAS = {
     },
     "xero_list_accounts": {
         "description": "Retrieves the full chart of accounts",
-        "input_schema": {"type": "object", "properties": {{}}}}
+        "input_schema": {"type": "object", "properties": {}}
     },
-"xero_list_manual_journals": {
+    "xero_list_manual_journals": {
         "description": "Retrieve manual journals with optional filters.",
         "input_schema": { "type": "object", "properties": { "dateFrom": {"type": "string"}, "dateTo": {"type": "string"}, "where": {"type": "string"}, "order": {"type": "string"}, "page": {"type": "integer"} } }
     },
     "xero_list_organisations": {
         "description": "Retrieves Xero organisation details",
-        "input_schema": {"type": "object", "properties": {{}}}}
+        "input_schema": {"type": "object", "properties": {}}
     },
     "xero_list_payments": {
         "description": "Retrieve payments with optional filters.",
@@ -425,35 +425,35 @@ async def xero_list_invoices(*, accounting_api: AccountingApi = Depends(accounti
 
 @server.tool(**TOOL_SCHEMAS["xero_get_balance_sheet"])
 async def xero_get_balance_sheet(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency), **kwargs):
-    bs_kwargs = {{k: v for k, v in kwargs.items() if v is not None}}
+    bs_kwargs = {k: v for k, v in kwargs.items() if v is not None}
     if 'date' in bs_kwargs and isinstance(bs_kwargs['date'], str):
         d = _parse_iso_date(bs_kwargs['date'])
         bs_kwargs['date'] = d.isoformat() if d else None
     
     balance_sheet = await asyncio.to_thread(accounting_api.get_report_balance_sheet, tenant_id, **bs_kwargs)
-    return {{"content": [{"type": "text", "text": safe_dumps([rep.to_dict() for rep in balance_sheet.reports])]}}
+    return {"content": [{"type": "text", "text": safe_dumps([rep.to_dict() for rep in balance_sheet.reports])}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_get_profit_and_loss"])
 async def xero_get_profit_and_loss(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency), **kwargs):
-    pl_kwargs = {{k: v for k, v in kwargs.items() if v is not None}}
+    pl_kwargs = {k: v for k, v in kwargs.items() if v is not None}
     if 'fromDate' in pl_kwargs: pl_kwargs['from_date'] = pl_kwargs.pop('fromDate')
     if 'toDate' in pl_kwargs: pl_kwargs['to_date'] = pl_kwargs.pop('toDate')
 
     pl_report = await asyncio.to_thread(accounting_api.get_report_profit_and_loss, tenant_id, **pl_kwargs)
-    return {{"content": [{"type": "text", "text": safe_dumps(_report_to_dict(pl_report.reports[0]))}]}}
+    return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(pl_report.reports[0]))}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_get_cash_summary"])
 async def xero_get_cash_summary(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency), **kwargs):
-    cs_kwargs = {{k: v for k, v in kwargs.items() if v is not None}}
+    cs_kwargs = {k: v for k, v in kwargs.items() if v is not None}
     if 'fromDate' in cs_kwargs: cs_kwargs['from_date'] = cs_kwargs.pop('fromDate')
     if 'toDate' in cs_kwargs: cs_kwargs['to_date'] = cs_kwargs.pop('toDate')
     
     cash_summary = await asyncio.to_thread(accounting_api.get_report_cash_summary, tenant_id, **cs_kwargs)
-    return {{"content": [{"type": "text", "text": safe_dumps(_report_to_dict(cash_summary.reports[0]))}]}}
+    return {"content": [{"type": "text", "text": safe_dumps(_report_to_dict(cash_summary.reports[0]))}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_list_contacts"])
 async def xero_list_contacts(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency), **kwargs):
-    c_kwargs = {{k: v for k, v in kwargs.items() if v is not None}}
+    c_kwargs = {k: v for k, v in kwargs.items() if v is not None}
     if 'modifiedSince' in c_kwargs:
         c_kwargs['if_modified_since'] = _parse_iso_datetime(c_kwargs.pop('modifiedSince'))
     
@@ -463,17 +463,17 @@ async def xero_list_contacts(*, accounting_api: AccountingApi = Depends(accounti
     if where_clauses: c_kwargs['where'] = " && ".join(where_clauses)
 
     contacts = await asyncio.to_thread(accounting_api.get_contacts, tenant_id, **c_kwargs)
-    return {{"content": [{"type": "text", "text": safe_dumps([c.to_dict() for c in contacts.contacts])}]}}
+    return {"content": [{"type": "text", "text": safe_dumps([c.to_dict() for c in contacts.contacts])}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_create_contacts"])
 async def xero_create_contacts(*, contacts: List[Dict], accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency)):
     contacts_obj = Contacts(contacts=[Contact(**data) for data in contacts])
     created = await asyncio.to_thread(accounting_api.create_contacts, tenant_id, contacts_obj)
-    return {{"content": [{"type": "text", "text": safe_dumps([c.to_dict() for c in created.contacts])}]}}
+    return {"content": [{"type": "text", "text": safe_dumps([c.to_dict() for c in created.contacts])}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_list_bank_transactions"])
 async def xero_list_bank_transactions(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency), **kwargs):
-    bt_kwargs = {{k: v for k, v in kwargs.items() if v is not None}}
+    bt_kwargs = {k: v for k, v in kwargs.items() if v is not None}
     date_from = bt_kwargs.pop('dateFrom', None)
     date_to = bt_kwargs.pop('dateTo', None)
     account_id = bt_kwargs.pop('accountId', None)
@@ -485,22 +485,22 @@ async def xero_list_bank_transactions(*, accounting_api: AccountingApi = Depends
     if where: bt_kwargs['where'] = where
 
     transactions = await asyncio.to_thread(accounting_api.get_bank_transactions, tenant_id, **bt_kwargs)
-    return {{"content": [{"type": "text", "text": safe_dumps([t.to_dict() for t in transactions.bank_transactions])}]}}
+    return {"content": [{"type": "text", "text": safe_dumps([t.to_dict() for t in transactions.bank_transactions])}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_create_bank_transactions"])
 async def xero_create_bank_transactions(*, bank_transactions: List[Dict], accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency)):
     bank_transactions_obj = BankTransactions(bank_transactions=[BankTransaction(**data) for data in bank_transactions])
     created = await asyncio.to_thread(accounting_api.create_bank_transactions, tenant_id, bank_transactions_obj)
-    return {{"content": [{"type": "text", "text": safe_dumps([t.to_dict() for t in created.bank_transactions])}]}}
+    return {"content": [{"type": "text", "text": safe_dumps([t.to_dict() for t in created.bank_transactions])}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_list_accounts"])
 async def xero_list_accounts(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency)):
     accounts = await asyncio.to_thread(accounting_api.get_accounts, tenant_id)
-    return {{"content": [{"type": "text", "text": safe_dumps([a.to_dict() for a in accounts.accounts])}]}}
+    return {"content": [{"type": "text", "text": safe_dumps([a.to_dict() for a in accounts.accounts])}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_list_manual_journals"])
 async def xero_list_manual_journals(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency), **kwargs):
-    mj_kwargs = {{k: v for k, v in kwargs.items() if v is not None}}
+    mj_kwargs = {k: v for k, v in kwargs.items() if v is not None}
     where_parts = []
     if 'where' in mj_kwargs: where_parts.append(mj_kwargs.pop('where'))
     date_from = mj_kwargs.pop('dateFrom', None)
@@ -510,18 +510,18 @@ async def xero_list_manual_journals(*, accounting_api: AccountingApi = Depends(a
     if where_parts: mj_kwargs['where'] = " && ".join(where_parts)
     
     manual_journals = await asyncio.to_thread(accounting_api.get_manual_journals, tenant_id, **mj_kwargs)
-    return {{"content": [{"type": "text", "text": safe_dumps([j.to_dict() for j in (manual_journals.manual_journals or [])])}]}}
+    return {"content": [{"type": "text", "text": safe_dumps([j.to_dict() for j in (manual_journals.manual_journals or [])])}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_list_organisations"])
 async def xero_list_organisations(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency)):
     organisations = await asyncio.to_thread(accounting_api.get_organisations, tenant_id)
-    return {{"content": [{"type": "text", "text": safe_dumps([o.to_dict() for o in organisations.organisations])}]}}
+    return {"content": [{"type": "text", "text": safe_dumps([o.to_dict() for o in organisations.organisations])}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_list_payments"])
 async def xero_list_payments(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency), **kwargs):
-    p_kwargs = {{k: v for k, v in kwargs.items() if v is not None}}
+    p_kwargs = {k: v for k, v in kwargs.items() if v is not None}
     where_parts = []
-    if 'isReconciled' in p_kwargs: where_parts.append(f"IsReconciled=={{str(p_kwargs.pop('isReconciled')).lower()}}")
+    if 'isReconciled' in p_kwargs: where_parts.append(f"IsReconciled=={str(p_kwargs.pop('isReconciled')).lower()}")
     if 'invoiceId' in p_kwargs: where_parts.append(f'Invoice.InvoiceID==Guid("{p_kwargs.pop("invoiceId")}")')
     if 'accountId' in p_kwargs: where_parts.append(f'Account.AccountID==Guid("{p_kwargs.pop("accountId")}")')
     date_from = p_kwargs.pop('dateFrom', None)
@@ -533,32 +533,32 @@ async def xero_list_payments(*, accounting_api: AccountingApi = Depends(accounti
         p_kwargs['if_modified_since'] = _parse_iso_datetime(p_kwargs.pop('modifiedSince'))
 
     payments = await asyncio.to_thread(accounting_api.get_payments, tenant_id, **p_kwargs)
-    return {{"content": [{"type": "text", "text": safe_dumps([p.to_dict() for p in payments.payments])}]}}
+    return {"content": [{"type": "text", "text": safe_dumps([p.to_dict() for p in payments.payments])}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_list_tracking_categories"])
 async def xero_list_tracking_categories(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency), **kwargs):
-    tc_kwargs = {{k: v for k, v in kwargs.items() if v is not None}}
+    tc_kwargs = {k: v for k, v in kwargs.items() if v is not None}
     categories = await asyncio.to_thread(accounting_api.get_tracking_categories, tenant_id, **tc_kwargs)
-    return {{"content": [{"type": "text", "text": safe_dumps(_serialize_tracking_categories(categories))}]}}
+    return {"content": [{"type": "text", "text": safe_dumps(_serialize_tracking_categories(categories))}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_list_quotes"])
 async def xero_list_quotes(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency), **kwargs):
-    q_kwargs = {{k: v for k, v in kwargs.items() if v is not None}}
+    q_kwargs = {k: v for k, v in kwargs.items() if v is not None}
     where_parts = []
     quotes = await asyncio.to_thread(accounting_api.get_quotes, tenant_id, **q_kwargs)
-    return {{"content": [{"type": "text", "text": safe_dumps([q.to_dict() for q in quotes.quotes])}]}}
+    return {"content": [{"type": "text", "text": safe_dumps([q.to_dict() for q in quotes.quotes])}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_list_items"])
 async def xero_list_items(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency), **kwargs):
-    i_kwargs = {{k: v for k, v in kwargs.items() if v is not None}}
+    i_kwargs = {k: v for k, v in kwargs.items() if v is not None}
     if 'updatedSince' in i_kwargs:
         i_kwargs['if_modified_since'] = _parse_iso_datetime(i_kwargs.pop('updatedSince'))
     items = await asyncio.to_thread(accounting_api.get_items, tenant_id, **i_kwargs)
-    return {{"content": [{"type": "text", "text": safe_dumps([i.to_dict() for i in items.items])}]}}
+    return {"content": [{"type": "text", "text": safe_dumps([i.to_dict() for i in items.items])}]}
 
 @server.tool(**TOOL_SCHEMAS["xero_list_bills"])
 async def xero_list_bills(*, accounting_api: AccountingApi = Depends(accounting_api_dependency), tenant_id: str = Depends(tenant_id_dependency), **kwargs):
-    b_kwargs = {{k: v for k, v in kwargs.items() if v is not None}}
+    b_kwargs = {k: v for k, v in kwargs.items() if v is not None}
     where_clauses = ['Type=="ACCPAY"']
     statuses = b_kwargs.pop('statuses', ["AUTHORISED"])
     if statuses:
@@ -569,7 +569,7 @@ async def xero_list_bills(*, accounting_api: AccountingApi = Depends(accounting_
     b_kwargs['where'] = " && ".join(where_clauses)
     
     bills = await asyncio.to_thread(accounting_api.get_invoices, tenant_id, **b_kwargs)
-    return {{"content": [{"type": "text", "text": safe_dumps([b.to_dict() for b in bills.invoices])}]}}
+    return {"content": [{"type": "text", "text": safe_dumps([b.to_dict() for b in bills.invoices])}]}
 
 # --- Router Setup ---
 router = APIRouter()
@@ -582,3 +582,6 @@ mcp_router = mcp_api_router(
 )
 
 router.include_router(mcp_router)
+
+sdk_app = FastAPI(title="Xero MCP SDK", version="1.0.0")
+sdk_app.include_router(router)
