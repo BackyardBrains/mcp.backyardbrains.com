@@ -14,6 +14,8 @@ AUTH0_XERO_AUDIENCE = os.environ.get("AUTH0_XERO_AUDIENCE", "https://mcp.backyar
 AUTH0_METABASE_AUDIENCE = os.environ.get("AUTH0_METABASE_AUDIENCE", "https://mcp.backyardbrains.com/metabase")
 AUTH0_META_AUDIENCE = os.environ.get("AUTH0_META_AUDIENCE", "https://mcp.backyardbrains.com/meta")
 AUTH0_MYSQL_AUDIENCE = os.environ.get("AUTH0_MYSQL_AUDIENCE", "https://mcp.backyardbrains.com/mysql")
+# workshops audience usually same as mysql if they share the same backend, but user wants separate naming
+AUTH0_WORKSHOPS_AUDIENCE = os.environ.get("AUTH0_WORKSHOPS_AUDIENCE", "https://mcp.backyardbrains.com/workshops")
 AUTH0_NAMESPACE = "https://mcp.backyardbrains.com"
 
 security = HTTPBearer(auto_error=False)
@@ -196,6 +198,25 @@ async def require_mysql_auth(request: Request, creds: HTTPAuthorizationCredentia
             raise HTTPException(
                 status_code=403,
                 detail="Insufficient permissions. Required: mcp:read:mysql or mcp:write:mysql",
+            )
+        return payload
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            raise
+        logger.warning("Token validation failed for %s %s: %s", request.method, request.url.path, exc.detail)
+        raise
+
+async def require_workshops_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
+    """Workshops-specific auth - requires mcp:read:workshops, mcp:write:workshops, or mcp:admin:workshops scope."""
+    token = await _extract_credentials(request, creds)
+    try:
+        payload = await validate_opaque_token(token)
+        allowed_scopes = ["mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops"]
+        if not check_permissions(payload, allowed_scopes):
+            logger.warning("Insufficient permissions for Workshops MCP access for %s %s", request.method, request.url.path)
+            raise HTTPException(
+                status_code=403,
+                detail=f"Insufficient permissions. Required one of: {allowed_scopes}",
             )
         return payload
     except HTTPException as exc:

@@ -20,7 +20,7 @@ from auth import AUTH0_XERO_AUDIENCE, AUTH0_METABASE_AUDIENCE, AUTH0_META_AUDIEN
 import xero_mcp
 import metabase_mcp
 import meta_mcp
-import mysql_mcp
+import workshops_mcp
 
 # Initialize FastAPI app
 app = FastAPI(title="BYB Xero & Metabase MCP Server", version="1.0.0")
@@ -54,10 +54,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestLoggingMiddleware)
 
-# Mount Routers
 app.include_router(xero_mcp.router, prefix="/xero", tags=["xero"])
 app.include_router(metabase_mcp.router, prefix="/metabase", tags=["metabase"])
-app.include_router(mysql_mcp.router, prefix="/mysql", tags=["mysql"])
+app.include_router(workshops_mcp.router, prefix="/workshops", tags=["workshops"])
 app.include_router(meta_mcp.router, prefix="", tags=["meta"])
 
 # Serve static files (for token generation page)
@@ -73,9 +72,9 @@ async def root():
 # Audience helpers
 def _default_audience():
     """Choose the primary audience to use for the combined landing endpoints."""
-    return AUTH0_XERO_AUDIENCE or AUTH0_METABASE_AUDIENCE or AUTH0_META_AUDIENCE or getattr(auth, "AUTH0_MYSQL_AUDIENCE", None)
+    return AUTH0_XERO_AUDIENCE or AUTH0_METABASE_AUDIENCE or AUTH0_META_AUDIENCE or getattr(auth, "AUTH0_WORKSHOPS_AUDIENCE", None)
 
-from auth import AUTH0_MYSQL_AUDIENCE
+from auth import AUTH0_WORKSHOPS_AUDIENCE
 
 # Global MCP Manifest
 @app.get("/.well-known/mcp.json")
@@ -86,9 +85,9 @@ async def mcp_manifest():
     # Get tools from both modules
     xero_tools = xero_mcp._list_tools_payload().get("tools", [])
     metabase_tools = metabase_mcp._list_metabase_tools().get("tools", [])
-    mysql_tools = mysql_mcp._list_mysql_tools().get("tools", [])
+    workshop_tools = workshops_mcp._list_workshop_tools().get("tools", [])
 
-    # Get resources from Metabase (Xero doesn't have resources in this implementation yet)
+    # Get resources from Metabase
     metabase_resources = metabase_mcp._list_metabase_resources().get("resources", [])
 
     return {
@@ -96,7 +95,7 @@ async def mcp_manifest():
         "capabilities": {
             "tools": {
                 "listChanged": False,
-                "tools": xero_tools + metabase_tools + mysql_tools
+                "tools": xero_tools + metabase_tools + workshop_tools
             },
             "resources": {
                 "listChanged": False,
@@ -147,8 +146,9 @@ async def oauth_authorization_server(request: Request, api: str = "xero"):
             "mcp:write:xero",
             "mcp:read:metabase",
             "mcp:write:metabase",
-            "mcp:read:mysql",
-            "mcp:write:mysql"
+            "mcp:read:workshops",
+            "mcp:write:workshops",
+            "mcp:admin:workshops"
         ],
         "response_types_supported": [
             "code",
@@ -184,7 +184,7 @@ async def oauth_protected_resource_root():
         "authorization_servers": [f"https://{auth0_domain}/"],
         "scopes_supported": ["mcp:read:xero", "mcp:write:xero",
             "mcp:read:metabase", "mcp:write:metabase",
-            "mcp:read:mysql", "mcp:write:mysql"],
+            "mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
     }
@@ -235,17 +235,17 @@ async def oauth_protected_resource_meta():
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
     }
 
-@app.get("/.well-known/oauth-protected-resource/mysql")
-async def oauth_protected_resource_mysql():
+@app.get("/.well-known/oauth-protected-resource/workshops")
+async def oauth_protected_resource_workshops():
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = AUTH0_MYSQL_AUDIENCE or _default_audience()
+    audience = AUTH0_WORKSHOPS_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
         return Response(status_code=404)
 
     return {
         "resource": audience,
         "authorization_servers": [f"https://{auth0_domain}/"],
-        "scopes_supported": ["mcp:read:mysql", "mcp:write:mysql"],
+        "scopes_supported": ["mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
     }
@@ -522,8 +522,8 @@ async def get_token_page(request: Request):
                     <label for="apiMetabase">Metabase API (analytics data)</label>
                 </div>
                 <div class="api-option">
-                    <input type="radio" id="apiMysql" name="apiChoice" value="mysql">
-                    <label for="apiMysql">MySQL API (WordPress data)</label>
+                    <input type="radio" id="apiWorkshops" name="apiChoice" value="workshops">
+                    <label for="apiWorkshops">Workshops API (WordPress data)</label>
                 </div>
             </div>
             
@@ -556,9 +556,9 @@ async def auth_login(request: Request, api: str = "xero"):
     if api == "metabase":
         audience = AUTH0_METABASE_AUDIENCE
         scope = "openid profile email mcp:read:metabase mcp:write:metabase"
-    elif api == "mysql":
-        audience = AUTH0_MYSQL_AUDIENCE
-        scope = "openid profile email mcp:read:mysql mcp:write:mysql"
+    elif api == "workshops":
+        audience = AUTH0_WORKSHOPS_AUDIENCE
+        scope = "openid profile email mcp:read:workshops mcp:write:workshops mcp:admin:workshops"
     else:
         # Default to Xero
         audience = AUTH0_XERO_AUDIENCE

@@ -1,0 +1,784 @@
+import os
+import logging
+from typing import Dict, Any, List, Optional
+from fastapi import APIRouter, HTTPException, Request, Depends
+from datetime import datetime
+import phpserialize
+import mysql.connector
+
+from utils import MCP_PROTOCOL_VERSION, _rpc_result, _rpc_error, logger, safe_dumps
+from auth import require_workshops_auth, check_permissions
+
+# Environment variables
+DB_HOST = os.getenv('DB_HOST')
+DB_USER = os.getenv('DB_USER')
+DB_PASSWORD = os.getenv('DB_PASSWORD')
+DB_NAME = os.getenv('DB_NAME')
+
+router = APIRouter()
+
+def get_db_connection():
+    if not all([DB_HOST, DB_USER, DB_PASSWORD, DB_NAME]):
+        raise ValueError("Missing database configuration in environment variables")
+    return mysql.connector.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME
+    )
+
+def _deserialize_php(value: Any) -> Any:
+    """Attempt to deserialize if it looks like PHP serialized data."""
+    try:
+        if value and isinstance(value, str) and (value.startswith('a:') or value.startswith('O:') or value.startswith('s:') or value.startswith('i:') or value.startswith('d:') or value.startswith('b:')):
+            deserialized = phpserialize.loads(value.encode('utf-8'))
+            if isinstance(deserialized, dict):
+                result = {}
+                for sub_key, sub_value in deserialized.items():
+                    k = sub_key.decode('utf-8') if isinstance(sub_key, bytes) else str(sub_key)
+                    v = sub_value.decode('utf-8') if isinstance(sub_value, bytes) else str(sub_value)
+                    result[f"{k}"] = v
+                return result
+            else:
+                 return deserialized
+        return value
+    except Exception:
+        return value
+
+def detect_language(title: str) -> str:
+    """Detect language of workshop title (sr or en)."""
+    # Serbian-specific characters
+    serbian_chars = "čćžšđČĆŽŠĐ"
+    if any(char in title for char in serbian_chars):
+        return "sr"
+    
+    # Common Serbian words
+    serbian_words = ["kako", "za", "na", "serijal", "radionica", "od", "do"]
+    title_lower = title.lower()
+    if any(word in title_lower.split() for word in serbian_words):
+        return "sr"
+    
+    return "en"
+
+def serialize_gallery_ids(ids: List[int]) -> str:
+    """Serialize array of IDs to PHP format for gallery field."""
+    if not ids:
+        return 'a:0:{}'
+    
+    items = {}
+    for i, idx in enumerate(ids):
+        items[i] = str(idx).encode('utf-8')
+    
+    return phpserialize.dumps(items).decode('utf-8')
+
+def deserialize_gallery_ids(serialized: str) -> List[int]:
+    """Deserialize PHP array format to JS array."""
+    if not serialized or serialized == 'a:0:{}':
+        return []
+    
+    try:
+        deserialized = phpserialize.loads(serialized.encode('utf-8'))
+        if isinstance(deserialized, dict):
+            return [int(v.decode('utf-8') if isinstance(v, bytes) else v) for v in deserialized.values()]
+    except Exception:
+        pass
+    return []
+
+# Workshop Specific Functions
+
+async def workshop_list(params: Dict[str, Any]):
+    status = params.get('status', 'publish')
+    language = params.get('language', 'all')
+    upcoming_only = params.get('upcoming_only', False)
+    limit = params.get('limit', 50)
+    include_meta = params.get('include_meta', False)
+
+    status_condition = "p.post_status IN ('publish', 'draft')" if status == 'all' else f"p.post_status = %s"
+    status_val = (status,) if status != 'all' else ()
+
+    meta_fields = ""
+    if include_meta:
+        meta_fields = """,
+          MAX(CASE WHEN pm.meta_key = 'about_left' THEN pm.meta_value END) as about_left,
+          MAX(CASE WHEN pm.meta_key = 'about_right' THEN pm.meta_value END) as about_right,
+          MAX(CASE WHEN pm.meta_key = 'sign_up_link' THEN pm.meta_value END) as sign_up_link"""
+
+    sql = f"""
+        SELECT 
+          p.ID as id,
+          p.post_title as title,
+          p.post_status as status,
+          p.post_date as created,
+          MAX(CASE WHEN pm.meta_key = 'start_date' THEN pm.meta_value END) as start_date,
+          MAX(CASE WHEN pm.meta_key = 'end_date' THEN pm.meta_value END) as end_date,
+          MAX(CASE WHEN pm.meta_key = 'location' THEN pm.meta_value END) as location,
+          MAX(CASE WHEN pm.meta_key = 'full' THEN pm.meta_value END) as is_full
+          {meta_fields}
+        FROM wp_posts p
+        LEFT JOIN wp_postmeta pm ON p.ID = pm.post_id
+        WHERE p.post_type = 'workshop'
+          AND {status_condition}
+        GROUP BY p.ID
+        HAVING 1=1
+        ORDER BY start_date DESC
+        LIMIT %s
+    """
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        query_params = status_val + (limit,)
+        cursor.execute(sql, query_params)
+        rows = cursor.fetchall()
+        
+        workshops = []
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        for row in rows:
+            if upcoming_only and row['start_date'] and row['start_date'] <= now:
+                continue
+                
+            lang = detect_language(row['title'])
+            if language != 'all' and lang != language:
+                continue
+                
+            workshop = {
+                **row,
+                'language': lang,
+                'is_full': row['is_full'] == '1',
+                'created': row['created'].isoformat() if hasattr(row['created'], 'isoformat') else str(row['created'])
+            }
+            workshops.append(workshop)
+            
+        return {"workshops": workshops, "count": len(workshops)}
+    finally:
+        conn.close()
+
+async def workshop_get(params: Dict[str, Any]):
+    ids = params.get('ids', [])
+    include_gallery = params.get('include_gallery', True)
+    include_registrations = params.get('include_registrations', False)
+
+    if not ids:
+        return {"workshops": []}
+
+    placeholders = ', '.join(['%s'] * len(ids))
+    sql = rf"""
+        SELECT 
+          p.ID,
+          p.post_title,
+          p.post_status,
+          p.post_date,
+          p.post_modified,
+          pm.meta_key,
+          pm.meta_value
+        FROM wp_posts p
+        LEFT JOIN wp_postmeta pm ON p.ID = pm.post_id
+        WHERE p.ID IN ({placeholders})
+          AND p.post_type = 'workshop'
+          AND (pm.meta_key NOT LIKE '\\_%' OR pm.meta_key = '_thumbnail_id')
+        ORDER BY p.ID, pm.meta_key
+    """
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(sql, tuple(ids))
+        rows = cursor.fetchall()
+
+        workshops_map = {}
+        for row in rows:
+            wid = row['ID']
+            if wid not in workshops_map:
+                workshops_map[wid] = {
+                    'id': wid,
+                    'title': row['post_title'],
+                    'language': detect_language(row['post_title']),
+                    'status': row['post_status'],
+                    'created': row['post_date'].isoformat() if hasattr(row['post_date'], 'isoformat') else str(row['post_date']),
+                    'modified': row['post_modified'].isoformat() if hasattr(row['post_modified'], 'isoformat') else str(row['post_modified']),
+                    'is_full': False,
+                    'featured_image_id': None,
+                    'gallery_ids': []
+                }
+            
+            key = row['meta_key']
+            val = row['meta_value']
+            
+            if key == 'start_date': workshops_map[wid]['start_date'] = val
+            elif key == 'end_date': workshops_map[wid]['end_date'] = val
+            elif key == 'location': workshops_map[wid]['location'] = val
+            elif key == 'about_left': workshops_map[wid]['about_left'] = val
+            elif key == 'about_right': workshops_map[wid]['about_right'] = val
+            elif key == 'sign_up_link': workshops_map[wid]['sign_up_link'] = val
+            elif key == 'full': workshops_map[wid]['is_full'] = val == '1'
+            elif key == '_thumbnail_id': workshops_map[wid]['featured_image_id'] = int(val) if val else None
+            elif key == 'gallery' and include_gallery:
+                workshops_map[wid]['gallery_ids'] = deserialize_gallery_ids(val)
+
+        workshops = list(workshops_map.values())
+
+        if include_registrations:
+            for w in workshops:
+                reg_sql = """
+                    SELECT COUNT(*) as registrations
+                    FROM wp_frmt_form_entry_meta
+                    WHERE meta_key = 'text-4'
+                      AND meta_value LIKE %s
+                """
+                cursor.execute(reg_sql, (f"%{w['title']}%",))
+                reg_res = cursor.fetchone()
+                w['registrations'] = reg_res['registrations'] if reg_res else 0
+
+        return {"workshops": workshops}
+    finally:
+        conn.close()
+
+async def workshop_create(params: Dict[str, Any]):
+    title = params.get('title')
+    start_date = params.get('start_date')
+    end_date = params.get('end_date')
+    location = params.get('location')
+    about_left = params.get('about_left')
+    about_right = params.get('about_right')
+    sign_up_link = params.get('sign_up_link', '')
+    is_full = params.get('is_full', False)
+    status = params.get('status', 'draft')
+    featured_image_id = params.get('featured_image_id')
+    gallery_ids = params.get('gallery_ids', [])
+
+    slug = title.lower().replace(' ', '-').replace('/', '-')
+
+    sql_post = """
+        INSERT INTO wp_posts (
+          post_author, post_date, post_date_gmt, post_content, post_title,
+          post_excerpt, post_status, comment_status, ping_status, post_name,
+          post_modified, post_modified_gmt, post_parent, guid, menu_order, post_type
+        ) VALUES (
+          1, NOW(), UTC_TIMESTAMP(), '', %s, '', %s, 'closed', 'closed', %s,
+          NOW(), UTC_TIMESTAMP(), 0, '', 0, 'workshop'
+        )
+    """
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql_post, (title, status, slug))
+        new_id = cursor.lastrowid
+
+        guid = f"https://thearc.rs/?post_type=workshop&p={new_id}"
+        cursor.execute("UPDATE wp_posts SET guid = %s WHERE ID = %s", (guid, new_id))
+
+        meta_v = [
+            (new_id, 'start_date', start_date),
+            (new_id, 'end_date', end_date),
+            (new_id, 'location', location),
+            (new_id, 'about_left', about_left),
+            (new_id, 'about_right', about_right),
+            (new_id, 'sign_up_link', sign_up_link),
+            (new_id, 'full', '1' if is_full else ''),
+            (new_id, 'badges', ''),
+            (new_id, 'resources', ''),
+            (new_id, 'gallery', serialize_gallery_ids(gallery_ids))
+        ]
+        if featured_image_id:
+            meta_v.append((new_id, '_thumbnail_id', str(featured_image_id)))
+
+        cursor.executemany("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (%s, %s, %s)", meta_v)
+        
+        conn.commit()
+        return {"id": new_id, "status": "success"}
+    finally:
+        conn.close()
+
+async def workshop_update(params: Dict[str, Any]):
+    wid = params.get('id')
+    if not wid:
+        raise HTTPException(status_code=400, detail="Missing workshop ID")
+
+    updates = []
+    post_params = []
+    
+    if 'title' in params:
+        updates.append("post_title = %s")
+        post_params.append(params['title'])
+    if 'status' in params:
+        updates.append("post_status = %s")
+        post_params.append(params['status'])
+    
+    if updates:
+        updates.append("post_modified = NOW(), post_modified_gmt = UTC_TIMESTAMP()")
+        sql_update = f"UPDATE wp_posts SET {', '.join(updates)} WHERE ID = %s AND post_type = 'workshop'"
+        post_params.append(wid)
+        
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        if updates:
+            cursor.execute(sql_update, tuple(post_params))
+
+        meta_keys = {
+            'start_date': params.get('start_date'),
+            'end_date': params.get('end_date'),
+            'location': params.get('location'),
+            'about_left': params.get('about_left'),
+            'about_right': params.get('about_right'),
+            'sign_up_link': params.get('sign_up_link'),
+            'full': '1' if params.get('is_full') is True else ('0' if params.get('is_full') is False else None),
+            '_thumbnail_id': params.get('featured_image_id'),
+            'gallery': serialize_gallery_ids(params.get('gallery_ids')) if 'gallery_ids' in params else None
+        }
+
+        for key, val in meta_keys.items():
+            if val is not None:
+                cursor.execute("SELECT meta_id FROM wp_postmeta WHERE post_id = %s AND meta_key = %s", (wid, key))
+                res = cursor.fetchone()
+                if res:
+                    cursor.execute("UPDATE wp_postmeta SET meta_value = %s WHERE post_id = %s AND meta_key = %s", (val, wid, key))
+                else:
+                    cursor.execute("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (%s, %s, %s)", (wid, key, val))
+
+        conn.commit()
+        return {"id": wid, "status": "success"}
+    finally:
+        conn.close()
+
+async def workshop_find_pair(params: Dict[str, Any]):
+    wid = params.get('id')
+    
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        sql_info = """
+            SELECT 
+                p.ID,
+                MAX(CASE WHEN pm.meta_key = 'start_date' THEN pm.meta_value END) as start_date,
+                MAX(CASE WHEN pm.meta_key = 'location' THEN pm.meta_value END) as location
+            FROM wp_posts p
+            JOIN wp_postmeta pm ON p.ID = pm.post_id
+            WHERE p.ID = %s
+            GROUP BY p.ID
+        """
+        cursor.execute(sql_info, (wid,))
+        info = cursor.fetchone()
+        
+        if not info:
+            return {"pair": None}
+            
+        sql_pair = """
+            SELECT 
+              p.ID,
+              p.post_title
+            FROM wp_posts p
+            JOIN wp_postmeta pm ON p.ID = pm.post_id
+            WHERE p.post_type = 'workshop'
+              AND p.post_status = 'publish'
+              AND p.ID != %s
+            GROUP BY p.ID
+            HAVING 
+              MAX(CASE WHEN pm.meta_key = 'start_date' THEN pm.meta_value END) = %s
+              AND MAX(CASE WHEN pm.meta_key = 'location' THEN pm.meta_value END) = %s
+        """
+        cursor.execute(sql_pair, (wid, info['start_date'], info['location']))
+        pair = cursor.fetchone()
+        
+        return {"pair": pair}
+    finally:
+        conn.close()
+
+async def workshop_registrations(params: Dict[str, Any]):
+    wid = params.get('workshop_id')
+    title_match = params.get('workshop_title')
+    include_details = params.get('include_details', False)
+
+    if wid and not title_match:
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT post_title FROM wp_posts WHERE ID = %s", (wid,))
+            res = cursor.fetchone()
+            if res:
+                title_match = res['post_title']
+        finally:
+            conn.close()
+
+    if not title_match:
+        return {"registrations": []}
+
+    sql = """
+        SELECT 
+          e.entry_id,
+          e.date_created,
+          MAX(CASE WHEN m.meta_key = 'name-1' THEN m.meta_value END) as name,
+          MAX(CASE WHEN m.meta_key = 'email-1' THEN m.meta_value END) as email,
+          MAX(CASE WHEN m.meta_key = 'phone-1' THEN m.meta_value END) as phone,
+          MAX(CASE WHEN m.meta_key = 'radio-1' THEN m.meta_value END) as category,
+          MAX(CASE WHEN m.meta_key = 'text-4' THEN m.meta_value END) as workshop
+        FROM wp_frmt_form_entry e
+        JOIN wp_frmt_form_entry_meta m ON e.entry_id = m.entry_id
+        WHERE e.form_id IN (786, 798)
+        GROUP BY e.entry_id
+        HAVING workshop LIKE %s
+        ORDER BY e.date_created DESC
+    """
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(sql, (f"%{title_match}%",))
+        rows = cursor.fetchall()
+        
+        if not include_details:
+            return {"count": len(rows), "entries": [{"entry_id": r['entry_id'], "date": r['date_created']} for r in rows]}
+            
+        return {"count": len(rows), "entries": rows}
+    finally:
+        conn.close()
+
+# Generic MySQL Functions (Moved from mysql_mcp.py)
+
+def get_forms():
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT ID as id, post_title as name FROM wp_posts WHERE post_type = 'forminator_forms'")
+        forms = cursor.fetchall()
+        return forms
+    finally:
+        conn.close()
+
+def get_entries(form_id):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        entries_table = "wp_frmt_form_entry"
+        meta_table = "wp_frmt_form_entry_meta"
+        query = f"""
+            SELECT e.entry_id, e.date_created, m.meta_key, m.meta_value
+            FROM {entries_table} e
+            JOIN {meta_table} m ON e.entry_id = m.entry_id
+            WHERE e.form_id = %s
+            ORDER BY e.date_created ASC
+        """
+        cursor.execute(query, (form_id,))
+        rows = cursor.fetchall()
+        
+        entries = {}
+        for row in rows:
+            eid = row['entry_id']
+            if eid not in entries:
+                entries[eid] = {
+                    'entry_id': eid, 
+                    'date_created': row['date_created'].isoformat() if hasattr(row['date_created'], 'isoformat') else str(row['date_created'])
+                }
+            
+            key = row['meta_key']
+            value = row['meta_value']
+            deserialized = _deserialize_php(value)
+            if isinstance(deserialized, dict):
+                for k, v in deserialized.items():
+                    entries[eid][f"{key}_{k}"] = v
+            else:
+                entries[eid][key] = deserialized
+            
+        return list(entries.values())
+    finally:
+        conn.close()
+
+def get_entry_by_id(entry_id):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        entries_table = "wp_frmt_form_entry"
+        meta_table = "wp_frmt_form_entry_meta"
+        query = f"""
+            SELECT e.entry_id, e.date_created, e.form_id, m.meta_key, m.meta_value
+            FROM {entries_table} e
+            JOIN {meta_table} m ON e.entry_id = m.entry_id
+            WHERE e.entry_id = %s
+        """
+        cursor.execute(query, (entry_id,))
+        rows = cursor.fetchall()
+        
+        if not rows:
+            return None
+            
+        entry = {
+            'entry_id': entry_id, 
+            'date_created': rows[0]['date_created'].isoformat() if hasattr(rows[0]['date_created'], 'isoformat') else str(rows[0]['date_created']),
+            'form_id': rows[0]['form_id']
+        }
+        
+        for row in rows:
+            key = row['meta_key']
+            value = row['meta_value']
+            deserialized = _deserialize_php(value)
+            if isinstance(deserialized, dict):
+                for k, v in deserialized.items():
+                    entry[f"{key}_{k}"] = v
+            else:
+                entry[key] = deserialized
+                
+        return entry
+    finally:
+        conn.close()
+
+def execute_query(query: str, params: tuple = None):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(query, params)
+        if query.strip().lower().startswith("select"):
+            return cursor.fetchall()
+        else:
+            conn.commit()
+            return {"affected_rows": cursor.rowcount}
+    finally:
+        conn.close()
+
+# Tool Handler
+
+def _list_workshop_tools():
+    return {
+        "tools": [
+            # Workshop tools
+            {
+                "name": "workshop_list",
+                "description": "List all workshops with optional filtering by status, language, and date",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "status": { "type": "string", "enum": ["publish", "draft", "all"], "default": "publish" },
+                        "language": { "type": "string", "enum": ["sr", "en", "all"], "default": "all" },
+                        "upcoming_only": { "type": "boolean", "default": False },
+                        "limit": { "type": "number", "default": 50 },
+                        "include_meta": { "type": "boolean", "default": False }
+                    }
+                }
+            },
+            {
+                "name": "workshop_get",
+                "description": "Get full details for specific workshop(s) by ID",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "ids": { "type": "array", "items": { "type": "number" } },
+                        "include_gallery": { "type": "boolean", "default": True },
+                        "include_registrations": { "type": "boolean", "default": False }
+                    },
+                    "required": ["ids"]
+                }
+            },
+            {
+                "name": "workshop_create",
+                "description": "Create a new workshop",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "string" },
+                        "start_date": { "type": "string", "description": "ISO format: 2025-12-11 18:00:00" },
+                        "end_date": { "type": "string", "description": "ISO format: 2025-12-11 20:00:00" },
+                        "location": { "type": "string" },
+                        "about_left": { "type": "string", "description": "HTML content" },
+                        "about_right": { "type": "string", "description": "HTML content" },
+                        "sign_up_link": { "type": "string" },
+                        "is_full": { "type": "boolean", "default": False },
+                        "status": { "type": "string", "enum": ["publish", "draft"], "default": "draft" },
+                        "featured_image_id": { "type": "number" },
+                        "gallery_ids": { "type": "array", "items": { "type": "number" } }
+                    },
+                    "required": ["title", "start_date", "end_date", "location", "about_left", "about_right"]
+                }
+            },
+            {
+                "name": "workshop_update",
+                "description": "Update an existing workshop",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number" },
+                        "title": { "type": "string" },
+                        "start_date": { "type": "string" },
+                        "end_date": { "type": "string" },
+                        "location": { "type": "string" },
+                        "about_left": { "type": "string" },
+                        "about_right": { "type": "string" },
+                        "sign_up_link": { "type": "string" },
+                        "is_full": { "type": "boolean" },
+                        "status": { "type": "string", "enum": ["publish", "draft"] },
+                        "featured_image_id": { "type": "number" },
+                        "gallery_ids": { "type": "array", "items": { "type": "number" } }
+                    },
+                    "required": ["id"]
+                }
+            },
+            {
+                "name": "workshop_find_pair",
+                "description": "Find the language pair (Serbian/English) for a workshop",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "number" }
+                    },
+                    "required": ["id"]
+                }
+            },
+            {
+                "name": "workshop_registrations",
+                "description": "Get registration entries for a workshop",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "workshop_id": { "type": "number" },
+                        "workshop_title": { "type": "string" },
+                        "include_details": { "type": "boolean", "default": False }
+                    }
+                }
+            },
+            # Generic MySQL tools (moved from mysql_mcp)
+            {
+                "name": "mysql_query",
+                "description": "Execute a generic MySQL query (Requires admin role)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "SQL query to execute"}
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "mysql_get_forms",
+                "description": "List Forminator forms from wp_posts",
+                "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "mysql_get_entries",
+                "description": "Fetch entries for a specific Forminator form",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "form_id": {"type": "integer", "description": "ID of the form"}
+                    },
+                    "required": ["form_id"]
+                }
+            },
+            {
+                "name": "mysql_get_entry_by_id",
+                "description": "Fetch a single Forminator entry by ID",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "entry_id": {"type": "integer", "description": "ID of the entry"}
+                    },
+                    "required": ["entry_id"]
+                }
+            }
+        ]
+    }
+
+async def handle_workshop_tool_call(name: str, args: Dict, auth_payload: Dict):
+    # Check permissions based on tool name
+    is_write = name in ["workshop_create", "workshop_update"]
+    is_admin = name == "mysql_query"
+    
+    if is_admin:
+        if not check_permissions(auth_payload, ["mcp:admin:workshops"]):
+            return {"isError": True, "content": [{"type": "text", "text": "Insufficient permissions. Admin role required for mysql_query."}]}
+    elif is_write:
+        if not check_permissions(auth_payload, ["mcp:write:workshops", "mcp:admin:workshops"]):
+            return {"isError": True, "content": [{"type": "text", "text": "Insufficient permissions. Write access required."}]}
+    else:
+        # Read operations
+        if not check_permissions(auth_payload, ["mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops"]):
+             return {"isError": True, "content": [{"type": "text", "text": "Insufficient permissions. Read access required."}]}
+
+    try:
+        # Workshop tools
+        if name == "workshop_list":
+            result = await workshop_list(args)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "workshop_get":
+            result = await workshop_get(args)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "workshop_create":
+            result = await workshop_create(args)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "workshop_update":
+            result = await workshop_update(args)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "workshop_find_pair":
+            result = await workshop_find_pair(args)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "workshop_registrations":
+            result = await workshop_registrations(args)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+            
+        # Generic MySQL tools
+        elif name == "mysql_query":
+            query = args.get("query")
+            result = execute_query(query)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "mysql_get_forms":
+            result = get_forms()
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "mysql_get_entries":
+            form_id = args.get("form_id")
+            result = get_entries(form_id)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "mysql_get_entry_by_id":
+            entry_id = args.get("entry_id")
+            result = get_entry_by_id(entry_id)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+            
+        else:
+            return {"isError": True, "content": [{"type": "text", "text": f"Unknown tool: {name}"}]}
+    except Exception as e:
+        logger.error(f"Error executing Workshop tool {name}: {e}")
+        return {
+            "isError": True,
+            "content": [{"type": "text", "text": f"Error executing {name}: {str(e)}"}],
+            "metadata": {"reason": "exception", "exceptionType": type(e).__name__}
+        }
+
+@router.post("/mcp")
+async def handle_workshop_mcp(request: Request, payload: Dict = Depends(require_workshops_auth)):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    rpc_id = body.get("id")
+    method = body.get("method")
+    params = body.get("params", {})
+
+    def _initialize_payload():
+        return {
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "capabilities": {
+                "tools": {"listChanged": False},
+                "resources": {"listChanged": False, "subscribe": False},
+                "prompts": {"listChanged": False},
+                "logging": {},
+            },
+            "serverInfo": {"name": "workshops-mcp", "version": "1.0.0"},
+        }
+
+    if method == "initialize":
+        return _rpc_result(rpc_id, _initialize_payload())
+    elif method == "ping":
+        return _rpc_result(rpc_id, {"status": "ok"})
+    elif method == "tools/list":
+        return _rpc_result(rpc_id, _list_workshop_tools())
+    elif method == "tools/call":
+        name = params.get("name")
+        args = params.get("arguments", {})
+        result = await handle_workshop_tool_call(name, args, payload)
+        return _rpc_result(rpc_id, result)
+    else:
+        return _rpc_error(rpc_id, -32601, f"Method {method} not found")
+
+@router.get("/")
+@router.get("")
+def workshop_index():
+    return {"service": "workshops-mcp", "status": "ok"}
