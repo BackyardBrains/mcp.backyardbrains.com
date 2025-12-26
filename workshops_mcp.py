@@ -253,10 +253,11 @@ async def workshop_create(params: Dict[str, Any]):
         INSERT INTO wp_posts (
           post_author, post_date, post_date_gmt, post_content, post_title,
           post_excerpt, post_status, comment_status, ping_status, post_name,
-          post_modified, post_modified_gmt, post_parent, guid, menu_order, post_type
+          post_modified, post_modified_gmt, post_parent, guid, menu_order, post_type,
+          to_ping, pinged, post_content_filtered
         ) VALUES (
           1, NOW(), UTC_TIMESTAMP(), '', %s, '', %s, 'closed', 'closed', %s,
-          NOW(), UTC_TIMESTAMP(), 0, '', 0, 'workshop'
+          NOW(), UTC_TIMESTAMP(), 0, '', 0, 'workshop', '', '', ''
         )
     """
 
