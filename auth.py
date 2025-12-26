@@ -13,6 +13,7 @@ AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
 AUTH0_XERO_AUDIENCE = os.environ.get("AUTH0_XERO_AUDIENCE", "https://mcp.backyardbrains.com/xero")
 AUTH0_METABASE_AUDIENCE = os.environ.get("AUTH0_METABASE_AUDIENCE", "https://mcp.backyardbrains.com/metabase")
 AUTH0_META_AUDIENCE = os.environ.get("AUTH0_META_AUDIENCE", "https://mcp.backyardbrains.com/meta")
+AUTH0_MYSQL_AUDIENCE = os.environ.get("AUTH0_MYSQL_AUDIENCE", "https://mcp.backyardbrains.com/mysql")
 AUTH0_NAMESPACE = "https://mcp.backyardbrains.com"
 
 security = HTTPBearer(auto_error=False)
@@ -177,6 +178,24 @@ async def require_metabase_auth(request: Request, creds: HTTPAuthorizationCreden
             raise HTTPException(
                 status_code=403,
                 detail="Insufficient permissions. Required: mcp:read:metabase or mcp:write:metabase",
+            )
+        return payload
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            raise
+        logger.warning("Token validation failed for %s %s: %s", request.method, request.url.path, exc.detail)
+        raise
+
+async def require_mysql_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
+    """MySQL-specific auth - requires mcp:read:mysql or mcp:write:mysql scope."""
+    token = await _extract_credentials(request, creds)
+    try:
+        payload = await validate_opaque_token(token)
+        if not check_permissions(payload, ["mcp:read:mysql", "mcp:write:mysql"]):
+            logger.warning("Insufficient permissions for MySQL MCP access for %s %s", request.method, request.url.path)
+            raise HTTPException(
+                status_code=403,
+                detail="Insufficient permissions. Required: mcp:read:mysql or mcp:write:mysql",
             )
         return payload
     except HTTPException as exc:

@@ -10,3 +10,5 @@ PyJWT>=2.8.0
 itsdangerous==2.2.0
 pytest==8.3.3
 pytest-asyncio==0.24.0
+mysql-connector-python==9.1.0
+phpserialize==1.3
