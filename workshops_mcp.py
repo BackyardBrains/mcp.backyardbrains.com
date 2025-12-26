@@ -511,17 +511,23 @@ async def workshop_registrations(params: Dict[str, Any]):
     sql = """
         SELECT 
           e.entry_id,
+          e.form_id,
           e.date_created,
           MAX(CASE WHEN m.meta_key = 'name-1' THEN m.meta_value END) as name,
           MAX(CASE WHEN m.meta_key = 'email-1' THEN m.meta_value END) as email,
           MAX(CASE WHEN m.meta_key = 'phone-1' THEN m.meta_value END) as phone,
           MAX(CASE WHEN m.meta_key = 'radio-1' THEN m.meta_value END) as category,
-          MAX(CASE WHEN m.meta_key = 'text-4' THEN m.meta_value END) as workshop
+          MAX(CASE WHEN m.meta_key = 'text-1' THEN m.meta_value END) as text_1,
+          MAX(CASE WHEN m.meta_key = 'text-2' THEN m.meta_value END) as text_2,
+          MAX(CASE WHEN m.meta_key = 'text-3' THEN m.meta_value END) as text_3,
+          MAX(CASE WHEN m.meta_key = 'text-4' THEN m.meta_value END) as text_4,
+          MAX(CASE WHEN m.meta_key = 'text-5' THEN m.meta_value END) as text_5,
+          MAX(CASE WHEN m.meta_key = 'textarea-1' THEN m.meta_value END) as textarea_1
         FROM wp_frmt_form_entry e
         JOIN wp_frmt_form_entry_meta m ON e.entry_id = m.entry_id
         WHERE e.form_id IN (786, 798)
         GROUP BY e.entry_id
-        HAVING workshop LIKE %s
+        HAVING text_4 LIKE %s
         ORDER BY e.date_created DESC
     """
 
@@ -531,10 +537,46 @@ async def workshop_registrations(params: Dict[str, Any]):
         cursor.execute(sql, (f"%{title_match}%",))
         rows = cursor.fetchall()
         
-        if not include_details:
-            return {"count": len(rows), "entries": [{"entry_id": r['entry_id'], "date": r['date_created']} for r in rows]}
+        entries = []
+        for r in rows:
+            form_id = r['form_id']
+            lang = "Serbian" if form_id == 786 else "English"
             
-        return {"count": len(rows), "entries": rows}
+            # Forminator name field can be a string (EN) or serialized dict (SR)
+            name_val = _deserialize_php(r['name'])
+            if isinstance(name_val, dict):
+                full_name = f"{name_val.get('first-name', '')} {name_val.get('last-name', '')}".strip()
+            else:
+                full_name = str(name_val) if name_val else ""
+            
+            # Affiliation/School mapping is a bit fluid across form versions
+            # Usually text-1 is school, text-2/text-3 is university/faculty
+            school = _deserialize_php(r['text_1'])
+            affiliation = _deserialize_php(r['text_2']) or _deserialize_php(r['text_3'])
+            notes = _deserialize_php(r['textarea_1'])
+            category = _deserialize_php(r['category'])
+            workshop = _deserialize_php(r['text_4'])
+
+            entry = {
+                "entry_id": r['entry_id'],
+                "date": r['date_created'].isoformat() if hasattr(r['date_created'], 'isoformat') else str(r['date_created']),
+                "full_name": full_name,
+                "email": r['email'],
+                "phone": r['phone'],
+                "category": category,
+                "affiliation": affiliation,
+                "school": school,
+                "workshop": workshop,
+                "language": lang,
+                "notes": notes
+            }
+            entries.append(entry)
+
+        if not include_details:
+            # We still return a simplified list but keep the count
+            return {"count": len(entries), "entries": [{"entry_id": e['entry_id'], "date": e['date']} for e in entries]}
+            
+        return {"count": len(entries), "entries": entries}
     finally:
         conn.close()
 
