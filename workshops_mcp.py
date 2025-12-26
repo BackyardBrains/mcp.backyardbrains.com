@@ -635,9 +635,9 @@ def _list_workshop_tools():
                     }
                 }
             },
-            # Generic MySQL tools (moved from mysql_mcp)
+            # Generic SQL tool
             {
-                "name": "mysql_query",
+                "name": "workshop_sql_query",
                 "description": "Execute a generic MySQL query (Requires admin role)",
                 "inputSchema": {
                     "type": "object",
@@ -648,12 +648,12 @@ def _list_workshop_tools():
                 }
             },
             {
-                "name": "mysql_get_forms",
+                "name": "workshop_get_forms",
                 "description": "List Forminator forms from wp_posts",
                 "inputSchema": {"type": "object", "properties": {}}
             },
             {
-                "name": "mysql_get_entries",
+                "name": "workshop_get_entries",
                 "description": "Fetch entries for a specific Forminator form",
                 "inputSchema": {
                     "type": "object",
@@ -664,7 +664,7 @@ def _list_workshop_tools():
                 }
             },
             {
-                "name": "mysql_get_entry_by_id",
+                "name": "workshop_get_entry_by_id",
                 "description": "Fetch a single Forminator entry by ID",
                 "inputSchema": {
                     "type": "object",
@@ -680,11 +680,11 @@ def _list_workshop_tools():
 async def handle_workshop_tool_call(name: str, args: Dict, auth_payload: Dict):
     # Check permissions based on tool name
     is_write = name in ["workshop_create", "workshop_update"]
-    is_admin = name == "mysql_query"
+    is_admin = name == "workshop_sql_query"
     
     if is_admin:
         if not check_permissions(auth_payload, ["mcp:admin:workshops"]):
-            return {"isError": True, "content": [{"type": "text", "text": "Insufficient permissions. Admin role required for mysql_query."}]}
+            return {"isError": True, "content": [{"type": "text", "text": "Insufficient permissions. Admin role required for workshop_sql_query."}]}
     elif is_write:
         if not check_permissions(auth_payload, ["mcp:write:workshops", "mcp:admin:workshops"]):
             return {"isError": True, "content": [{"type": "text", "text": "Insufficient permissions. Write access required."}]}
@@ -714,19 +714,19 @@ async def handle_workshop_tool_call(name: str, args: Dict, auth_payload: Dict):
             result = await workshop_registrations(args)
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
             
-        # Generic MySQL tools
-        elif name == "mysql_query":
+        # Generic tool
+        elif name == "workshop_sql_query":
             query = args.get("query")
             result = execute_query(query)
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
-        elif name == "mysql_get_forms":
+        elif name == "workshop_get_forms":
             result = get_forms()
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
-        elif name == "mysql_get_entries":
+        elif name == "workshop_get_entries":
             form_id = args.get("form_id")
             result = get_entries(form_id)
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
-        elif name == "mysql_get_entry_by_id":
+        elif name == "workshop_get_entry_by_id":
             entry_id = args.get("entry_id")
             result = get_entry_by_id(entry_id)
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
@@ -777,6 +777,12 @@ async def handle_workshop_mcp(request: Request, payload: Dict = Depends(require_
         return _rpc_result(rpc_id, result)
     else:
         return _rpc_error(rpc_id, -32601, f"Method {method} not found")
+
+@router.post("/")
+@router.post("")
+async def workshops_index_post(request: Request, payload: Dict = Depends(require_workshops_auth)):
+    """Handle MCP JSON-RPC requests at the root /workshops/ endpoint."""
+    return await handle_workshop_mcp(request, payload)
 
 @router.get("/")
 @router.get("")
