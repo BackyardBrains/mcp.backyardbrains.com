@@ -30,6 +30,15 @@ def mysql_index():
         },
     }
 
+@router.post("/")
+@router.post("")
+async def mysql_index_post(request: Request, payload: Dict = Depends(require_mysql_auth)):
+    """
+    Handle MCP JSON-RPC requests at the root /mysql/ endpoint.
+    Delegates to the same logic as /mysql/mcp for convenience.
+    """
+    return await handle_mysql_mcp(request, payload)
+
 @router.get("/healthz")
 def mysql_healthz():
     return {"status": "ok", "service": "mysql"}
