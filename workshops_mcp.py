@@ -84,6 +84,73 @@ def deserialize_gallery_ids(serialized: str) -> List[int]:
         pass
     return []
 
+def fetch_terms(cursor, post_ids: List[int]) -> Dict[int, Dict[str, List[str]]]:
+    """Fetch audience (grade) and language (workshop-language) terms for given post IDs."""
+    if not post_ids:
+        return {}
+    
+    placeholders = ', '.join(['%s'] * len(post_ids))
+    sql = f"""
+        SELECT tr.object_id, tt.taxonomy, t.name
+        FROM wp_term_relationships tr
+        JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+        JOIN wp_terms t ON tt.term_id = t.term_id
+        WHERE tr.object_id IN ({placeholders})
+          AND tt.taxonomy IN ('grade', 'workshop-language')
+    """
+    cursor.execute(sql, tuple(post_ids))
+    rows = cursor.fetchall()
+    
+    results = {pid: {'audience': [], 'language_badge': []} for pid in post_ids}
+    for row in rows:
+        pid = row['object_id']
+        tax = row['taxonomy']
+        name = row['name']
+        
+        if tax == 'grade':
+            results[pid]['audience'].append(name)
+        elif tax == 'workshop-language':
+            results[pid]['language_badge'].append(name)
+            
+    return results
+
+def set_workshop_terms(cursor, post_id: int, taxonomy: str, term_names: List[str]):
+    """Set terms for a post. If term_names is empty, clears terms for that taxonomy."""
+    # First, delete existing relationships for this taxonomy
+    sql_delete = """
+        DELETE tr FROM wp_term_relationships tr
+        JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+        WHERE tr.object_id = %s AND tt.taxonomy = %s
+    """
+    cursor.execute(sql_delete, (post_id, taxonomy))
+
+    if not term_names:
+        return
+
+    # Filter out empty names
+    term_names = [n for n in term_names if n.strip()]
+    if not term_names:
+        return
+
+    # Find term_taxonomy_ids
+    placeholders = ', '.join(['%s'] * len(term_names))
+    sql_find = f"""
+        SELECT tt.term_taxonomy_id
+        FROM wp_term_taxonomy tt
+        JOIN wp_terms t ON tt.term_id = t.term_id
+        WHERE tt.taxonomy = %s AND t.name IN ({placeholders})
+    """
+    cursor.execute(sql_find, (taxonomy, *term_names))
+    rows = cursor.fetchall()
+    
+    tt_ids = [row['term_taxonomy_id'] for row in rows]
+    
+    # Insert new relationships
+    if tt_ids:
+        sql_insert = "INSERT INTO wp_term_relationships (object_id, term_taxonomy_id, term_order) VALUES (%s, %s, 0)"
+        for tt_id in tt_ids:
+            cursor.execute(sql_insert, (post_id, tt_id))
+
 # Workshop Specific Functions
 
 async def workshop_list(params: Dict[str, Any]):
@@ -150,6 +217,17 @@ async def workshop_list(params: Dict[str, Any]):
             }
             workshops.append(workshop)
             
+        # Fetch terms for all workshops
+        if workshops:
+            wids = [w['id'] for w in workshops]
+            terms_map = fetch_terms(cursor, wids)
+            for w in workshops:
+                tags = terms_map.get(w['id'], {})
+                w['audience'] = tags.get('audience', [])
+                # Use the first language badge found, or fallback to detect_language
+                l_badges = tags.get('language_badge', [])
+                w['language_badge'] = l_badges[0] if l_badges else w['language']
+                
         return {"workshops": workshops, "count": len(workshops)}
     finally:
         conn.close()
@@ -216,6 +294,16 @@ async def workshop_get(params: Dict[str, Any]):
             elif key == 'gallery' and include_gallery:
                 workshops_map[wid]['gallery_ids'] = deserialize_gallery_ids(val)
 
+        # Fetch terms
+        if workshops_map:
+            wids = list(workshops_map.keys())
+            terms_map = fetch_terms(cursor, wids)
+            for wid, w in workshops_map.items():
+                tags = terms_map.get(wid, {})
+                w['audience'] = tags.get('audience', [])
+                l_badges = tags.get('language_badge', [])
+                w['language_badge'] = l_badges[0] if l_badges else w['language']
+
         workshops = list(workshops_map.values())
 
         if include_registrations:
@@ -246,6 +334,8 @@ async def workshop_create(params: Dict[str, Any]):
     status = params.get('status', 'draft')
     featured_image_id = params.get('featured_image_id')
     gallery_ids = params.get('gallery_ids', [])
+    audience = params.get('audience', [])  # List of strings
+    language_badge = params.get('language_badge') # String
 
     slug = title.lower().replace(' ', '-').replace('/', '-')
 
@@ -287,6 +377,12 @@ async def workshop_create(params: Dict[str, Any]):
 
         cursor.executemany("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (%s, %s, %s)", meta_v)
         
+        # Set terms
+        if audience:
+            set_workshop_terms(cursor, new_id, 'grade', audience)
+        if language_badge:
+            set_workshop_terms(cursor, new_id, 'workshop-language', [language_badge])
+
         conn.commit()
         return {"id": new_id, "status": "success"}
     finally:
@@ -338,6 +434,12 @@ async def workshop_update(params: Dict[str, Any]):
                     cursor.execute("UPDATE wp_postmeta SET meta_value = %s WHERE post_id = %s AND meta_key = %s", (val, wid, key))
                 else:
                     cursor.execute("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (%s, %s, %s)", (wid, key, val))
+
+        # Update terms
+        if 'audience' in params:
+            set_workshop_terms(cursor, wid, 'grade', params['audience'])
+        if 'language_badge' in params:
+            set_workshop_terms(cursor, wid, 'workshop-language', [params['language_badge']] if params['language_badge'] else [])
 
         conn.commit()
         return {"id": wid, "status": "success"}
@@ -586,7 +688,9 @@ def _list_workshop_tools():
                         "is_full": { "type": "boolean", "default": False },
                         "status": { "type": "string", "enum": ["publish", "draft"], "default": "draft" },
                         "featured_image_id": { "type": "number" },
-                        "gallery_ids": { "type": "array", "items": { "type": "number" } }
+                        "gallery_ids": { "type": "array", "items": { "type": "number" } },
+                        "audience": { "type": "array", "items": { "type": "string" }, "description": "Audience badges. Available: 'For Everyone', 'High Schoolers', 'Mladi profesionalci', 'Srednjoškolci', 'Studenti', 'Students', 'Young Professionals', 'Za sve'" },
+                        "language_badge": { "type": "string", "description": "Language badge. Available: 'English', 'Serbian', 'Srpski', 'Engleski'" }
                     },
                     "required": ["title", "start_date", "end_date", "location", "about_left", "about_right"]
                 }
@@ -608,7 +712,9 @@ def _list_workshop_tools():
                         "is_full": { "type": "boolean" },
                         "status": { "type": "string", "enum": ["publish", "draft"] },
                         "featured_image_id": { "type": "number" },
-                        "gallery_ids": { "type": "array", "items": { "type": "number" } }
+                        "gallery_ids": { "type": "array", "items": { "type": "number" } },
+                        "audience": { "type": "array", "items": { "type": "string" }, "description": "Audience badges. Available: 'For Everyone', 'High Schoolers', 'Mladi profesionalci', 'Srednjoškolci', 'Studenti', 'Students', 'Young Professionals', 'Za sve'" },
+                        "language_badge": { "type": "string", "description": "Language badge. Available: 'English', 'Serbian', 'Srpski', 'Engleski'" }
                     },
                     "required": ["id"]
                 }
