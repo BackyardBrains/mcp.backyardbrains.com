@@ -248,6 +248,8 @@ async def workshop_get(params: Dict[str, Any]):
           p.post_status,
           p.post_date,
           p.post_modified,
+          p.post_content,
+          p.post_excerpt,
           pm.meta_key,
           pm.meta_value
         FROM wp_posts p
@@ -273,6 +275,8 @@ async def workshop_get(params: Dict[str, Any]):
                     'title': row['post_title'],
                     'language': detect_language(row['post_title']),
                     'status': row['post_status'],
+                    'content': row['post_content'],
+                    'excerpt': row['post_excerpt'],
                     'created': row['post_date'].isoformat() if hasattr(row['post_date'], 'isoformat') else str(row['post_date']),
                     'modified': row['post_modified'].isoformat() if hasattr(row['post_modified'], 'isoformat') else str(row['post_modified']),
                     'is_full': False,
@@ -329,6 +333,8 @@ async def workshop_create(params: Dict[str, Any]):
     location = params.get('location')
     about_left = params.get('about_left')
     about_right = params.get('about_right')
+    post_content = params.get('post_content', '')
+    post_excerpt = params.get('post_excerpt', '')
     sign_up_link = params.get('sign_up_link', '')
     is_full = params.get('is_full', False)
     status = params.get('status', 'draft')
@@ -346,7 +352,7 @@ async def workshop_create(params: Dict[str, Any]):
           post_modified, post_modified_gmt, post_parent, guid, menu_order, post_type,
           to_ping, pinged, post_content_filtered
         ) VALUES (
-          1, NOW(), UTC_TIMESTAMP(), '', %s, '', %s, 'closed', 'closed', %s,
+          1, NOW(), UTC_TIMESTAMP(), %s, %s, %s, %s, 'closed', 'closed', %s,
           NOW(), UTC_TIMESTAMP(), 0, '', 0, 'workshop', '', '', ''
         )
     """
@@ -354,7 +360,7 @@ async def workshop_create(params: Dict[str, Any]):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute(sql_post, (title, status, slug))
+        cursor.execute(sql_post, (post_content, title, post_excerpt, status, slug))
         new_id = cursor.lastrowid
 
         guid = f"https://thearc.rs/?post_type=workshop&p={new_id}"
@@ -402,6 +408,12 @@ async def workshop_update(params: Dict[str, Any]):
     if 'status' in params:
         updates.append("post_status = %s")
         post_params.append(params['status'])
+    if 'post_content' in params:
+        updates.append("post_content = %s")
+        post_params.append(params['post_content'])
+    if 'post_excerpt' in params:
+        updates.append("post_excerpt = %s")
+        post_params.append(params['post_excerpt'])
     
     if updates:
         updates.append("post_modified = NOW(), post_modified_gmt = UTC_TIMESTAMP()")
@@ -726,6 +738,8 @@ def _list_workshop_tools():
                         "location": { "type": "string" },
                         "about_left": { "type": "string", "description": "HTML content" },
                         "about_right": { "type": "string", "description": "HTML content" },
+                        "post_content": { "type": "string", "description": "Main workshop content" },
+                        "post_excerpt": { "type": "string", "description": "Short excerpt/summary" },
                         "sign_up_link": { "type": "string" },
                         "is_full": { "type": "boolean", "default": False },
                         "status": { "type": "string", "enum": ["publish", "draft"], "default": "draft" },
@@ -750,6 +764,8 @@ def _list_workshop_tools():
                         "location": { "type": "string" },
                         "about_left": { "type": "string" },
                         "about_right": { "type": "string" },
+                        "post_content": { "type": "string" },
+                        "post_excerpt": { "type": "string" },
                         "sign_up_link": { "type": "string" },
                         "is_full": { "type": "boolean" },
                         "status": { "type": "string", "enum": ["publish", "draft"] },
