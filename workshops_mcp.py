@@ -45,20 +45,8 @@ def _deserialize_php(value: Any) -> Any:
     except Exception:
         return value
 
-def detect_language(title: str) -> str:
-    """Detect language of workshop title (sr or en)."""
-    # Serbian-specific characters
-    serbian_chars = "čćžšđČĆŽŠĐ"
-    if any(char in title for char in serbian_chars):
-        return "sr"
-    
-    # Common Serbian words
-    serbian_words = ["kako", "za", "na", "serijal", "radionica", "od", "do"]
-    title_lower = title.lower()
-    if any(word in title_lower.split() for word in serbian_words):
-        return "sr"
-    
-    return "en"
+# Automatic language detection removed as per user requirement.
+# Users must explicitly provide the 'language' parameter ('en' or 'sr').
 
 def serialize_gallery_ids(ids: List[int]) -> str:
     """Serialize array of IDs to PHP format for gallery field."""
@@ -84,35 +72,129 @@ def deserialize_gallery_ids(serialized: str) -> List[int]:
         pass
     return []
 
-def fetch_terms(cursor, post_ids: List[int]) -> Dict[int, Dict[str, List[str]]]:
-    """Fetch audience (grade) and language (workshop-language) terms for given post IDs."""
+def fetch_terms(cursor, post_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+    """Fetch audience (grade), language (workshop-language), Polylang language, and translations."""
     if not post_ids:
         return {}
     
     placeholders = ', '.join(['%s'] * len(post_ids))
     sql = f"""
-        SELECT tr.object_id, tt.taxonomy, t.name
+        SELECT tr.object_id, tt.taxonomy, t.name, t.slug, tt.description
         FROM wp_term_relationships tr
         JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
         JOIN wp_terms t ON tt.term_id = t.term_id
         WHERE tr.object_id IN ({placeholders})
-          AND tt.taxonomy IN ('grade', 'workshop-language')
+          AND tt.taxonomy IN ('grade', 'workshop-language', 'language', 'post_translations')
     """
     cursor.execute(sql, tuple(post_ids))
     rows = cursor.fetchall()
     
-    results = {pid: {'audience': [], 'language_badge': []} for pid in post_ids}
+    results = {pid: {'audience': [], 'language_badge': [], 'pll_lang': None, 'translations': {}} for pid in post_ids}
     for row in rows:
         pid = row['object_id']
         tax = row['taxonomy']
         name = row['name']
+        slug = row['slug']
+        desc = row['description']
         
         if tax == 'grade':
             results[pid]['audience'].append(name)
         elif tax == 'workshop-language':
             results[pid]['language_badge'].append(name)
+        elif tax == 'language':
+            results[pid]['pll_lang'] = slug
+        elif tax == 'post_translations':
+            try:
+                trans = _deserialize_php(desc)
+                if isinstance(trans, dict):
+                    results[pid]['translations'] = {k: int(v) for k, v in trans.items()}
+            except Exception:
+                pass
             
     return results
+
+def pll_get_lang_term_id(cursor, lang_code: str) -> Optional[int]:
+    """Get the term_taxonomy_id for a Polylang language code."""
+    sql = """
+        SELECT tt.term_taxonomy_id 
+        FROM wp_term_taxonomy tt 
+        JOIN wp_terms t ON tt.term_id = t.term_id 
+        WHERE tt.taxonomy = 'language' AND t.slug = %s
+    """
+    cursor.execute(sql, (lang_code,))
+    res = cursor.fetchone()
+    return res['term_taxonomy_id'] if res else None
+
+def pll_set_post_language(cursor, post_id: int, lang_code: str):
+    """Set the Polylang language for a post."""
+    tt_id = pll_get_lang_term_id(cursor, lang_code)
+    if not tt_id:
+        return
+
+    # Delete existing language relationship
+    sql_delete = """
+        DELETE tr FROM wp_term_relationships tr
+        JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+        WHERE tr.object_id = %s AND tt.taxonomy = 'language'
+    """
+    cursor.execute(sql_delete, (post_id,))
+
+    # Insert new relationship
+    sql_insert = "INSERT INTO wp_term_relationships (object_id, term_taxonomy_id, term_order) VALUES (%s, %s, 0)"
+    cursor.execute(sql_insert, (post_id, tt_id))
+
+def pll_save_translations(cursor, post_ids_by_lang: Dict[str, int]):
+    """Link posts as translations in Polylang."""
+    if len(post_ids_by_lang) < 2:
+        return
+
+    # 1. Check if ANY of these posts already belong to a translation group
+    post_ids = list(post_ids_by_lang.values())
+    placeholders = ', '.join(['%s'] * len(post_ids))
+    sql_existing = f"""
+        SELECT tr.object_id, tt.term_taxonomy_id, t.name, tt.description
+        FROM wp_term_relationships tr
+        JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+        JOIN wp_terms t ON tt.term_id = t.term_id
+        WHERE tr.object_id IN ({placeholders}) AND tt.taxonomy = 'post_translations'
+    """
+    cursor.execute(sql_existing, tuple(post_ids))
+    existing = cursor.fetchall()
+
+    group_tt_id = None
+    translations = {}
+
+    if existing:
+        group_tt_id = existing[0]['term_taxonomy_id']
+        translations = _deserialize_php(existing[0]['description']) or {}
+
+    # Merge new translations
+    for lang, pid in post_ids_by_lang.items():
+        translations[lang] = pid
+
+    serialized_desc = phpserialize.dumps(translations).decode('utf-8')
+
+    if not group_tt_id:
+        # Create new translation term
+        import uuid
+        group_name = f"pll_{uuid.uuid4().hex[:13]}"
+        
+        cursor.execute("INSERT INTO wp_terms (name, slug, term_group) VALUES (%s, %s, 0)", (group_name, group_name))
+        term_id = cursor.lastrowid
+        
+        cursor.execute("INSERT INTO wp_term_taxonomy (term_id, taxonomy, description, count) VALUES (%s, 'post_translations', %s, %s)", 
+                       (term_id, serialized_desc, len(translations)))
+        group_tt_id = cursor.lastrowid
+    else:
+        # Update existing term
+        cursor.execute("UPDATE wp_term_taxonomy SET description = %s, count = %s WHERE term_taxonomy_id = %s",
+                       (serialized_desc, len(translations), group_tt_id))
+
+    # Ensure all posts are linked to this group
+    for pid in translations.values():
+        cursor.execute("SELECT 1 FROM wp_term_relationships WHERE object_id = %s AND term_taxonomy_id = %s", (pid, group_tt_id))
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO wp_term_relationships (object_id, term_taxonomy_id, term_order) VALUES (%s, %s, 0)", (pid, group_tt_id))
 
 def set_workshop_terms(cursor, post_id: int, taxonomy: str, term_names: List[str]):
     """Set terms for a post. If term_names is empty, clears terms for that taxonomy."""
@@ -205,13 +287,8 @@ async def workshop_list(params: Dict[str, Any]):
             if upcoming_only and row['start_date'] and row['start_date'] <= now:
                 continue
                 
-            lang = detect_language(row['title'])
-            if language != 'all' and lang != language:
-                continue
-                
             workshop = {
                 **row,
-                'language': lang,
                 'is_full': row['is_full'] == '1',
                 'created': row['created'].isoformat() if hasattr(row['created'], 'isoformat') else str(row['created'])
             }
@@ -221,12 +298,28 @@ async def workshop_list(params: Dict[str, Any]):
         if workshops:
             wids = [w['id'] for w in workshops]
             terms_map = fetch_terms(cursor, wids)
+            filtered_workshops = []
             for w in workshops:
                 tags = terms_map.get(w['id'], {})
                 w['audience'] = tags.get('audience', [])
-                # Use the first language badge found, or fallback to detect_language
+                
+                # Polylang lang is source of truth
+                pll_lang = tags.get('pll_lang')
+                if pll_lang:
+                    w['language'] = pll_lang
+                else:
+                    w['language'] = 'unknown'
+
+                if language != 'all' and w['language'] != language:
+                    continue
+
+                # Use the first language badge found, or fallback to w['language']
                 l_badges = tags.get('language_badge', [])
                 w['language_badge'] = l_badges[0] if l_badges else w['language']
+                w['translations'] = tags.get('translations', {})
+                
+                filtered_workshops.append(w)
+            workshops = filtered_workshops
                 
         return {"workshops": workshops, "count": len(workshops)}
     finally:
@@ -273,7 +366,6 @@ async def workshop_get(params: Dict[str, Any]):
                 workshops_map[wid] = {
                     'id': wid,
                     'title': row['post_title'],
-                    'language': detect_language(row['post_title']),
                     'status': row['post_status'],
                     'post_content': row['post_content'],
                     'post_excerpt': row['post_excerpt'],
@@ -281,7 +373,8 @@ async def workshop_get(params: Dict[str, Any]):
                     'modified': row['post_modified'].isoformat() if hasattr(row['post_modified'], 'isoformat') else str(row['post_modified']),
                     'is_full': False,
                     'featured_image_id': None,
-                    'gallery_ids': []
+                    'gallery_ids': [],
+                    'translations': {}
                 }
             
             key = row['meta_key']
@@ -305,8 +398,16 @@ async def workshop_get(params: Dict[str, Any]):
             for wid, w in workshops_map.items():
                 tags = terms_map.get(wid, {})
                 w['audience'] = tags.get('audience', [])
+                
+                pll_lang = tags.get('pll_lang')
+                if pll_lang:
+                    w['language'] = pll_lang
+                else:
+                    w['language'] = 'unknown'
+
                 l_badges = tags.get('language_badge', [])
                 w['language_badge'] = l_badges[0] if l_badges else w['language']
+                w['translations'] = tags.get('translations', {})
 
         workshops = list(workshops_map.values())
 
@@ -336,12 +437,12 @@ async def workshop_create(params: Dict[str, Any]):
     post_content = params.get('post_content', '')
     post_excerpt = params.get('post_excerpt', '')
     sign_up_link = params.get('sign_up_link', '')
-    is_full = params.get('is_full', False)
-    status = params.get('status', 'draft')
-    featured_image_id = params.get('featured_image_id')
-    gallery_ids = params.get('gallery_ids', [])
-    audience = params.get('audience', [])  # List of strings
-    language_badge = params.get('language_badge') # String
+    language = params.get('language') # Required: 'en' or 'sr'
+    if not language:
+        raise HTTPException(status_code=400, detail="Language is required (en or sr)")
+    
+    language_badge = params.get('language_badge')
+    translation_of = params.get('translation_of') # ID of post this is a translation of
 
     slug = title.lower().replace(' ', '-').replace('/', '-')
 
@@ -386,8 +487,38 @@ async def workshop_create(params: Dict[str, Any]):
         # Set terms
         if audience:
             set_workshop_terms(cursor, new_id, 'grade', audience)
-        if language_badge:
+
+        if language:
+            pll_set_post_language(cursor, new_id, language)
+            
+            # Auto-set the badge if not provided for consistency
+            if not language_badge:
+                language_badge = "English" if language == "en" else "Serbian"
+                set_workshop_terms(cursor, new_id, 'workshop-language', [language_badge])
+            
+            if translation_of:
+                # Get the translation of's language
+                cursor.execute("""
+                    SELECT t.slug 
+                    FROM wp_term_relationships tr 
+                    JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id 
+                    JOIN wp_terms t ON tt.term_id = t.term_id 
+                    WHERE tr.object_id = %s AND tt.taxonomy = 'language'
+                """, (translation_of,))
+                t_row = cursor.fetchone()
+                if t_row:
+                    t_lang = t_row['slug']
+                    pll_save_translations(cursor, {language: new_id, t_lang: translation_of})
+        elif language_badge:
+            # Should not happen in create as language is mandatory now
             set_workshop_terms(cursor, new_id, 'workshop-language', [language_badge])
+            pll_map = {"english": "en", "engleski": "en", "serbian": "sr", "srpski": "sr"}
+            lang_code = pll_map.get(language_badge.lower(), 'sr')
+            pll_set_post_language(cursor, new_id, lang_code)
+        else:
+            # Default to Serbian if absolutely nothing provided (should be blocked by HTTPException though)
+            pll_set_post_language(cursor, new_id, 'sr')
+            set_workshop_terms(cursor, new_id, 'workshop-language', ['Serbian'])
 
         conn.commit()
         return {"id": new_id, "status": "success"}
@@ -452,8 +583,52 @@ async def workshop_update(params: Dict[str, Any]):
         # Update terms
         if 'audience' in params:
             set_workshop_terms(cursor, wid, 'grade', params['audience'])
-        if 'language_badge' in params:
-            set_workshop_terms(cursor, wid, 'workshop-language', [params['language_badge']] if params['language_badge'] else [])
+        
+        if 'language' in params:
+            lang_code = params['language']
+            pll_set_post_language(cursor, wid, lang_code)
+            
+            # If no badge update provided, try to update it too
+            if 'language_badge' not in params:
+                new_badge = "English" if lang_code == "en" else "Serbian"
+                set_workshop_terms(cursor, wid, 'workshop-language', [new_badge])
+
+        if 'language_badge' in params or 'translation_of' in params:
+            lang_badge = params.get('language_badge')
+            trans_of = params.get('translation_of')
+            
+            if lang_badge:
+                set_workshop_terms(cursor, wid, 'workshop-language', [lang_badge])
+                
+                pll_map = {"english": "en", "engleski": "en", "serbian": "sr", "srpski": "sr"}
+                lang_code = pll_map.get(lang_badge.lower(), 'sr')
+                pll_set_post_language(cursor, wid, lang_code)
+                current_lang = lang_code
+            else:
+                # Need current language for linking
+                cursor.execute("""
+                    SELECT t.slug 
+                    FROM wp_term_relationships tr 
+                    JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id 
+                    JOIN wp_terms t ON tt.term_id = t.term_id 
+                    WHERE tr.object_id = %s AND tt.taxonomy = 'language'
+                """, (wid,))
+                w_row = cursor.fetchone()
+                current_lang = w_row['slug'] if w_row else None
+
+            if trans_of and current_lang:
+                # Get the translation of's language
+                cursor.execute("""
+                    SELECT t.slug 
+                    FROM wp_term_relationships tr 
+                    JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id 
+                    JOIN wp_terms t ON tt.term_id = t.term_id 
+                    WHERE tr.object_id = %s AND tt.taxonomy = 'language'
+                """, (trans_of,))
+                t_row = cursor.fetchone()
+                if t_row:
+                    t_lang = t_row['slug']
+                    pll_save_translations(cursor, {current_lang: wid, t_lang: trans_of})
 
         conn.commit()
         return {"id": wid, "status": "success"}
@@ -482,6 +657,22 @@ async def workshop_find_pair(params: Dict[str, Any]):
         if not info:
             return {"pair": None}
             
+        # 1. NEW: Check Polylang for a hard link
+        terms = fetch_terms(cursor, [wid])
+        w_terms = terms.get(wid, {})
+        translations = w_terms.get('translations', {})
+        pll_lang = w_terms.get('pll_lang')
+        
+        if translations and pll_lang:
+            pair_lang = 'sr' if pll_lang == 'en' else 'en'
+            pair_id = translations.get(pair_lang)
+            if pair_id:
+                cursor.execute("SELECT ID, post_title FROM wp_posts WHERE ID = %s", (pair_id,))
+                p_row = cursor.fetchone()
+                if p_row:
+                    return {"pair": p_row, "source": "polylang"}
+
+        # Fallback to matching by metadata
         sql_pair = """
             SELECT 
               p.ID,
@@ -499,7 +690,7 @@ async def workshop_find_pair(params: Dict[str, Any]):
         cursor.execute(sql_pair, (wid, info['start_date'], info['location']))
         pair = cursor.fetchone()
         
-        return {"pair": pair}
+        return {"pair": pair, "source": "metadata" if pair else None}
     finally:
         conn.close()
 
@@ -748,9 +939,11 @@ def _list_workshop_tools():
                         "featured_image_id": { "type": "number" },
                         "gallery_ids": { "type": "array", "items": { "type": "number" } },
                         "audience": { "type": "array", "items": { "type": "string" }, "description": "Audience badges. Available: 'For Everyone', 'High Schoolers', 'Mladi profesionalci', 'Srednjoškolci', 'Studenti', 'Students', 'Young Professionals', 'Za sve'" },
-                        "language_badge": { "type": "string", "description": "Language badge. Available: 'English', 'Serbian', 'Srpski', 'Engleski'" }
+                        "language": { "type": "string", "enum": ["en", "sr"], "description": "Explicit language code" },
+                        "language_badge": { "type": "string", "description": "Language badge. Available: 'English', 'Serbian', 'Srpski', 'Engleski'" },
+                        "translation_of": { "type": "number", "description": "ID of the existing workshop to link as a translation" }
                     },
-                    "required": ["title", "start_date", "end_date", "location", "about_left", "about_right"]
+                    "required": ["title", "language", "start_date", "description", "location", "about_left", "about_right"]
                 }
             },
             {
@@ -774,7 +967,8 @@ def _list_workshop_tools():
                         "featured_image_id": { "type": "number" },
                         "gallery_ids": { "type": "array", "items": { "type": "number" } },
                         "audience": { "type": "array", "items": { "type": "string" }, "description": "Audience badges. Available: 'For Everyone', 'High Schoolers', 'Mladi profesionalci', 'Srednjoškolci', 'Studenti', 'Students', 'Young Professionals', 'Za sve'" },
-                        "language_badge": { "type": "string", "description": "Language badge. Available: 'English', 'Serbian', 'Srpski', 'Engleski'" }
+                        "language_badge": { "type": "string", "description": "Language badge. Available: 'English', 'Serbian', 'Srpski', 'Engleski'" },
+                        "translation_of": { "type": "number", "description": "ID of the existing workshop to link as a translation" }
                     },
                     "required": ["id"]
                 }
