@@ -364,6 +364,8 @@ async def workshop_list(params: Dict[str, Any]):
     status = params.get('status', 'publish')
     language = params.get('language', 'all')
     upcoming_only = params.get('upcoming_only', False)
+    start_date_after = params.get('start_date_after')
+    start_date_before = params.get('start_date_before')
     limit = params.get('limit', 50)
     include_meta = params.get('include_meta', False)
 
@@ -394,6 +396,17 @@ async def workshop_list(params: Dict[str, Any]):
           AND {status_condition}
         GROUP BY p.ID
         HAVING 1=1
+    """
+
+    if start_date_after:
+        sql = sql.replace("HAVING 1=1", "HAVING start_date >= %s")
+    if start_date_before:
+        if "start_date >=" in sql:
+            sql = sql.replace("HAVING start_date >= %s", "HAVING start_date >= %s AND start_date <= %s")
+        else:
+            sql = sql.replace("HAVING 1=1", "HAVING start_date <= %s")
+
+    sql += """
         ORDER BY start_date DESC
         LIMIT %s
     """
@@ -401,8 +414,14 @@ async def workshop_list(params: Dict[str, Any]):
     conn = get_db_connection()
     try:
         cursor = conn.cursor(dictionary=True)
-        query_params = status_val + (limit,)
-        cursor.execute(sql, query_params)
+        query_params = list(status_val)
+        if start_date_after:
+            query_params.append(start_date_after)
+        if start_date_before:
+            query_params.append(start_date_before)
+        query_params.append(limit)
+        
+        cursor.execute(sql, tuple(query_params))
         rows = cursor.fetchall()
         
         workshops = []
@@ -1080,6 +1099,8 @@ def _list_workshop_tools():
                         "status": { "type": "string", "enum": ["publish", "draft", "all"], "default": "publish" },
                         "language": { "type": "string", "enum": ["sr", "en", "all"], "default": "all" },
                         "upcoming_only": { "type": "boolean", "default": False },
+                        "start_date_after": { "type": "string", "description": "Filter workshops starting on or after this date (YYYY-MM-DD)" },
+                        "start_date_before": { "type": "string", "description": "Filter workshops starting on or before this date (YYYY-MM-DD)" },
                         "limit": { "type": "number", "default": 50 },
                         "include_meta": { "type": "boolean", "default": False }
                     }
