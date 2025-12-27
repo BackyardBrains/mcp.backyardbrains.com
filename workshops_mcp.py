@@ -811,22 +811,62 @@ async def workshop_registrations(params: Dict[str, Any]):
     wid = params.get('workshop_id')
     title_match = params.get('workshop_title')
     include_details = params.get('include_details', False)
+    
+    # Forminator doesn't store the workshop ID, only the title (in field text-4).
+    # To find all registrations for a workshop, we must search for its primary title 
+    # and all of its translation titles in the registration entries.
+    titles_to_match = []
+    if title_match:
+        titles_to_match.append(title_match)
 
-    if wid and not title_match:
-        conn = get_db_connection()
-        try:
-            cursor = conn.cursor(dictionary=True)
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        
+        # 1. If we have a title but no ID, try to find the ID to get translations
+        if title_match and not wid:
+            cursor.execute("SELECT ID FROM wp_posts WHERE post_title = %s AND post_type = 'workshop' LIMIT 1", (title_match,))
+            t_row = cursor.fetchone()
+            if t_row:
+                wid = t_row['ID']
+
+        # 2. If we have an ID (or just found it), get its title and all translation titles
+        if wid:
+            # Get primary title if not already added (ensures we have the exact DB title)
             cursor.execute("SELECT post_title FROM wp_posts WHERE ID = %s", (wid,))
             res = cursor.fetchone()
             if res:
-                title_match = res['post_title']
-        finally:
-            conn.close()
+                primary_title = res['post_title']
+                if primary_title not in titles_to_match:
+                    titles_to_match.append(primary_title)
+            
+            # Find all translations linked via Polylang
+            terms_map = fetch_terms(cursor, [wid])
+            translations = terms_map.get(wid, {}).get('translations', {})
+            
+            # Fetch titles for all translated IDs
+            other_ids = [tid for tid in translations.values() if tid != wid]
+            if other_ids:
+                placeholders = ', '.join(['%s'] * len(other_ids))
+                cursor.execute(f"SELECT post_title FROM wp_posts WHERE ID IN ({placeholders})", tuple(other_ids))
+                t_rows = cursor.fetchall()
+                for tr in t_rows:
+                    if tr['post_title'] not in titles_to_match:
+                        titles_to_match.append(tr['post_title'])
+    finally:
+        # Keep connection open for the main query
+        pass
 
-    if not title_match:
+    if not titles_to_match:
+        conn.close()
         return {"registrations": []}
 
-    sql = """
+    # Build the OR conditions for titles (text-4)
+    # Even though we have IDs, Forminator records only capture the title text.
+    title_conditions = " OR ".join(["text_4 LIKE %s"] * len(titles_to_match))
+    query_params = [f"%{t}%" for t in titles_to_match]
+
+    sql = f"""
         SELECT 
           e.entry_id,
           e.form_id,
@@ -845,14 +885,12 @@ async def workshop_registrations(params: Dict[str, Any]):
         JOIN wp_frmt_form_entry_meta m ON e.entry_id = m.entry_id
         WHERE e.form_id IN (786, 798)
         GROUP BY e.entry_id
-        HAVING text_4 LIKE %s
+        HAVING {title_conditions}
         ORDER BY e.date_created DESC
     """
 
-    conn = get_db_connection()
     try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(sql, (f"%{title_match}%",))
+        cursor.execute(sql, tuple(query_params))
         rows = cursor.fetchall()
         
         entries = []
