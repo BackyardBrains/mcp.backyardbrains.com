@@ -5,6 +5,8 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from datetime import datetime
 import phpserialize
 import mysql.connector
+import requests
+import time
 
 from utils import MCP_PROTOCOL_VERSION, _rpc_result, _rpc_error, logger, safe_dumps
 from auth import require_workshops_auth, check_permissions
@@ -14,6 +16,7 @@ DB_HOST = os.getenv('DB_HOST')
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 DB_NAME = os.getenv('DB_NAME')
+WP_URL = os.getenv('WP_URL')
 
 router = APIRouter()
 
@@ -113,25 +116,88 @@ def fetch_terms(cursor, post_ids: List[int]) -> Dict[int, Dict[str, Any]]:
             
     return results
 
-def pll_get_lang_term_id(cursor, lang_code: str) -> Optional[int]:
-    """Get the term_taxonomy_id for a Polylang language code."""
-    sql = """
-        SELECT tt.term_taxonomy_id 
-        FROM wp_term_taxonomy tt 
-        JOIN wp_terms t ON tt.term_id = t.term_id 
-        WHERE tt.taxonomy = 'language' AND t.slug = %s
-    """
-    cursor.execute(sql, (lang_code,))
-    res = cursor.fetchone()
-    return res['term_taxonomy_id'] if res else None
+
+class PolylangClient:
+    def __init__(self):
+        if not WP_URL:
+            logger.error("WP_URL environment variable not set")
+            raise ValueError("WP_URL not set")
+        
+        self.base_url = WP_URL.rstrip("/")
+        self.languages = {}
+        self.last_refresh = 0
+        self.ttl = 3600 # 1 hour
+        
+        # Initial discovery
+        self.refresh_languages()
+
+    def refresh_languages(self):
+        """Fetch languages from Polylang REST API."""
+        try:
+            url = f"{self.base_url}/wp-json/pll/v1/languages"
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            langs = resp.json()
+            
+            new_languages = {}
+            for lang in langs:
+                slug = lang.get('slug')
+                # Polylang REST returns term_props.language.term_taxonomy_id or similar
+                # Based on user description, we need term_taxonomy_id from term_props.language
+                term_props = lang.get('term_props', {})
+                language_props = term_props.get('language', {})
+                tt_id = language_props.get('term_taxonomy_id')
+                
+                if slug and tt_id:
+                    new_languages[slug] = int(tt_id)
+            
+            # Fail hard if en or sr are missing
+            if 'en' not in new_languages:
+                logger.error("Polylang discovery failed: 'en' slug missing")
+                raise ValueError("Polylang discovery failed: 'en' missing")
+            if 'sr' not in new_languages:
+                logger.error("Polylang discovery failed: 'sr' slug missing")
+                raise ValueError("Polylang discovery failed: 'sr' missing")
+                
+            self.languages = new_languages
+            self.last_refresh = time.time()
+            logger.info(f"Successfully discovered Polylang languages: {list(self.languages.keys())}")
+        except Exception as e:
+            logger.error(f"Failed to discover Polylang languages: {e}")
+            if not self.languages: # If initial discovery fails
+                raise
+
+    def get_languages(self) -> Dict[str, int]:
+        if time.time() - self.last_refresh > self.ttl:
+            self.refresh_languages()
+        return self.languages
+
+    def get_tt_id(self, slug: str) -> Optional[int]:
+        return self.get_languages().get(slug)
+
+_polylang_client = None
+
+def get_polylang_client():
+    global _polylang_client
+    if _polylang_client is None:
+        try:
+            _polylang_client = PolylangClient()
+        except Exception as e:
+            logger.error(f"Failed to initialize Polylang client: {e}")
+            return None
+    return _polylang_client
 
 def pll_set_post_language(cursor, post_id: int, lang_code: str):
-    """Set the Polylang language for a post."""
-    tt_id = pll_get_lang_term_id(cursor, lang_code)
+    """Set the Polylang language for a post using discovered IDs."""
+    client = get_polylang_client()
+    if not client:
+        raise HTTPException(status_code=500, detail="Polylang client not initialized")
+    
+    tt_id = client.get_tt_id(lang_code)
     if not tt_id:
-        return
+        raise HTTPException(status_code=400, detail=f"Invalid or undiscovered language slug: {lang_code}")
 
-    # Delete existing language relationship
+    # Delete existing language relationship for post_id
     sql_delete = """
         DELETE tr FROM wp_term_relationships tr
         JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
@@ -142,59 +208,118 @@ def pll_set_post_language(cursor, post_id: int, lang_code: str):
     # Insert new relationship
     sql_insert = "INSERT INTO wp_term_relationships (object_id, term_taxonomy_id, term_order) VALUES (%s, %s, 0)"
     cursor.execute(sql_insert, (post_id, tt_id))
+    
+    # Verify count == 1 (idempotent because we deleted first, but we check final state)
+    cursor.execute("""
+        SELECT COUNT(*) as count 
+        FROM wp_term_relationships tr
+        JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+        WHERE tr.object_id = %s AND tt.taxonomy = 'language'
+    """, (post_id,))
+    res = cursor.fetchone()
+    if res['count'] != 1:
+        raise Exception(f"Failed to set Polylang language: expected 1 relationship, found {res['count']}")
 
 def pll_save_translations(cursor, post_ids_by_lang: Dict[str, int]):
-    """Link posts as translations in Polylang."""
-    if len(post_ids_by_lang) < 2:
+    """Link posts as translations in Polylang with merge logic."""
+    if len(post_ids_by_lang) < 1:
         return
 
-    # 1. Check if ANY of these posts already belong to a translation group
+    # 1. Fetch existing groups for all involved posts
     post_ids = list(post_ids_by_lang.values())
     placeholders = ', '.join(['%s'] * len(post_ids))
     sql_existing = f"""
-        SELECT tr.object_id, tt.term_taxonomy_id, t.name, tt.description
+        SELECT tr.object_id, tt.term_taxonomy_id, tt.description
         FROM wp_term_relationships tr
         JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
-        JOIN wp_terms t ON tt.term_id = t.term_id
         WHERE tr.object_id IN ({placeholders}) AND tt.taxonomy = 'post_translations'
     """
     cursor.execute(sql_existing, tuple(post_ids))
-    existing = cursor.fetchall()
+    rows = cursor.fetchall()
 
-    group_tt_id = None
-    translations = {}
+    # Map post ID to its current group TT ID
+    post_to_group = {row['object_id']: row['term_taxonomy_id'] for row in rows}
+    # Map group TT ID to its current translations (deserialized)
+    groups = {row['term_taxonomy_id']: _deserialize_php(row['description']) or {} for row in rows}
 
-    if existing:
-        group_tt_id = existing[0]['term_taxonomy_id']
-        translations = _deserialize_php(existing[0]['description']) or {}
-
-    # Merge new translations
-    for lang, pid in post_ids_by_lang.items():
-        translations[lang] = pid
-
-    serialized_desc = phpserialize.dumps(translations).decode('utf-8')
-
-    if not group_tt_id:
-        # Create new translation term
+    # Decide which group to use (reuse existing if any)
+    group_tt_ids = list(groups.keys())
+    
+    if not group_tt_ids:
+        # Scenario: neither post in a group -> create
         import uuid
         group_name = f"pll_{uuid.uuid4().hex[:13]}"
-        
         cursor.execute("INSERT INTO wp_terms (name, slug, term_group) VALUES (%s, %s, 0)", (group_name, group_name))
         term_id = cursor.lastrowid
         
+        # We'll insert tt later once we have the full mapping
+        group_tt_id = None 
+        merged_translations = {}
+    elif len(group_tt_ids) == 1:
+        # Scenario: one or more posts in the SAME group -> reuse
+        group_tt_id = group_tt_ids[0]
+        merged_translations = groups[group_tt_id]
+    else:
+        # Scenario: posts in DIFFERENT groups -> merge
+        # Take the first group and merge all others into it
+        group_tt_id = group_tt_ids[0]
+        merged_translations = groups[group_tt_id]
+        
+        for other_tt_id in group_tt_ids[1:]:
+            other_trans = groups[other_tt_id]
+            merged_translations.update(other_trans)
+            
+            # Delete the defunct group relationships and terms
+            cursor.execute("DELETE FROM wp_term_relationships WHERE term_taxonomy_id = %s", (other_tt_id,))
+            cursor.execute("SELECT term_id FROM wp_term_taxonomy WHERE term_taxonomy_id = %s", (other_tt_id,))
+            old_term_res = cursor.fetchone()
+            cursor.execute("DELETE FROM wp_term_taxonomy WHERE term_taxonomy_id = %s", (other_tt_id,))
+            if old_term_res:
+                cursor.execute("DELETE FROM wp_terms WHERE term_id = %s", (old_term_res['term_id'],))
+
+    # Incorporate the new post_ids_by_lang
+    for lang, pid in post_ids_by_lang.items():
+        merged_translations[lang] = pid
+
+    # Enforce invariant: description mapping matches exactly {en: id, sr: id} for your two-language world
+    # (actually we keep whatever is there but prioritize the ones we just added)
+    # We use phpserialize to ensure correctness
+    
+    # Cast IDs to int for serialization consistency
+    final_translations = {str(k): int(v) for k, v in merged_translations.items()}
+    # Filter to only 'en' and 'sr' as per user request "two-language world"
+    final_translations = {k: v for k, v in final_translations.items() if k in ['en', 'sr']}
+    
+    # Sort keys for deterministic serialization string (helpful for testing)
+    sorted_translations = dict(sorted(final_translations.items()))
+    
+    # We must use phpserialize properly. phpserialize.dumps uses bytes.
+    # Convert to bytes for serialization
+    bytes_map = {k.encode('utf-8'): v for k, v in sorted_translations.items()}
+    serialized_desc = phpserialize.dumps(bytes_map).decode('utf-8')
+
+    if group_tt_id is None:
+        # Create the new taxonomy entry
         cursor.execute("INSERT INTO wp_term_taxonomy (term_id, taxonomy, description, count) VALUES (%s, 'post_translations', %s, %s)", 
-                       (term_id, serialized_desc, len(translations)))
+                       (term_id, serialized_desc, len(sorted_translations)))
         group_tt_id = cursor.lastrowid
     else:
-        # Update existing term
+        # Update existing group
         cursor.execute("UPDATE wp_term_taxonomy SET description = %s, count = %s WHERE term_taxonomy_id = %s",
-                       (serialized_desc, len(translations), group_tt_id))
+                       (serialized_desc, len(sorted_translations), group_tt_id))
 
-    # Ensure all posts are linked to this group
-    for pid in translations.values():
-        cursor.execute("SELECT 1 FROM wp_term_relationships WHERE object_id = %s AND term_taxonomy_id = %s", (pid, group_tt_id))
-        if not cursor.fetchone():
-            cursor.execute("INSERT INTO wp_term_relationships (object_id, term_taxonomy_id, term_order) VALUES (%s, %s, 0)", (pid, group_tt_id))
+    # Ensure all posts have EXACTLY one relationship to THIS group and NO others
+    all_pids = list(sorted_translations.values())
+    for pid in all_pids:
+        # Delete ANY existing post_translations relationships for this post
+        cursor.execute("""
+            DELETE tr FROM wp_term_relationships tr
+            JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+            WHERE tr.object_id = %s AND tt.taxonomy = 'post_translations'
+        """, (pid,))
+        
+        # Insert the one true relationship
+        cursor.execute("INSERT INTO wp_term_relationships (object_id, term_taxonomy_id, term_order) VALUES (%s, %s, 0)", (pid, group_tt_id))
 
 def set_workshop_terms(cursor, post_id: int, taxonomy: str, term_names: List[str]):
     """Set terms for a post. If term_names is empty, clears terms for that taxonomy."""
@@ -444,6 +569,12 @@ async def workshop_create(params: Dict[str, Any]):
     language_badge = params.get('language_badge')
     translation_of = params.get('translation_of') # ID of post this is a translation of
 
+    status = params.get('status', 'draft')
+    is_full = params.get('is_full', False)
+    gallery_ids = params.get('gallery_ids', [])
+    featured_image_id = params.get('featured_image_id')
+    audience = params.get('audience', [])
+
     slug = title.lower().replace(' ', '-').replace('/', '-')
 
     sql_post = """
@@ -464,7 +595,7 @@ async def workshop_create(params: Dict[str, Any]):
         cursor.execute(sql_post, (post_content, title, post_excerpt, status, slug))
         new_id = cursor.lastrowid
 
-        guid = f"https://thearc.rs/?post_type=workshop&p={new_id}"
+        guid = f"{WP_URL}/?post_type=workshop&p={new_id}"
         cursor.execute("UPDATE wp_posts SET guid = %s WHERE ID = %s", (guid, new_id))
 
         meta_v = [
@@ -474,7 +605,7 @@ async def workshop_create(params: Dict[str, Any]):
             (new_id, 'about_left', about_left),
             (new_id, 'about_right', about_right),
             (new_id, 'sign_up_link', sign_up_link),
-            (new_id, 'full', '1' if is_full else ''),
+            (new_id, 'full', '1' if is_full else '0'),
             (new_id, 'badges', ''),
             (new_id, 'resources', ''),
             (new_id, 'gallery', serialize_gallery_ids(gallery_ids))
@@ -488,37 +619,27 @@ async def workshop_create(params: Dict[str, Any]):
         if audience:
             set_workshop_terms(cursor, new_id, 'grade', audience)
 
-        if language:
-            pll_set_post_language(cursor, new_id, language)
-            
-            # Auto-set the badge if not provided for consistency
-            if not language_badge:
-                language_badge = "English" if language == "en" else "Serbian"
-                set_workshop_terms(cursor, new_id, 'workshop-language', [language_badge])
-            
-            if translation_of:
-                # Get the translation of's language
-                cursor.execute("""
-                    SELECT t.slug 
-                    FROM wp_term_relationships tr 
-                    JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id 
-                    JOIN wp_terms t ON tt.term_id = t.term_id 
-                    WHERE tr.object_id = %s AND tt.taxonomy = 'language'
-                """, (translation_of,))
-                t_row = cursor.fetchone()
-                if t_row:
-                    t_lang = t_row['slug']
-                    pll_save_translations(cursor, {language: new_id, t_lang: translation_of})
-        elif language_badge:
-            # Should not happen in create as language is mandatory now
-            set_workshop_terms(cursor, new_id, 'workshop-language', [language_badge])
-            pll_map = {"english": "en", "engleski": "en", "serbian": "sr", "srpski": "sr"}
-            lang_code = pll_map.get(language_badge.lower(), 'sr')
-            pll_set_post_language(cursor, new_id, lang_code)
-        else:
-            # Default to Serbian if absolutely nothing provided (should be blocked by HTTPException though)
-            pll_set_post_language(cursor, new_id, 'sr')
-            set_workshop_terms(cursor, new_id, 'workshop-language', ['Serbian'])
+        # Polylang Assignment (Strict DB assignment)
+        pll_set_post_language(cursor, new_id, language)
+        
+        # Language Badge (Legacy UI support)
+        if not language_badge:
+            language_badge = "English" if language == "en" else "Serbian"
+        set_workshop_terms(cursor, new_id, 'workshop-language', [language_badge])
+        
+        # Translation Linking (Merge logic)
+        if translation_of:
+            # We need the language of the other post for linking
+            cursor.execute("""
+                SELECT t.slug 
+                FROM wp_term_relationships tr 
+                JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id 
+                JOIN wp_terms t ON tt.term_id = t.term_id 
+                WHERE tr.object_id = %s AND tt.taxonomy = 'language'
+            """, (translation_of,))
+            t_row = cursor.fetchone()
+            if t_row:
+                pll_save_translations(cursor, {language: new_id, t_row['slug']: translation_of})
 
         conn.commit()
         return {"id": new_id, "status": "success"}
@@ -593,29 +714,22 @@ async def workshop_update(params: Dict[str, Any]):
                 new_badge = "English" if lang_code == "en" else "Serbian"
                 set_workshop_terms(cursor, wid, 'workshop-language', [new_badge])
 
-        if 'language_badge' in params or 'translation_of' in params:
-            lang_badge = params.get('language_badge')
-            trans_of = params.get('translation_of')
+        if 'language_badge' in params:
+            set_workshop_terms(cursor, wid, 'workshop-language', [params['language_badge']])
             
-            if lang_badge:
-                set_workshop_terms(cursor, wid, 'workshop-language', [lang_badge])
-                
-                pll_map = {"english": "en", "engleski": "en", "serbian": "sr", "srpski": "sr"}
-                lang_code = pll_map.get(lang_badge.lower(), 'sr')
-                pll_set_post_language(cursor, wid, lang_code)
-                current_lang = lang_code
-            else:
-                # Need current language for linking
-                cursor.execute("""
-                    SELECT t.slug 
-                    FROM wp_term_relationships tr 
-                    JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id 
-                    JOIN wp_terms t ON tt.term_id = t.term_id 
-                    WHERE tr.object_id = %s AND tt.taxonomy = 'language'
-                """, (wid,))
-                w_row = cursor.fetchone()
-                current_lang = w_row['slug'] if w_row else None
-
+        if 'translation_of' in params:
+            # Need current language for linking
+            cursor.execute("""
+                SELECT t.slug 
+                FROM wp_term_relationships tr 
+                JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id 
+                JOIN wp_terms t ON tt.term_id = t.term_id 
+                WHERE tr.object_id = %s AND tt.taxonomy = 'language'
+            """, (wid,))
+            w_row = cursor.fetchone()
+            current_lang = w_row['slug'] if w_row else None
+            
+            trans_of = params['translation_of']
             if trans_of and current_lang:
                 # Get the translation of's language
                 cursor.execute("""
@@ -627,8 +741,7 @@ async def workshop_update(params: Dict[str, Any]):
                 """, (trans_of,))
                 t_row = cursor.fetchone()
                 if t_row:
-                    t_lang = t_row['slug']
-                    pll_save_translations(cursor, {current_lang: wid, t_lang: trans_of})
+                    pll_save_translations(cursor, {current_lang: wid, t_row['slug']: trans_of})
 
         conn.commit()
         return {"id": wid, "status": "success"}
@@ -1034,14 +1147,51 @@ def _list_workshop_tools():
                     },
                     "required": ["entry_id"]
                 }
+            },
+            # Polylang specific tools
+            {
+                "name": "polylang_get_languages",
+                "description": "Get discovered Polylang languages and their term_taxonomy_ids",
+                "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "workshop_set_language",
+                "description": "Assign a language to a workshop post (Strict DB-side assignment)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "post_id": {"type": "integer"},
+                        "language": {"type": "string", "enum": ["en", "sr"]}
+                    },
+                    "required": ["post_id", "language"]
+                }
+            },
+            {
+                "name": "workshop_link_translations",
+                "description": "Link multiple workshops as translations (With merge logic)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "post_ids_by_lang": {
+                            "type": "object",
+                            "description": "Mapping of lang code to post ID, e.g., {'en': 123, 'sr': 456}"
+                        }
+                    },
+                    "required": ["post_ids_by_lang"]
+                }
+            },
+            {
+                "name": "workshop_flush_cache",
+                "description": "Flush MCP Polylang discovery cache (and document WP cache flush)",
+                "inputSchema": {"type": "object", "properties": {}}
             }
         ]
     }
 
 async def handle_workshop_tool_call(name: str, args: Dict, auth_payload: Dict):
     # Check permissions based on tool name
-    is_write = name in ["workshop_create", "workshop_update"]
-    is_admin = name == "workshop_sql_query"
+    is_write = name in ["workshop_create", "workshop_update", "workshop_set_language", "workshop_link_translations"]
+    is_admin = name in ["workshop_sql_query", "workshop_flush_cache"]
     
     if is_admin:
         if not check_permissions(auth_payload, ["mcp:admin:workshops"]):
@@ -1091,6 +1241,43 @@ async def handle_workshop_tool_call(name: str, args: Dict, auth_payload: Dict):
             entry_id = args.get("entry_id")
             result = get_entry_by_id(entry_id)
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+            
+        # Polylang tools
+        elif name == "polylang_get_languages":
+            client = get_polylang_client()
+            if not client:
+                return {"isError": True, "content": [{"type": "text", "text": "Polylang client not initialized"}]}
+            return {"content": [{"type": "text", "text": safe_dumps(client.get_languages())}]}
+            
+        elif name == "workshop_set_language":
+            post_id = args.get("post_id")
+            lang = args.get("language")
+            conn = get_db_connection()
+            try:
+                cursor = conn.cursor(dictionary=True)
+                pll_set_post_language(cursor, post_id, lang)
+                conn.commit()
+                return {"content": [{"type": "text", "text": f"Successfully set language '{lang}' for post {post_id}"}]}
+            finally:
+                conn.close()
+                
+        elif name == "workshop_link_translations":
+            post_ids_by_lang = args.get("post_ids_by_lang")
+            conn = get_db_connection()
+            try:
+                cursor = conn.cursor(dictionary=True)
+                pll_save_translations(cursor, post_ids_by_lang)
+                conn.commit()
+                return {"content": [{"type": "text", "text": f"Successfully linked translations: {post_ids_by_lang}"}]}
+            finally:
+                conn.close()
+                
+        elif name == "workshop_flush_cache":
+            client = get_polylang_client()
+            if not client:
+                return {"isError": True, "content": [{"type": "text", "text": "Polylang client not initialized"}]}
+            client.refresh_languages()
+            return {"content": [{"type": "text", "text": "Polylang discovery cache flushed. Note: You may also need to flush WordPress object cache (e.g., via WP Rocket or Redis) for UI changes to reflect immediately."}]}
             
         else:
             return {"isError": True, "content": [{"type": "text", "text": f"Unknown tool: {name}"}]}
