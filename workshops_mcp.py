@@ -860,12 +860,25 @@ async def workshop_registrations(params: Dict[str, Any]):
             form_id = r['form_id']
             lang = "Serbian" if form_id == 786 else "English"
             
-            # Forminator name field can be a string (EN) or serialized dict (SR)
+            # Forminator name field can be a string (legacy EN) or serialized dict (SR and new EN)
             name_val = _deserialize_php(r['name'])
+            first_name = ""
+            last_name = ""
+            full_name = ""
+            
             if isinstance(name_val, dict):
-                full_name = f"{name_val.get('first-name', '')} {name_val.get('last-name', '')}".strip()
+                first_name = name_val.get('first-name', '').strip()
+                last_name = name_val.get('last-name', '').strip()
+                full_name = f"{first_name} {last_name}".strip()
             else:
-                full_name = str(name_val) if name_val else ""
+                full_name = str(name_val).strip() if name_val else ""
+                if " " in full_name:
+                    parts = full_name.split(" ", 1)
+                    first_name = parts[0]
+                    last_name = parts[1]
+                else:
+                    first_name = full_name
+                    last_name = ""
             
             # Affiliation/School mapping is a bit fluid across form versions
             # Usually text-1 is school, text-2/text-3 is university/faculty
@@ -879,6 +892,8 @@ async def workshop_registrations(params: Dict[str, Any]):
                 "entry_id": r['entry_id'],
                 "date": r['date_created'].isoformat() if hasattr(r['date_created'], 'isoformat') else str(r['date_created']),
                 "full_name": full_name,
+                "first_name": first_name,
+                "last_name": last_name,
                 "email": r['email'],
                 "phone": r['phone'],
                 "category": category,
@@ -891,8 +906,21 @@ async def workshop_registrations(params: Dict[str, Any]):
             entries.append(entry)
 
         if not include_details:
-            # We still return a simplified list but keep the count
-            return {"count": len(entries), "entries": [{"entry_id": e['entry_id'], "date": e['date']} for e in entries]}
+            # We return a simplified list but include key identifying info
+            return {
+                "count": len(entries), 
+                "entries": [
+                    {
+                        "entry_id": e['entry_id'], 
+                        "date": e['date'],
+                        "first_name": e['first_name'],
+                        "last_name": e['last_name'],
+                        "email": e['email'],
+                        "phone": e['phone'],
+                        "language": e['language']
+                    } for e in entries
+                ]
+            }
             
         return {"count": len(entries), "entries": entries}
     finally:
