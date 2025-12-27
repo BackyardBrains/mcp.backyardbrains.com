@@ -275,8 +275,8 @@ async def workshop_get(params: Dict[str, Any]):
                     'title': row['post_title'],
                     'language': detect_language(row['post_title']),
                     'status': row['post_status'],
-                    'content': row['post_content'],
-                    'excerpt': row['post_excerpt'],
+                    'post_content': row['post_content'],
+                    'post_excerpt': row['post_excerpt'],
                     'created': row['post_date'].isoformat() if hasattr(row['post_date'], 'isoformat') else str(row['post_date']),
                     'modified': row['post_modified'].isoformat() if hasattr(row['post_modified'], 'isoformat') else str(row['post_modified']),
                     'is_full': False,
@@ -359,7 +359,7 @@ async def workshop_create(params: Dict[str, Any]):
 
     conn = get_db_connection()
     try:
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         cursor.execute(sql_post, (post_content, title, post_excerpt, status, slug))
         new_id = cursor.lastrowid
 
@@ -422,7 +422,7 @@ async def workshop_update(params: Dict[str, Any]):
         
     conn = get_db_connection()
     try:
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         if updates:
             cursor.execute(sql_update, tuple(post_params))
 
@@ -441,9 +441,11 @@ async def workshop_update(params: Dict[str, Any]):
         for key, val in meta_keys.items():
             if val is not None:
                 cursor.execute("SELECT meta_id FROM wp_postmeta WHERE post_id = %s AND meta_key = %s", (wid, key))
-                res = cursor.fetchone()
-                if res:
-                    cursor.execute("UPDATE wp_postmeta SET meta_value = %s WHERE post_id = %s AND meta_key = %s", (val, wid, key))
+                rows = cursor.fetchall()
+                if rows:
+                    # Update existing meta entries
+                    for row in rows:
+                        cursor.execute("UPDATE wp_postmeta SET meta_value = %s WHERE meta_id = %s", (val, row['meta_id']))
                 else:
                     cursor.execute("INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (%s, %s, %s)", (wid, key, val))
 
