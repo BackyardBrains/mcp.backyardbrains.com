@@ -73,34 +73,61 @@ def save_google_tokens(tokens: Dict):
         logger.error(f"Failed to save Google tokens: {e}")
 
 def get_google_credentials():
-    # 1. Try Service Account first (no user interaction needed)
+    """Get authorized Google credentials, using Service Account or OAuth2 User Flow."""
+    client_config = {}
+    
+    # 1. Load configuration from file (needed for both Service Account and OAuth refresh)
     if os.path.exists(GOOGLE_CREDENTIALS_FILE):
         try:
             with open(GOOGLE_CREDENTIALS_FILE, 'r') as f:
                 creds_data = json.load(f)
+            
+            # Case A: Service Account
             if creds_data.get('type') == 'service_account':
+                logger.info("Using Google Service Account credentials")
                 return service_account.Credentials.from_service_account_info(
                     creds_data, scopes=GOOGLE_SCOPES
                 )
-        except Exception:
-            pass
+            
+            # Case B: OAuth Client Secret (Web or Desktop)
+            # Detect client type: 'web' for Web Apps, 'installed' for Desktop
+            client_type = 'web' if 'web' in creds_data else ('installed' if 'installed' in creds_data else None)
+            if client_type:
+                client_config = creds_data[client_type]
+                logger.info(f"Loaded Google OAuth client configuration (type: {client_type})")
+        except Exception as e:
+            logger.error(f"Failed to read {GOOGLE_CREDENTIALS_FILE}: {e}")
 
-    # 2. Fallback to OAuth2 User Flow
+    # 2. Fallback to OAuth2 User Flow if token data exists
     token_data = load_google_tokens()
     if not token_data:
+        logger.warning(f"No Google tokens found at {GOOGLE_TOKEN_STORE_PATH}")
         return None
     
-    creds = Credentials.from_authorized_user_info(token_data, GOOGLE_SCOPES)
-    
-    if creds and creds.expired and creds.refresh_token:
-        try:
+    # CRITICAL: Always use the client ID and secret from the current credentials file
+    # This ensures that if the server environment changed (e.g. from Desktop to Web),
+    # the existing Refresh Token is used with the new Client Identity.
+    if client_config:
+        token_data['client_id'] = client_config.get('client_id')
+        token_data['client_secret'] = client_config.get('client_secret')
+        # Some Google libraries also expect these for refresh
+        if 'token_uri' in client_config:
+            token_data['token_uri'] = client_config['token_uri']
+
+    try:
+        creds = Credentials.from_authorized_user_info(token_data, GOOGLE_SCOPES)
+        
+        if creds and creds.expired and creds.refresh_token:
+            logger.info("Google token expired; attempting refresh...")
             creds.refresh(GoogleRequest())
+            # Save the updated token data (including potentially new access token)
             save_google_tokens(json.loads(creds.to_json()))
-        except Exception as e:
-            logger.error(f"Failed to refresh Google token: {e}")
-            return None
-            
-    return creds
+            logger.info("Google token successfully refreshed")
+                
+        return creds
+    except Exception as e:
+        logger.error(f"Failed to load or refresh Google credentials: {e}")
+        return None
 
 def get_db_connection():
     if not all([DB_HOST, DB_USER, DB_PASSWORD, DB_NAME]):
