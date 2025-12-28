@@ -1352,15 +1352,43 @@ async def workshop_read_feedback(params: Dict[str, Any]):
         headers = values[0]
         rows = values[1:]
         
-        # Try to find the workshop title if only ID is provided
-        if workshop_id and not workshop_title:
+        titles_to_match = []
+        if workshop_title:
+            titles_to_match.append(workshop_title)
+
+        if workshop_id or workshop_title:
             conn = get_db_connection()
             try:
                 cursor = conn.cursor(dictionary=True)
-                cursor.execute("SELECT post_title FROM wp_posts WHERE ID = %s", (workshop_id,))
-                res = cursor.fetchone()
-                if res:
-                    workshop_title = res['post_title']
+                if workshop_title and not workshop_id:
+                    cursor.execute(
+                        "SELECT ID, post_title FROM wp_posts WHERE post_title = %s AND post_type = 'workshop' LIMIT 1",
+                        (workshop_title,),
+                    )
+                    res = cursor.fetchone()
+                    if res:
+                        workshop_id = res['ID']
+                        if res['post_title'] not in titles_to_match:
+                            titles_to_match.append(res['post_title'])
+
+                if workshop_id:
+                    cursor.execute("SELECT post_title FROM wp_posts WHERE ID = %s", (workshop_id,))
+                    res = cursor.fetchone()
+                    if res and res['post_title'] not in titles_to_match:
+                        titles_to_match.append(res['post_title'])
+
+                    terms_map = fetch_terms(cursor, [workshop_id])
+                    translations = terms_map.get(workshop_id, {}).get('translations', {})
+                    other_ids = [tid for tid in translations.values() if tid != workshop_id]
+                    if other_ids:
+                        placeholders = ', '.join(['%s'] * len(other_ids))
+                        cursor.execute(
+                            f"SELECT post_title FROM wp_posts WHERE ID IN ({placeholders})",
+                            tuple(other_ids),
+                        )
+                        for row in cursor.fetchall():
+                            if row['post_title'] not in titles_to_match:
+                                titles_to_match.append(row['post_title'])
             finally:
                 conn.close()
 
@@ -1382,17 +1410,17 @@ async def workshop_read_feedback(params: Dict[str, Any]):
                 else:
                     entry[header] = val
             
-            # Simple matching: if workshop_title is provided, look for it in the row
-            if workshop_title:
+            # Simple matching: if workshop title(s) are provided, look for them in the row
+            if titles_to_match:
                 match = False
                 # If normalized, workshop_name key is preferred for matching
                 w_name = entry.get('workshop_name', "") if normalize else entry.get('Kojoj radionici ste prisustvovali?', "")
-                if w_name and str(workshop_title).lower() in str(w_name).lower():
+                if w_name and any(str(title).lower() in str(w_name).lower() for title in titles_to_match):
                     match = True
                 else:
                     # Fallback to general substring match across all values
                     for val in entry.values():
-                        if str(workshop_title).lower() in str(val).lower():
+                        if any(str(title).lower() in str(val).lower() for title in titles_to_match):
                             match = True
                             break
                 if not match:
