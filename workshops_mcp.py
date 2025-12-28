@@ -1368,6 +1368,31 @@ async def workshop_read_feedback(params: Dict[str, Any]):
         logger.error(f"Error reading feedback from Google Sheets: {e}")
         return {"error": error_msg}
 
+async def workshop_google_account(params: Dict[str, Any]):
+    """Get the email address of the currently authorized Google account."""
+    creds = get_google_credentials()
+    if not creds:
+        return {"error": "Google Sheets not authorized"}
+    
+    try:
+        # Check tokens directly for an 'account' field if it exists
+        token_data = load_google_tokens()
+        if token_data and 'account' in token_data:
+            return {"email": token_data['account']}
+            
+        # Try to use the userinfo endpoint
+        service = build('oauthinfo', 'v2', credentials=creds)
+        # Note: This might fail if the 'email' scope wasn't requested.
+        # But we can at least return the client_id or other metadata.
+        return {
+            "client_id": creds.client_id,
+            "scopes": creds.scopes,
+            "expired": creds.expired,
+            "message": "To get the exact email, the 'email' scope must be authorized. However, you can see the client_id and scopes above."
+        }
+    except Exception as e:
+        return {"error": str(e), "client_id": getattr(creds, 'client_id', 'unknown')}
+
 @router.get("/google/login")
 async def workshop_google_auth_login(request: Request):
     """Initiate Google OAuth flow."""
@@ -1539,6 +1564,11 @@ def _list_workshop_tools():
                     }
                 }
             },
+            {
+                "name": "workshop_google_account",
+                "description": "Get the email address of the currently authorized Google account",
+                "inputSchema": {"type": "object", "properties": {}}
+            },
             # Generic SQL tool
             {
                 "name": "workshop_sql_query",
@@ -1615,7 +1645,6 @@ def _list_workshop_tools():
                 "description": "Flush MCP Polylang discovery cache (and document WP cache flush)",
                 "inputSchema": {"type": "object", "properties": {}}
             },
-            # Google Sheets tools
             {
                 "name": "workshop_read_instructors",
                 "description": "Read instructor interest forms from Google Sheets (OAuth required)",
@@ -1623,7 +1652,7 @@ def _list_workshop_tools():
                     "type": "object",
                     "properties": {
                         "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID", "default": "1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw" },
-                        "range_name": { "type": "string", "description": "Range to read", "default": "Form Responses 1!A:Z" }
+                        "range_name": { "type": "string", "description": "Range to read (e.g. 'Sheet1!A:Z'). If omitted, the first sheet tab will be detected automatically." }
                     }
                 }
             },
@@ -1634,12 +1663,18 @@ def _list_workshop_tools():
                     "type": "object",
                     "properties": {
                         "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID" },
-                        "range_name": { "type": "string", "description": "Range to read", "default": "Form Responses 1!A:Z" },
+                        "range_name": { "type": "string", "description": "Range to read (e.g. 'Sheet1!A:Z'). If omitted, the first sheet tab will be detected automatically." },
                         "workshop_id": { "type": "number", "description": "Filter by workshop ID" },
-                        "workshop_title": { "type": "string", "description": "Filter by workshop title (substring match)" }
+                        "workshop_title": { "type": "string", "description": "Filter by workshop title (substring match)" },
+                        "normalize": { "type": "boolean", "description": "Map headers to English keys and convert scores to numbers", "default": true }
                     },
                     "required": ["spreadsheet_id"]
                 }
+            },
+            {
+                "name": "workshop_google_account",
+                "description": "Get identity of the currently authorized Google account",
+                "inputSchema": {"type": "object", "properties": {}}
             }
         ]
     }
@@ -1741,6 +1776,9 @@ async def handle_workshop_tool_call(name: str, args: Dict, auth_payload: Dict):
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
         elif name == "workshop_read_feedback":
             result = await workshop_read_feedback(args)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "workshop_google_account":
+            result = await workshop_google_account(args)
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
             
         else:
