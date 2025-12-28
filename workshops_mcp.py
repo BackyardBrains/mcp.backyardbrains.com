@@ -1,4 +1,5 @@
 import os
+os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 import json
 import logging
 from typing import Dict, Any, List, Optional
@@ -1286,7 +1287,7 @@ async def workshop_google_auth_login(request: Request):
     )
     authorization_url, state = flow.authorization_url(
         access_type='offline',
-        include_granted_scopes='true'
+        include_granted_scopes='false'
     )
     # Store state in session or just use it in the callback
     # For simplicity, we'll just redirect
@@ -1302,7 +1303,16 @@ async def workshop_google_auth_callback(request: Request, code: str, state: str 
         scopes=GOOGLE_SCOPES,
         redirect_uri=redirect_uri
     )
-    flow.fetch_token(code=code)
+    try:
+        flow.fetch_token(code=code)
+    except Exception as e:
+        # Google sometimes returns extra scopes (e.g. if previously authorized) 
+        # which can trigger a Warning/Exception in oauthlib. 
+        # If we still got the credentials, we can proceed.
+        logger.warning(f"Google OAuth token exchange warning/error: {e}")
+        if not flow.credentials:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch token (V2): {str(e)}")
+            
     creds = flow.credentials
     save_google_tokens(json.loads(creds.to_json()))
     
