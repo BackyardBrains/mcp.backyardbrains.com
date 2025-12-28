@@ -1300,7 +1300,9 @@ LIKERT_SCALE_MAP = {
     "U potpunosti nezadovoljan": 1,
     "Nezadovoljan": 2,
     "U potpunosti nezadovoljna": 1,
-    "Nezadovoljna": 2
+    "Nezadovoljna": 2,
+    "Veoma zadovoljan": 5,
+    "Veoma zadovoljna": 5
 }
 
 async def workshop_read_feedback(params: Dict[str, Any]):
