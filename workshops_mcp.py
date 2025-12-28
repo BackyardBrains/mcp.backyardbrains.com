@@ -10,6 +10,7 @@ import requests
 import time
 from cryptography.fernet import Fernet, InvalidToken
 
+from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request as GoogleRequest
@@ -24,6 +25,7 @@ DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 DB_NAME = os.getenv('DB_NAME')
 WP_URL = os.getenv('WP_URL')
+MCP_BASE_URL = os.getenv('MCP_BASE_URL')
 
 router = APIRouter()
 
@@ -71,6 +73,19 @@ def save_google_tokens(tokens: Dict):
         logger.error(f"Failed to save Google tokens: {e}")
 
 def get_google_credentials():
+    # 1. Try Service Account first (no user interaction needed)
+    if os.path.exists(GOOGLE_CREDENTIALS_FILE):
+        try:
+            with open(GOOGLE_CREDENTIALS_FILE, 'r') as f:
+                creds_data = json.load(f)
+            if creds_data.get('type') == 'service_account':
+                return service_account.Credentials.from_service_account_info(
+                    creds_data, scopes=GOOGLE_SCOPES
+                )
+        except Exception as e:
+            logger.debug(f"Checked for service account, but not found or failed: {e}")
+
+    # 2. Fallback to OAuth2 User Flow
     token_data = load_google_tokens()
     if not token_data:
         return None
@@ -1168,7 +1183,7 @@ async def workshop_read_instructors(params: Dict[str, Any]):
     if not creds:
         return {
             "error": "Google Sheets not authorized",
-            "auth_url": f"{WP_URL}/workshops/google/login" if WP_URL else "/workshops/google/login"
+            "auth_url": f"{MCP_BASE_URL.rstrip('/')}/workshops/google/login" if MCP_BASE_URL else "/workshops/google/login"
         }
 
     try:
@@ -1208,7 +1223,7 @@ async def workshop_read_feedback(params: Dict[str, Any]):
     if not creds:
         return {
             "error": "Google Sheets not authorized",
-            "auth_url": f"{WP_URL}/workshops/google/login" if WP_URL else "/workshops/google/login"
+            "auth_url": f"{MCP_BASE_URL.rstrip('/')}/workshops/google/login" if MCP_BASE_URL else "/workshops/google/login"
         }
 
     try:
@@ -1260,10 +1275,11 @@ async def workshop_read_feedback(params: Dict[str, Any]):
 @router.get("/google/login")
 async def workshop_google_auth_login(request: Request):
     """Initiate Google OAuth flow."""
+    redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/workshops/google/callback" if MCP_BASE_URL else f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
     flow = Flow.from_client_secrets_file(
         GOOGLE_CREDENTIALS_FILE,
         scopes=GOOGLE_SCOPES,
-        redirect_uri=f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
+        redirect_uri=redirect_uri
     )
     authorization_url, state = flow.authorization_url(
         access_type='offline',
@@ -1277,10 +1293,11 @@ async def workshop_google_auth_login(request: Request):
 @router.get("/google/callback")
 async def workshop_google_auth_callback(request: Request, code: str, state: str = None):
     """Handle Google OAuth callback."""
+    redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/workshops/google/callback" if MCP_BASE_URL else f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
     flow = Flow.from_client_secrets_file(
         GOOGLE_CREDENTIALS_FILE,
         scopes=GOOGLE_SCOPES,
-        redirect_uri=f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
+        redirect_uri=redirect_uri
     )
     flow.fetch_token(code=code)
     creds = flow.credentials
