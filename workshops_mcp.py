@@ -1,5 +1,4 @@
 import os
-os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 import json
 import logging
 from typing import Dict, Any, List, Optional
@@ -80,14 +79,11 @@ def get_google_credentials():
             with open(GOOGLE_CREDENTIALS_FILE, 'r') as f:
                 creds_data = json.load(f)
             if creds_data.get('type') == 'service_account':
-                logger.info("Found Service Account credentials.")
                 return service_account.Credentials.from_service_account_info(
                     creds_data, scopes=GOOGLE_SCOPES
                 )
-            else:
-                logger.info(f"Found credentials of type '{creds_data.get('type', 'unknown')}', falling back to OAuth flow.")
-        except Exception as e:
-            logger.error(f"Error reading {GOOGLE_CREDENTIALS_FILE}: {e}")
+        except Exception:
+            pass
 
     # 2. Fallback to OAuth2 User Flow
     token_data = load_google_tokens()
@@ -1287,7 +1283,8 @@ async def workshop_google_auth_login(request: Request):
     )
     authorization_url, state = flow.authorization_url(
         access_type='offline',
-        include_granted_scopes='false'
+        include_granted_scopes='false',
+        prompt='consent'
     )
     # Store state in session or just use it in the callback
     # For simplicity, we'll just redirect
@@ -1311,7 +1308,7 @@ async def workshop_google_auth_callback(request: Request, code: str, state: str 
         # If we still got the credentials, we can proceed.
         logger.warning(f"Google OAuth token exchange warning/error: {e}")
         if not flow.credentials:
-            raise HTTPException(status_code=500, detail=f"Failed to fetch token (V2): {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to fetch token: {str(e)}")
             
     creds = flow.credentials
     save_google_tokens(json.loads(creds.to_json()))

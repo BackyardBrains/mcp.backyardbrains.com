@@ -1,8 +1,4 @@
 import os
-
-# Relax OAuth scope validation for Google
-os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
-
 import logging
 import uvicorn
 import requests
@@ -20,9 +16,6 @@ from starlette.middleware.sessions import SessionMiddleware
 load_dotenv()
 
 from utils import logger, MCP_PROTOCOL_VERSION
-logger.info("--- SERVER STARTING (V3) ---")
-logger.info(f"OAUTHLIB_RELAX_TOKEN_SCOPE: {os.environ.get('OAUTHLIB_RELAX_TOKEN_SCOPE')}")
-logger.info(f"MCP_BASE_URL: {os.environ.get('MCP_BASE_URL')}")
 from auth import AUTH0_XERO_AUDIENCE, AUTH0_METABASE_AUDIENCE, AUTH0_META_AUDIENCE
 import xero_mcp
 import metabase_mcp
