@@ -1,12 +1,19 @@
 import os
+import json
 import logging
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, Response
 from datetime import datetime
 import phpserialize
 import mysql.connector
 import requests
 import time
+from cryptography.fernet import Fernet, InvalidToken
+
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+from google.auth.transport.requests import Request as GoogleRequest
+from googleapiclient.discovery import build
 
 from utils import MCP_PROTOCOL_VERSION, _rpc_result, _rpc_error, logger, safe_dumps
 from auth import require_workshops_auth, check_permissions
@@ -19,6 +26,66 @@ DB_NAME = os.getenv('DB_NAME')
 WP_URL = os.getenv('WP_URL')
 
 router = APIRouter()
+
+# Google Sheets Configuration
+GOOGLE_CREDENTIALS_FILE = os.environ.get("GOOGLE_CREDENTIALS_FILE", "google_credentials.json")
+GOOGLE_TOKEN_STORE_PATH = os.environ.get("GOOGLE_TOKEN_STORE_PATH", ".google_tokens.enc")
+GOOGLE_SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+
+# Encryption setup (shared with Xero if TOKEN_ENC_KEY is set)
+TOKEN_ENC_KEY = os.environ.get("TOKEN_ENC_KEY")
+if not TOKEN_ENC_KEY:
+    logger.warning("TOKEN_ENC_KEY not set; Google tokens will not be encrypted!")
+fernet = Fernet(TOKEN_ENC_KEY) if TOKEN_ENC_KEY else None
+
+def encrypt_data(data: bytes) -> bytes:
+    if not fernet: return data
+    return fernet.encrypt(data)
+
+def decrypt_data(encrypted: bytes) -> bytes:
+    if not fernet: return encrypted
+    try:
+        return fernet.decrypt(encrypted)
+    except InvalidToken:
+        raise ValueError("Invalid encryption key or corrupted token file")
+
+def load_google_tokens():
+    if not os.path.exists(GOOGLE_TOKEN_STORE_PATH):
+        return None
+    try:
+        with open(GOOGLE_TOKEN_STORE_PATH, 'rb') as f:
+            encrypted = f.read()
+        decrypted = decrypt_data(encrypted)
+        return json.loads(decrypted)
+    except Exception as e:
+        logger.error(f"Failed to load Google tokens: {e}")
+        return None
+
+def save_google_tokens(tokens: Dict):
+    try:
+        data = json.dumps(tokens).encode('utf-8')
+        encrypted = encrypt_data(data)
+        with open(GOOGLE_TOKEN_STORE_PATH, 'wb') as f:
+            f.write(encrypted)
+    except Exception as e:
+        logger.error(f"Failed to save Google tokens: {e}")
+
+def get_google_credentials():
+    token_data = load_google_tokens()
+    if not token_data:
+        return None
+    
+    creds = Credentials.from_authorized_user_info(token_data, GOOGLE_SCOPES)
+    
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(GoogleRequest())
+            save_google_tokens(json.loads(creds.to_json()))
+        except Exception as e:
+            logger.error(f"Failed to refresh Google token: {e}")
+            return None
+            
+    return creds
 
 def get_db_connection():
     if not all([DB_HOST, DB_USER, DB_PASSWORD, DB_NAME]):
@@ -566,6 +633,27 @@ async def workshop_get(params: Dict[str, Any]):
                 cursor.execute(reg_sql, (f"%{w['title']}%",))
                 reg_res = cursor.fetchone()
                 w['registrations'] = reg_res['registrations'] if reg_res else 0
+        
+        include_feedback = params.get('include_feedback', False)
+        if include_feedback:
+            # Note: This is expensive as it fetches all feedback from sheets.
+            # In a real app, you'd cache this or use a more efficient query.
+            for w in workshops:
+                # We need spreadsheet IDs for feedback. 
+                # For now, we'll try to use provided IDs or placeholders.
+                rs_sheet_id = params.get('feedback_spreadsheet_rs')
+                en_sheet_id = params.get('feedback_spreadsheet_en')
+                
+                feedback_data = []
+                if rs_sheet_id:
+                    res = await workshop_read_feedback({"spreadsheet_id": rs_sheet_id, "workshop_title": w['title']})
+                    feedback_data.extend(res.get('feedback', []))
+                if en_sheet_id:
+                    res = await workshop_read_feedback({"spreadsheet_id": en_sheet_id, "workshop_title": w['title']})
+                    feedback_data.extend(res.get('feedback', []))
+                
+                w['feedback'] = feedback_data
+                w['feedback_count'] = len(feedback_data)
 
         return {"workshops": workshops}
     finally:
@@ -1071,6 +1159,135 @@ def get_entry_by_id(entry_id):
     finally:
         conn.close()
 
+async def workshop_read_instructors(params: Dict[str, Any]):
+    """Read instructor interest forms from Google Sheets."""
+    spreadsheet_id = params.get('spreadsheet_id', '1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw')
+    range_name = params.get('range_name', 'Form Responses 1!A:Z')
+    
+    creds = get_google_credentials()
+    if not creds:
+        return {
+            "error": "Google Sheets not authorized",
+            "auth_url": f"{WP_URL}/workshops/google/login" if WP_URL else "/workshops/google/login"
+        }
+
+    try:
+        service = build('sheets', 'v4', credentials=creds)
+        result = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+        values = result.get('values', [])
+        
+        if not values:
+            return {"instructors": [], "message": "No data found."}
+            
+        headers = values[0]
+        rows = values[1:]
+        
+        instructors = []
+        for row in rows:
+            instructor = {}
+            for i, header in enumerate(headers):
+                instructor[header] = row[i] if i < len(row) else ""
+            instructors.append(instructor)
+            
+        return {"instructors": instructors, "count": len(instructors)}
+    except Exception as e:
+        logger.error(f"Error reading instructors from Google Sheets: {e}")
+        return {"error": str(e)}
+
+async def workshop_read_feedback(params: Dict[str, Any]):
+    """Read feedback from Google Sheets (linked to Google Forms)."""
+    spreadsheet_id = params.get('spreadsheet_id')
+    range_name = params.get('range_name', 'Form Responses 1!A:Z')
+    workshop_id = params.get('workshop_id')
+    workshop_title = params.get('workshop_title')
+    
+    if not spreadsheet_id:
+        return {"error": "spreadsheet_id is required for feedback retrieval."}
+    
+    creds = get_google_credentials()
+    if not creds:
+        return {
+            "error": "Google Sheets not authorized",
+            "auth_url": f"{WP_URL}/workshops/google/login" if WP_URL else "/workshops/google/login"
+        }
+
+    try:
+        service = build('sheets', 'v4', credentials=creds)
+        result = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+        values = result.get('values', [])
+        
+        if not values:
+            return {"feedback": [], "message": "No data found."}
+            
+        headers = values[0]
+        rows = values[1:]
+        
+        # Try to find the workshop title if only ID is provided
+        if workshop_id and not workshop_title:
+            conn = get_db_connection()
+            try:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("SELECT post_title FROM wp_posts WHERE ID = %s", (workshop_id,))
+                res = cursor.fetchone()
+                if res:
+                    workshop_title = res['post_title']
+            finally:
+                conn.close()
+
+        feedback_list = []
+        for row in rows:
+            entry = {}
+            for i, header in enumerate(headers):
+                entry[header] = row[i] if i < len(row) else ""
+            
+            # Simple matching: if workshop_title is provided, look for it in the row
+            if workshop_title:
+                match = False
+                for val in entry.values():
+                    if str(workshop_title).lower() in str(val).lower():
+                        match = True
+                        break
+                if not match:
+                    continue
+                    
+            feedback_list.append(entry)
+            
+        return {"feedback": feedback_list, "count": len(feedback_list)}
+    except Exception as e:
+        logger.error(f"Error reading feedback from Google Sheets: {e}")
+        return {"error": str(e)}
+
+@router.get("/google/login")
+async def workshop_google_auth_login(request: Request):
+    """Initiate Google OAuth flow."""
+    flow = Flow.from_client_secrets_file(
+        GOOGLE_CREDENTIALS_FILE,
+        scopes=GOOGLE_SCOPES,
+        redirect_uri=f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
+    )
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
+    )
+    # Store state in session or just use it in the callback
+    # For simplicity, we'll just redirect
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(authorization_url)
+
+@router.get("/google/callback")
+async def workshop_google_auth_callback(request: Request, code: str, state: str = None):
+    """Handle Google OAuth callback."""
+    flow = Flow.from_client_secrets_file(
+        GOOGLE_CREDENTIALS_FILE,
+        scopes=GOOGLE_SCOPES,
+        redirect_uri=f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
+    )
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    save_google_tokens(json.loads(creds.to_json()))
+    
+    return Response(content="<h1>Google Sheets Authorized!</h1><p>You can now close this window and return to the chat.</p>", media_type="text/html")
+
 def execute_query(query: str, params: tuple = None):
     conn = get_db_connection()
     try:
@@ -1114,7 +1331,10 @@ def _list_workshop_tools():
                     "properties": {
                         "ids": { "type": "array", "items": { "type": "number" } },
                         "include_gallery": { "type": "boolean", "default": True },
-                        "include_registrations": { "type": "boolean", "default": False }
+                        "include_registrations": { "type": "boolean", "default": False },
+                        "include_feedback": { "type": "boolean", "default": False },
+                        "feedback_spreadsheet_rs": { "type": "string", "description": "Spreadsheet ID for Serbian feedback" },
+                        "feedback_spreadsheet_en": { "type": "string", "description": "Spreadsheet ID for English feedback" }
                     },
                     "required": ["ids"]
                 }
@@ -1271,6 +1491,32 @@ def _list_workshop_tools():
                 "name": "workshop_flush_cache",
                 "description": "Flush MCP Polylang discovery cache (and document WP cache flush)",
                 "inputSchema": {"type": "object", "properties": {}}
+            },
+            # Google Sheets tools
+            {
+                "name": "workshop_read_instructors",
+                "description": "Read instructor interest forms from Google Sheets (OAuth required)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID", "default": "1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw" },
+                        "range_name": { "type": "string", "description": "Range to read", "default": "Form Responses 1!A:Z" }
+                    }
+                }
+            },
+            {
+                "name": "workshop_read_feedback",
+                "description": "Read attendee feedback from Google Sheets (OAuth required)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID" },
+                        "range_name": { "type": "string", "description": "Range to read", "default": "Form Responses 1!A:Z" },
+                        "workshop_id": { "type": "number", "description": "Filter by workshop ID" },
+                        "workshop_title": { "type": "string", "description": "Filter by workshop title (substring match)" }
+                    },
+                    "required": ["spreadsheet_id"]
+                }
             }
         ]
     }
@@ -1365,6 +1611,14 @@ async def handle_workshop_tool_call(name: str, args: Dict, auth_payload: Dict):
                 return {"isError": True, "content": [{"type": "text", "text": "Polylang client not initialized"}]}
             client.refresh_languages()
             return {"content": [{"type": "text", "text": "Polylang discovery cache flushed. Note: You may also need to flush WordPress object cache (e.g., via WP Rocket or Redis) for UI changes to reflect immediately."}]}
+            
+        # Google Sheets tools
+        elif name == "workshop_read_instructors":
+            result = await workshop_read_instructors(args)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "workshop_read_feedback":
+            result = await workshop_read_feedback(args)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
             
         else:
             return {"isError": True, "content": [{"type": "text", "text": f"Unknown tool: {name}"}]}
