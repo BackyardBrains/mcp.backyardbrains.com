@@ -1274,7 +1274,7 @@ LIKERT_SCALE_MAP = {
 
 async def workshop_read_feedback(params: Dict[str, Any]):
     """Read feedback from Google Sheets (linked to Google Forms)."""
-    spreadsheet_id = params.get('spreadsheet_id')
+    spreadsheet_id = params.get('spreadsheet_id', '1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw')
     range_name = params.get('range_name') # No default, we detect if empty
     workshop_id = params.get('workshop_id')
     workshop_title = params.get('workshop_title')
@@ -1662,7 +1662,7 @@ def _list_workshop_tools():
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID" },
+                        "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID", "default": "1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw" },
                         "range_name": { "type": "string", "description": "Range to read (e.g. 'Sheet1!A:Z'). If omitted, the first sheet tab will be detected automatically." },
                         "workshop_id": { "type": "number", "description": "Filter by workshop ID" },
                         "workshop_title": { "type": "string", "description": "Filter by workshop title (substring match)" },
