@@ -79,11 +79,14 @@ def get_google_credentials():
             with open(GOOGLE_CREDENTIALS_FILE, 'r') as f:
                 creds_data = json.load(f)
             if creds_data.get('type') == 'service_account':
+                logger.info("Found Service Account credentials.")
                 return service_account.Credentials.from_service_account_info(
                     creds_data, scopes=GOOGLE_SCOPES
                 )
+            else:
+                logger.info(f"Found credentials of type '{creds_data.get('type', 'unknown')}', falling back to OAuth flow.")
         except Exception as e:
-            logger.debug(f"Checked for service account, but not found or failed: {e}")
+            logger.error(f"Error reading {GOOGLE_CREDENTIALS_FILE}: {e}")
 
     # 2. Fallback to OAuth2 User Flow
     token_data = load_google_tokens()
