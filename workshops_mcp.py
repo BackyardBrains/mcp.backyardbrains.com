@@ -1203,7 +1203,7 @@ def get_entry_by_id(entry_id):
 
 async def workshop_read_instructors(params: Dict[str, Any]):
     """Read instructor interest forms from Google Sheets."""
-    spreadsheet_id = params.get('spreadsheet_id', '1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw')
+    spreadsheet_id = params.get('spreadsheet_id', '1wSV_ilS06z2eeiIB9_aIbGSBuCNTkqqgiwetKIX-0co')
     range_name = params.get('range_name') # No default, we detect if empty
     
     creds = get_google_credentials()
@@ -1301,7 +1301,14 @@ LIKERT_SCALE_MAP = {
 
 async def workshop_read_feedback(params: Dict[str, Any]):
     """Read feedback from Google Sheets (linked to Google Forms)."""
-    spreadsheet_id = params.get('spreadsheet_id', '1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw')
+    spreadsheet_id = params.get('spreadsheet_id', '1wSV_ilS06z2eeiIB9_aIbGSBuCNTkqqgiwetKIX-0co')
+    
+    # Safety Override: AI clients sometimes persist stale IDs. 
+    # Swap the known incorrect ID for the correct one if provided.
+    BAD_ID = "1Eg6Dbh4yYPvvFrnM08TK39qrjxMQbNjxp-upUGhjHmY"
+    if spreadsheet_id == BAD_ID:
+        logger.warning(f"Intercepted incorrect spreadsheet ID {BAD_ID}. Overriding with correct ID.")
+        spreadsheet_id = "1wSV_ilS06z2eeiIB9_aIbGSBuCNTkqqgiwetKIX-0co"
     range_name = params.get('range_name') # No default, we detect if empty
     workshop_id = params.get('workshop_id')
     workshop_title = params.get('workshop_title')
@@ -1678,7 +1685,7 @@ def _list_workshop_tools():
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID", "default": "1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw" },
+                        "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID", "default": "1wSV_ilS06z2eeiIB9_aIbGSBuCNTkqqgiwetKIX-0co" },
                         "range_name": { "type": "string", "description": "Range to read (e.g. 'Sheet1!A:Z'). If omitted, the first sheet tab will be detected automatically." }
                     }
                 }
@@ -1689,7 +1696,7 @@ def _list_workshop_tools():
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID", "default": "1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw" },
+                        "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID", "default": "1wSV_ilS06z2eeiIB9_aIbGSBuCNTkqqgiwetKIX-0co" },
                         "range_name": { "type": "string", "description": "Range to read (e.g. 'Sheet1!A:Z'). If omitted, the first sheet tab will be detected automatically." },
                         "workshop_id": { "type": "number", "description": "Filter by workshop ID" },
                         "workshop_title": { "type": "string", "description": "Filter by workshop title (substring match)" },
