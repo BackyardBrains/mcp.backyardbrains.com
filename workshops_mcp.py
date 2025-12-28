@@ -1177,7 +1177,7 @@ def get_entry_by_id(entry_id):
 async def workshop_read_instructors(params: Dict[str, Any]):
     """Read instructor interest forms from Google Sheets."""
     spreadsheet_id = params.get('spreadsheet_id', '1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw')
-    range_name = params.get('range_name', 'Form Responses 1!A:Z')
+    range_name = params.get('range_name') # No default, we detect if empty
     
     creds = get_google_credentials()
     if not creds:
@@ -1188,11 +1188,22 @@ async def workshop_read_instructors(params: Dict[str, Any]):
 
     try:
         service = build('sheets', 'v4', credentials=creds)
+        
+        # If no range_name is provided, find the first sheet title
+        if not range_name:
+            spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            sheets = spreadsheet.get('sheets', [])
+            if not sheets:
+                return {"error": "No sheets found in spreadsheet."}
+            first_sheet_title = sheets[0].get('properties', {}).get('title')
+            range_name = f"{first_sheet_title}!A:Z"
+            logger.info(f"Detected sheet name: {first_sheet_title} for spreadsheet {spreadsheet_id}")
+
         result = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
         values = result.get('values', [])
         
         if not values:
-            return {"instructors": [], "message": "No data found."}
+            return {"instructors": [], "message": f"No data found in {range_name}."}
             
         headers = values[0]
         rows = values[1:]
@@ -1206,15 +1217,68 @@ async def workshop_read_instructors(params: Dict[str, Any]):
             
         return {"instructors": instructors, "count": len(instructors)}
     except Exception as e:
+        error_msg = str(e)
+        if "404" in error_msg:
+            error_msg = f"Spreadsheet not found (404). Check if ID {spreadsheet_id} is correct and shared with the authorized account."
         logger.error(f"Error reading instructors from Google Sheets: {e}")
-        return {"error": str(e)}
+        return {"error": error_msg}
+
+FEEDBACK_HEADER_MAP = {
+    'Timestamp': 'timestamp',
+    'Datum radionice kojoj ste prisustvovali': 'workshop_date',
+    'Kojoj radionici ste prisustvovali?': 'workshop_name',
+    'Kako ste saznali za ovu radionicu?': 'source',
+    'Iskustvo sa radionicom: ocenite u kojoj meri se slažete sa sledećim izjavama. [Ciljevi radionice su jasno objašnjeni.]': 'score_goals',
+    'Iskustvo sa radionicom: ocenite u kojoj meri se slažete sa sledećim izjavama. [Predavač je bio stručan i zanimljiv.]': 'score_instructor',
+    'Iskustvo sa radionicom: ocenite u kojoj meri se slažete sa sledećim izjavama. [Sadržaj radionice je bio na odgovarajućem nivou težine za mene.]': 'score_difficulty',
+    'Iskustvo sa radionicom: ocenite u kojoj meri se slažete sa sledećim izjavama. [Praktične aktivnosti su bile zanimljive i edukativne.]': 'score_activities',
+    'Iskustvo sa radionicom: ocenite u kojoj meri se slažete sa sledećim izjavama. [Trajanje radionice je bilo odgovarajuće.]': 'score_duration',
+    'Iskustvo sa radionicom: ocenite u kojoj meri se slažete sa sledećim izjavama. [Materijali i oprema su dobro funkcionisali.]': 'score_equipment',
+    'Iskustvo sa radionicom: ocenite u kojoj meri se slažete sa sledećim izjavama. [Nakon radionice imam bolje razumevanje ove teme.]': 'score_learning',
+    'Koliko ste zadovoljni radionicom u kojoj ste učestvovali? [Koliko ste ukupno zadovoljni radionicom?]': 'score_overall',
+    'Kolika je verovatnoća da biste preporučili ovu radionicu? [Kolika je verovatnoća da biste preporučili ovu radionicu prijatelju ili kolegi?]': 'score_recommend',
+    'Kolika je verovatnoća da biste preporučili ovu radionicu? [Kolika je verovatnoća da biste ponovo prisustvovali nekoj budućoj Backyard Brains radionici?]': 'score_return',
+    'Šta vam se najviše svidelo na radionici?': 'liked_most',
+    'Šta biste poboljšali ili promenili?': 'improvement',
+    'Koje biste teme voleli da vidite na budućim radionicama?': 'future_topics'
+}
+
+LIKERT_SCALE_MAP = {
+    # Agreement scale
+    "Uopšte se ne slažem": 1,
+    "Ne slažem se": 2,
+    "Niti se slažem, niti se ne slažem": 3,
+    "Slažem se": 4,
+    "U potpunosti se slažem": 5,
+    # Likelihood scale
+    "Nema šanse": 1,
+    "Male šanse": 2,
+    "Nisam siguran": 3,
+    "Veoma verovatno": 4,
+    "Sigurno": 5,
+    # Satisfaction scale
+    "Uopšte nisam zadovoljan/na": 1,
+    "Nisam zadovoljan/na": 2,
+    "Niti sam zadovoljan/na, niti sam nezadovoljan/na": 3,
+    "Zadovoljan/na sam": 4,
+    "U potpunosti sam zadovoljan/na": 5,
+    "Uopšte nisam zadovoljan": 1,
+    "Nisam zadovoljan": 2,
+    "Zadovoljan": 4,
+    "U potpunosti zadovoljan": 5,
+    "Uopšte nisam zadovoljna": 1,
+    "Nisam zadovoljna": 2,
+    "Zadovoljna": 4,
+    "U potpunosti zadovoljna": 5
+}
 
 async def workshop_read_feedback(params: Dict[str, Any]):
     """Read feedback from Google Sheets (linked to Google Forms)."""
     spreadsheet_id = params.get('spreadsheet_id')
-    range_name = params.get('range_name', 'Form Responses 1!A:Z')
+    range_name = params.get('range_name') # No default, we detect if empty
     workshop_id = params.get('workshop_id')
     workshop_title = params.get('workshop_title')
+    normalize = params.get('normalize', True)
     
     if not spreadsheet_id:
         return {"error": "spreadsheet_id is required for feedback retrieval."}
@@ -1228,11 +1292,22 @@ async def workshop_read_feedback(params: Dict[str, Any]):
 
     try:
         service = build('sheets', 'v4', credentials=creds)
+        
+        # If no range_name is provided, find the first sheet title
+        if not range_name:
+            spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            sheets = spreadsheet.get('sheets', [])
+            if not sheets:
+                return {"error": "No sheets found in spreadsheet."}
+            first_sheet_title = sheets[0].get('properties', {}).get('title')
+            range_name = f"{first_sheet_title}!A:Z"
+            logger.info(f"Detected sheet name: {first_sheet_title} for spreadsheet {spreadsheet_id}")
+
         result = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
         values = result.get('values', [])
         
         if not values:
-            return {"feedback": [], "message": "No data found."}
+            return {"feedback": [], "message": f"No data found in {range_name}."}
             
         headers = values[0]
         rows = values[1:]
@@ -1253,15 +1328,33 @@ async def workshop_read_feedback(params: Dict[str, Any]):
         for row in rows:
             entry = {}
             for i, header in enumerate(headers):
-                entry[header] = row[i] if i < len(row) else ""
+                val = row[i] if i < len(row) else ""
+                
+                if normalize:
+                    # Map header name
+                    clean_key = FEEDBACK_HEADER_MAP.get(header, header)
+                    
+                    # Try to convert value if it's a known Likert scale string
+                    if isinstance(val, str) and val.strip() in LIKERT_SCALE_MAP:
+                        val = LIKERT_SCALE_MAP[val.strip()]
+                    
+                    entry[clean_key] = val
+                else:
+                    entry[header] = val
             
             # Simple matching: if workshop_title is provided, look for it in the row
             if workshop_title:
                 match = False
-                for val in entry.values():
-                    if str(workshop_title).lower() in str(val).lower():
-                        match = True
-                        break
+                # If normalized, workshop_name key is preferred for matching
+                w_name = entry.get('workshop_name', "") if normalize else entry.get('Kojoj radionici ste prisustvovali?', "")
+                if w_name and str(workshop_title).lower() in str(w_name).lower():
+                    match = True
+                else:
+                    # Fallback to general substring match across all values
+                    for val in entry.values():
+                        if str(workshop_title).lower() in str(val).lower():
+                            match = True
+                            break
                 if not match:
                     continue
                     
@@ -1269,8 +1362,11 @@ async def workshop_read_feedback(params: Dict[str, Any]):
             
         return {"feedback": feedback_list, "count": len(feedback_list)}
     except Exception as e:
+        error_msg = str(e)
+        if "404" in error_msg:
+            error_msg = f"Spreadsheet not found (404). Check if ID {spreadsheet_id} is correct and shared with the authorized account."
         logger.error(f"Error reading feedback from Google Sheets: {e}")
-        return {"error": str(e)}
+        return {"error": error_msg}
 
 @router.get("/google/login")
 async def workshop_google_auth_login(request: Request):
