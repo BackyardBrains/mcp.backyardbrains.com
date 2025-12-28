@@ -1666,7 +1666,7 @@ def _list_workshop_tools():
                         "range_name": { "type": "string", "description": "Range to read (e.g. 'Sheet1!A:Z'). If omitted, the first sheet tab will be detected automatically." },
                         "workshop_id": { "type": "number", "description": "Filter by workshop ID" },
                         "workshop_title": { "type": "string", "description": "Filter by workshop title (substring match)" },
-                        "normalize": { "type": "boolean", "description": "Map headers to English keys and convert scores to numbers", "default": true }
+                        "normalize": { "type": "boolean", "description": "Map headers to English keys and convert scores to numbers", "default": True }
                     },
                     "required": ["spreadsheet_id"]
                 }
