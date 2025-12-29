@@ -1201,10 +1201,11 @@ def get_entry_by_id(entry_id):
     finally:
         conn.close()
 
-async def workshop_read_instructors(params: Dict[str, Any]):
+async def workshop_read_instructors_interest(params: Dict[str, Any]):
     """Read instructor interest forms from Google Sheets."""
-    spreadsheet_id = params.get('spreadsheet_id', '1wSV_ilS06z2eeiIB9_aIbGSBuCNTkqqgiwetKIX-0co')
+    spreadsheet_id = params.get('spreadsheet_id', '1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw')
     range_name = params.get('range_name') # No default, we detect if empty
+    normalize = params.get('normalize', True)
     
     creds = get_google_credentials()
     if not creds:
@@ -1239,7 +1240,14 @@ async def workshop_read_instructors(params: Dict[str, Any]):
         for row in rows:
             instructor = {}
             for i, header in enumerate(headers):
-                instructor[header] = row[i] if i < len(row) else ""
+                val = row[i] if i < len(row) else ""
+                
+                if normalize:
+                    key = SPEAKER_INTEREST_FIELD_MAP.get(header, header)
+                else:
+                    key = header
+                    
+                instructor[key] = val
             instructors.append(instructor)
             
         return {"instructors": instructors, "count": len(instructors)}
@@ -1249,6 +1257,32 @@ async def workshop_read_instructors(params: Dict[str, Any]):
             error_msg = f"Spreadsheet not found (404). Check if ID {spreadsheet_id} is correct and shared with the authorized account."
         logger.error(f"Error reading instructors from Google Sheets: {e}")
         return {"error": error_msg}
+
+SPEAKER_INTEREST_FIELD_MAP = {
+    'Timestamp': 'timestamp',
+    'Ime i prezime': 'name',
+    'Email adresa': 'email',
+    'Broj telefona (molimo Vas da dodate i pozivni broj zemlje)': 'phone',
+    'Adresa i zemlja prebivališta': 'address',
+    'Kratka biografija (za promotivne materijale)': 'bio',
+    'Željeni način plaćanja': 'payment_method',
+    'Ime vlasnika računa': 'account_owner',
+    'Ime banke': 'bank_name',
+    'Adresa banke': 'bank_address',
+    'Broj računa / IBAN': 'iban',
+    'SWIFT/BIC Code': 'swift',
+    'Valuta SWIFT transfera (RSD, USD, EUR...)': 'currency',
+    'Broj rute (za banke u SAD-u ili posredničke banke)': 'routing_number',
+    'Podaci o posredničkoj banci (ako je primenjivo)': 'intermediary_bank',
+    'Email adresa naloga (za prenos uplate)': 'payment_email',
+    'Raspoloživi termini / željeno vreme za predavanje': 'availability',
+    'Tema ili naziv radionice': 'workshop_topic',
+    'Kratak opis radionice': 'workshop_description',
+    'Tehnički ili putni zahtevi (ako ih imate)? Navedite detalje i iznose i kontaktiracemo Vas radi daljeg dogovora.': 'requirements',
+    'Dajem saglasnost da se moji podaci koriste za potrebe plaćanja i organizacije događaja.': 'consent',
+    'Ukoliko zelite, molimo Vas da priložite fotografiju koju možemo da koristimo u promotivne svrhe:': 'photo_url',
+    'Opišite ukratko interaktivnu komponentu Vaše radionice.': 'interactive_component'
+}
 
 FEEDBACK_HEADER_MAP = {
     'Timestamp': 'timestamp',
@@ -1714,13 +1748,14 @@ def _list_workshop_tools():
                 "inputSchema": {"type": "object", "properties": {}}
             },
             {
-                "name": "workshop_read_instructors",
+                "name": "workshop_read_instructors_interest",
                 "description": "Read instructor interest forms from Google Sheets (OAuth required)",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID", "default": "1wSV_ilS06z2eeiIB9_aIbGSBuCNTkqqgiwetKIX-0co" },
-                        "range_name": { "type": "string", "description": "Range to read (e.g. 'Sheet1!A:Z'). If omitted, the first sheet tab will be detected automatically." }
+                        "spreadsheet_id": { "type": "string", "description": "Google Spreadsheet ID", "default": "1K_Wdox8uD26_hO7ZqBokS1EztWsHNn4Z-spiHdXDiSw" },
+                        "range_name": { "type": "string", "description": "Range to read (e.g. 'Sheet1!A:Z'). If omitted, the first sheet tab will be detected automatically." },
+                        "normalize": { "type": "boolean", "description": "Whether to normalize Serbian headers to English keys.", "default": True }
                     }
                 }
             },
@@ -1839,8 +1874,8 @@ async def handle_workshop_tool_call(name: str, args: Dict, auth_payload: Dict):
             return {"content": [{"type": "text", "text": "Polylang discovery cache flushed. Note: You may also need to flush WordPress object cache (e.g., via WP Rocket or Redis) for UI changes to reflect immediately."}]}
             
         # Google Sheets tools
-        elif name == "workshop_read_instructors":
-            result = await workshop_read_instructors(args)
+        elif name == "workshop_read_instructors_interest":
+            result = await workshop_read_instructors_interest(args)
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
         elif name == "workshop_read_feedback":
             result = await workshop_read_feedback(args)
