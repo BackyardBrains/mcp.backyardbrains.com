@@ -160,6 +160,59 @@ def _deserialize_php(value: Any) -> Any:
 # Automatic language detection removed as per user requirement.
 # Users must explicitly provide the 'language' parameter ('en' or 'sr').
 
+SERBIAN_TRANSLIT_MAP = {
+    # Cyrillic to Latin
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'ђ': 'dj', 'е': 'e', 'ж': 'z', 'з': 'z', 'и': 'i',
+    'ј': 'j', 'к': 'k', 'л': 'l', 'љ': 'lj', 'м': 'm', 'н': 'n', 'њ': 'nj', 'о': 'o', 'п': 'p', 'р': 'r',
+    'с': 's', 'т': 't', 'ћ': 'c', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'c', 'ч': 'c', 'џ': 'dz', 'ш': 's',
+    'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Ђ': 'Dj', 'Е': 'E', 'Ж': 'Z', 'З': 'Z', 'И': 'I',
+    'Ј': 'J', 'К': 'K', 'Л': 'L', 'Љ': 'Lj', 'М': 'M', 'Н': 'N', 'Њ': 'Nj', 'О': 'O', 'П': 'P', 'Р': 'R',
+    'С': 'S', 'Т': 'T', 'Ћ': 'C', 'У': 'U', 'Ф': 'F', 'Х': 'H', 'Ц': 'C', 'Ч': 'C', 'Џ': 'Dz', 'Ш': 'S',
+    # Latin with diacritics
+    'č': 'c', 'ć': 'c', 'ž': 'z', 'š': 's', 'đ': 'dj',
+    'Č': 'C', 'Ć': 'C', 'Ž': 'Z', 'Š': 'S', 'Đ': 'Dj'
+}
+
+def transliterate_serbian(text: str) -> str:
+    """Convert Serbian Cyrillic and Latin diacritics to ASCII."""
+    return "".join(SERBIAN_TRANSLIT_MAP.get(c, c) for c in text)
+
+def generate_unique_slug(title: str, cursor, current_id: Optional[int] = None, manual_slug: Optional[str] = None) -> str:
+    """Generate a unique and URL-friendly slug for a workshop."""
+    import re
+    
+    # 1. Base slug from manual_slug or title
+    base = manual_slug if manual_slug else title
+    
+    # 2. Transliterate Serbian characters
+    base = transliterate_serbian(base)
+    
+    # 3. Sanitize (lowercase, strip tags, replace non-alphanumeric with dashes)
+    slug = base.lower()
+    slug = re.sub(r'<[^>]*>', '', slug) # Simple tag removal
+    slug = re.sub(r'[^a-z0-9]+', '-', slug).strip('-')
+    
+    if not slug:
+        slug = 'workshop'
+    
+    # 4. Check for uniqueness in wp_posts
+    suffix = 1
+    original_slug = slug
+    while True:
+        check_sql = "SELECT ID FROM wp_posts WHERE post_name = %s AND post_type = 'workshop'"
+        params = [slug]
+        if current_id:
+            check_sql += " AND ID != %s"
+            params.append(current_id)
+        
+        cursor.execute(check_sql, tuple(params))
+        if not cursor.fetchone():
+            return slug
+        
+        suffix += 1
+        slug = f"{original_slug}-{suffix}"
+
+
 def serialize_gallery_ids(ids: List[int]) -> str:
     """Serialize array of IDs to PHP format for gallery field."""
     if not ids:
@@ -724,23 +777,25 @@ async def workshop_create(params: Dict[str, Any]):
     featured_image_id = params.get('featured_image_id')
     audience = params.get('audience', [])
 
-    slug = title.lower().replace(' ', '-').replace('/', '-')
-
-    sql_post = """
-        INSERT INTO wp_posts (
-          post_author, post_date, post_date_gmt, post_content, post_title,
-          post_excerpt, post_status, comment_status, ping_status, post_name,
-          post_modified, post_modified_gmt, post_parent, guid, menu_order, post_type,
-          to_ping, pinged, post_content_filtered
-        ) VALUES (
-          1, NOW(), UTC_TIMESTAMP(), %s, %s, %s, %s, 'closed', 'closed', %s,
-          NOW(), UTC_TIMESTAMP(), 0, '', 0, 'workshop', '', '', ''
-        )
-    """
-
+    manual_slug = params.get('slug')
+    # Generate/Validate slug
     conn = get_db_connection()
     try:
         cursor = conn.cursor(dictionary=True)
+        slug = generate_unique_slug(title, cursor, manual_slug=manual_slug)
+
+        sql_post = """
+            INSERT INTO wp_posts (
+              post_author, post_date, post_date_gmt, post_content, post_title,
+              post_excerpt, post_status, comment_status, ping_status, post_name,
+              post_modified, post_modified_gmt, post_parent, guid, menu_order, post_type,
+              to_ping, pinged, post_content_filtered
+            ) VALUES (
+              1, NOW(), UTC_TIMESTAMP(), %s, %s, %s, %s, 'closed', 'closed', %s,
+              NOW(), UTC_TIMESTAMP(), 0, '', 0, 'workshop', '', '', ''
+            )
+        """
+
         cursor.execute(sql_post, (post_content, title, post_excerpt, status, slug))
         new_id = cursor.lastrowid
 
@@ -809,22 +864,35 @@ async def workshop_update(params: Dict[str, Any]):
     if 'status' in params:
         updates.append("post_status = %s")
         post_params.append(params['status'])
-    if 'post_content' in params:
-        updates.append("post_content = %s")
-        post_params.append(params['post_content'])
-    if 'post_excerpt' in params:
-        updates.append("post_excerpt = %s")
-        post_params.append(params['post_excerpt'])
     
-    if updates:
-        updates.append("post_modified = NOW(), post_modified_gmt = UTC_TIMESTAMP()")
-        sql_update = f"UPDATE wp_posts SET {', '.join(updates)} WHERE ID = %s AND post_type = 'workshop'"
-        post_params.append(wid)
-        
     conn = get_db_connection()
     try:
         cursor = conn.cursor(dictionary=True)
+
+        if 'slug' in params or 'title' in params:
+            # Re-generate or validate slug if title or slug changes
+            new_title = params.get('title')
+            if not new_title:
+                # Need current title to generate slug if not provided
+                cursor.execute("SELECT post_title FROM wp_posts WHERE ID = %s", (wid,))
+                res = cursor.fetchone()
+                new_title = res['post_title'] if res else "workshop"
+            
+            slug = generate_unique_slug(new_title, cursor, current_id=wid, manual_slug=params.get('slug'))
+            updates.append("post_name = %s")
+            post_params.append(slug)
+
+        if 'post_content' in params:
+            updates.append("post_content = %s")
+            post_params.append(params['post_content'])
+        if 'post_excerpt' in params:
+            updates.append("post_excerpt = %s")
+            post_params.append(params['post_excerpt'])
+        
         if updates:
+            updates.append("post_modified = NOW(), post_modified_gmt = UTC_TIMESTAMP()")
+            sql_update = f"UPDATE wp_posts SET {', '.join(updates)} WHERE ID = %s AND post_type = 'workshop'"
+            post_params.append(wid)
             cursor.execute(sql_update, tuple(post_params))
 
         meta_keys = {
@@ -1611,7 +1679,8 @@ def _list_workshop_tools():
                         "audience": { "type": "array", "items": { "type": "string" }, "description": "Audience badges. Available: 'For Everyone', 'High Schoolers', 'Mladi profesionalci', 'Srednjoškolci', 'Studenti', 'Students', 'Young Professionals', 'Za sve'" },
                         "language": { "type": "string", "enum": ["en", "sr"], "description": "Explicit language code" },
                         "language_badge": { "type": "string", "description": "Language badge. Available: 'English', 'Serbian', 'Srpski', 'Engleski'" },
-                        "translation_of": { "type": "number", "description": "ID of the existing workshop to link as a translation" }
+                        "translation_of": { "type": "number", "description": "ID of the existing workshop to link as a translation" },
+                        "slug": { "type": "string", "description": "Manually override the URL slug. It will be sanitized and checked for uniqueness." }
                     },
                     "required": ["title", "language", "start_date", "description", "location", "about_left", "about_right"]
                 }
@@ -1638,7 +1707,8 @@ def _list_workshop_tools():
                         "gallery_ids": { "type": "array", "items": { "type": "number" } },
                         "audience": { "type": "array", "items": { "type": "string" }, "description": "Audience badges. Available: 'For Everyone', 'High Schoolers', 'Mladi profesionalci', 'Srednjoškolci', 'Studenti', 'Students', 'Young Professionals', 'Za sve'" },
                         "language_badge": { "type": "string", "description": "Language badge. Available: 'English', 'Serbian', 'Srpski', 'Engleski'" },
-                        "translation_of": { "type": "number", "description": "ID of the existing workshop to link as a translation" }
+                        "translation_of": { "type": "number", "description": "ID of the existing workshop to link as a translation" },
+                        "slug": { "type": "string", "description": "Update the URL slug. It will be sanitized and checked for uniqueness." }
                     },
                     "required": ["id"]
                 }
