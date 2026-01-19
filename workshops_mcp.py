@@ -1606,6 +1606,92 @@ async def workshop_google_auth_callback(request: Request, code: str, state: str 
     
     return Response(content="<h1>Google Sheets Authorized!</h1><p>You can now close this window and return to the chat.</p>", media_type="text/html")
 
+async def workshop_planner(params: Dict[str, Any]):
+    """Plan upcoming workshops for Monday, Wednesday, and Thursday nights."""
+    # Support both 'days' and 'lookahead' for consistency with user comments
+    days = params.get('days') or params.get('lookahead', 30)
+    if not isinstance(days, int):
+        try:
+            days = int(days)
+        except (ValueError, TypeError):
+            days = 30
+            
+    from datetime import timedelta, date
+    
+    today = date.today()
+    end_date = today + timedelta(days=days)
+    
+    # Days of week: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+    valid_days = [0, 2, 3] # Monday, Wednesday, Thursday
+    
+    planner = []
+    current = today
+    while current <= end_date:
+        if current.weekday() in valid_days:
+            planner.append({
+                "date": current.strftime("%Y-%m-%d"),
+                "day": current.strftime("%A"),
+                "status": "open",
+                "title": None,
+                "speaker": None
+            })
+        current += timedelta(days=1)
+        
+    if not planner:
+        return {"planner": []}
+        
+    # Fetch workshops for the range
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        sql = """
+            SELECT 
+                p.ID, p.post_title,
+                MAX(CASE WHEN pm.meta_key = 'start_date' THEN pm.meta_value END) as start_date,
+                MAX(CASE WHEN pm.meta_key = 'about_right' THEN pm.meta_value END) as about_right
+            FROM wp_posts p
+            LEFT JOIN wp_postmeta pm ON p.ID = pm.post_id
+            WHERE p.post_type = 'workshop' AND p.post_status = 'publish'
+            GROUP BY p.ID
+            HAVING start_date >= %s AND start_date <= %s
+        """
+        start_bound = planner[0]["date"] + " 00:00:00"
+        end_bound = planner[-1]["date"] + " 23:59:59"
+        
+        cursor.execute(sql, (start_bound, end_bound))
+        workshops = cursor.fetchall()
+        
+        # Map workshops to planner slots
+        import re
+        for w in workshops:
+            w_start = w['start_date']
+            if not w_start: continue
+            
+            w_date_str = w_start.split(' ')[0]
+            
+            for slot in planner:
+                if slot['date'] == w_date_str:
+                    slot['status'] = 'filled'
+                    slot['title'] = w['post_title']
+                    
+                    # Try to extract speaker from about_right
+                    about = w.get('about_right', '')
+                    if about:
+                        # Improved extraction: look for <strong> tags, but exclude common headers
+                        matches = re.findall(r'<strong>(.*?)</strong>', about, re.DOTALL)
+                        if matches:
+                            for match in matches:
+                                cleaned = match.replace(':', '').strip()
+                                if cleaned.lower() not in ['about the instructor', 'about the instructors', 'instructors', 'instructor', 'o predavaču', 'o predavačima', '']:
+                                    slot['speaker'] = cleaned
+                                    break
+                    
+                    break
+                    
+        return {"planner": planner, "count": len(planner)}
+    finally:
+        conn.close()
+
 def execute_query(query: str, params: tuple = None):
     conn = get_db_connection()
     try:
@@ -1848,6 +1934,16 @@ def _list_workshop_tools():
                 "name": "workshop_google_account",
                 "description": "Get identity of the currently authorized Google account",
                 "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "workshop_planner",
+                "description": "Plan upcoming workshops. See what dates (M, W, Th) are filled or open for the next X days.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "days": { "type": "number", "description": "Number of days to look ahead from today", "default": 30 }
+                    }
+                }
             }
         ]
     }
@@ -1887,6 +1983,9 @@ async def handle_workshop_tool_call(name: str, args: Dict, auth_payload: Dict):
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
         elif name == "workshop_registrations":
             result = await workshop_registrations(args)
+            return {"content": [{"type": "text", "text": safe_dumps(result)}]}
+        elif name == "workshop_planner":
+            result = await workshop_planner(args)
             return {"content": [{"type": "text", "text": safe_dumps(result)}]}
             
         # Generic tool
