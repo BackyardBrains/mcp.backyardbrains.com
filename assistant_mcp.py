@@ -9,9 +9,11 @@ import os
 import json
 import logging
 import base64
+import secrets
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request, Response, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -450,7 +452,174 @@ def clear_client_cache(email: str = None):
 
 
 # =============================================================================
-# OAuth Endpoints
+# OAuth 2.0 Authorization Server (for Claude MCP discovery)
+# =============================================================================
+
+# Temporary storage for OAuth authorization codes (code -> {email, expires, code_challenge, redirect_uri})
+_oauth_codes: Dict[str, Dict[str, Any]] = {}
+# Pending OAuth requests (state -> {redirect_uri, state, code_challenge, code_challenge_method})
+_pending_oauth: Dict[str, Dict[str, Any]] = {}
+
+OAUTH_CODE_EXPIRY_SECONDS = 300  # 5 minutes
+
+
+def _cleanup_expired_codes():
+    """Remove expired authorization codes."""
+    now = datetime.now(timezone.utc).timestamp()
+    expired = [code for code, data in _oauth_codes.items() if data.get("expires", 0) < now]
+    for code in expired:
+        del _oauth_codes[code]
+    expired_pending = [state for state, data in _pending_oauth.items() if data.get("expires", 0) < now]
+    for state in expired_pending:
+        del _pending_oauth[state]
+
+
+@router.get("/oauth/authorize")
+async def oauth_authorize(
+    request: Request,
+    client_id: str = None,
+    redirect_uri: str = None,
+    response_type: str = "code",
+    state: str = None,
+    code_challenge: str = None,
+    code_challenge_method: str = None,
+    scope: str = None,
+):
+    """
+    OAuth 2.0 Authorization endpoint.
+    Redirects to Google OAuth, then back to the client with an auth code.
+    """
+    _cleanup_expired_codes()
+    
+    if response_type != "code":
+        raise HTTPException(status_code=400, detail="Only response_type=code is supported")
+    
+    if not redirect_uri:
+        raise HTTPException(status_code=400, detail="redirect_uri is required")
+    
+    # Generate our own state to track this OAuth request
+    internal_state = secrets.token_urlsafe(32)
+    
+    # Store the pending OAuth request
+    _pending_oauth[internal_state] = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "client_state": state,  # The client's state to return
+        "code_challenge": code_challenge,
+        "code_challenge_method": code_challenge_method,
+        "expires": datetime.now(timezone.utc).timestamp() + OAUTH_CODE_EXPIRY_SECONDS,
+    }
+    
+    # Store internal state in session for the Google callback
+    request.session["oauth_internal_state"] = internal_state
+    
+    # Redirect to Google OAuth
+    google_redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/assistant/google/callback"
+    
+    if not os.path.exists(ASSISTANT_GOOGLE_CREDENTIALS_FILE):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Google credentials file not found: {ASSISTANT_GOOGLE_CREDENTIALS_FILE}"
+        )
+    
+    flow = Flow.from_client_secrets_file(
+        ASSISTANT_GOOGLE_CREDENTIALS_FILE,
+        scopes=ASSISTANT_GOOGLE_SCOPES,
+        redirect_uri=google_redirect_uri
+    )
+    
+    authorization_url, google_state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent'
+    )
+    
+    # Store Google state in session
+    request.session['oauth_state'] = google_state
+    
+    return RedirectResponse(url=authorization_url)
+
+
+@router.post("/oauth/token")
+async def oauth_token(request: Request):
+    """
+    OAuth 2.0 Token endpoint.
+    Exchanges authorization code for access token (our JWT).
+    """
+    _cleanup_expired_codes()
+    
+    # Parse form data or JSON
+    content_type = request.headers.get("content-type", "")
+    if "application/x-www-form-urlencoded" in content_type:
+        form_data = await request.form()
+        data = dict(form_data)
+    elif "application/json" in content_type:
+        data = await request.json()
+    else:
+        # Try form data first
+        try:
+            form_data = await request.form()
+            data = dict(form_data)
+        except:
+            data = await request.json()
+    
+    grant_type = data.get("grant_type")
+    code = data.get("code")
+    redirect_uri = data.get("redirect_uri")
+    code_verifier = data.get("code_verifier")
+    
+    if grant_type != "authorization_code":
+        return {"error": "unsupported_grant_type", "error_description": "Only authorization_code is supported"}
+    
+    if not code:
+        return {"error": "invalid_request", "error_description": "code is required"}
+    
+    # Look up the authorization code
+    code_data = _oauth_codes.get(code)
+    if not code_data:
+        return {"error": "invalid_grant", "error_description": "Invalid or expired authorization code"}
+    
+    # Check expiration
+    if code_data.get("expires", 0) < datetime.now(timezone.utc).timestamp():
+        del _oauth_codes[code]
+        return {"error": "invalid_grant", "error_description": "Authorization code expired"}
+    
+    # Verify PKCE if code_challenge was provided
+    if code_data.get("code_challenge"):
+        if not code_verifier:
+            return {"error": "invalid_request", "error_description": "code_verifier is required"}
+        
+        # Verify code_verifier against code_challenge
+        import hashlib
+        import base64
+        if code_data.get("code_challenge_method") == "S256":
+            computed = base64.urlsafe_b64encode(
+                hashlib.sha256(code_verifier.encode()).digest()
+            ).rstrip(b'=').decode()
+        else:
+            computed = code_verifier
+        
+        if computed != code_data["code_challenge"]:
+            return {"error": "invalid_grant", "error_description": "code_verifier mismatch"}
+    
+    # Delete the used code
+    email = code_data["email"]
+    del _oauth_codes[code]
+    
+    # Generate our JWT
+    access_token = create_assistant_token(email)
+    
+    logger.info(f"OAuth token issued for {email}")
+    
+    return {
+        "access_token": access_token,
+        "token_type": "Bearer",
+        "expires_in": 30 * 24 * 60 * 60,  # 30 days in seconds
+    }
+
+
+# =============================================================================
+# Google OAuth Endpoints
 # =============================================================================
 
 @router.get("/")
@@ -546,10 +715,36 @@ async def assistant_google_callback(request: Request, code: str, state: str = No
     save_user_tokens(email, token_data)
     clear_client_cache(email)
     
-    # Issue our own JWT for MCP authentication
-    mcp_token = create_assistant_token(email)
-    
     logger.info(f"Google OAuth completed for {email}")
+    
+    # Check if this is part of an OAuth 2.0 flow (from Claude)
+    internal_state = request.session.get("oauth_internal_state")
+    if internal_state and internal_state in _pending_oauth:
+        pending = _pending_oauth.pop(internal_state)
+        request.session.pop("oauth_internal_state", None)
+        
+        # Generate authorization code
+        auth_code = secrets.token_urlsafe(32)
+        _oauth_codes[auth_code] = {
+            "email": email,
+            "expires": datetime.now(timezone.utc).timestamp() + OAUTH_CODE_EXPIRY_SECONDS,
+            "code_challenge": pending.get("code_challenge"),
+            "code_challenge_method": pending.get("code_challenge_method"),
+            "redirect_uri": pending.get("redirect_uri"),
+        }
+        
+        # Redirect back to client with authorization code
+        client_redirect = pending["redirect_uri"]
+        params = {"code": auth_code}
+        if pending.get("client_state"):
+            params["state"] = pending["client_state"]
+        
+        redirect_url = f"{client_redirect}{'&' if '?' in client_redirect else '?'}{urlencode(params)}"
+        logger.info(f"OAuth flow: redirecting to client with auth code for {email}")
+        return RedirectResponse(url=redirect_url)
+    
+    # Direct login flow - show token page
+    mcp_token = create_assistant_token(email)
     
     return HTMLResponse(content=f"""
         <!DOCTYPE html>
