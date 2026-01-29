@@ -1713,7 +1713,7 @@ def _list_workshop_tools():
             # Workshop tools
             {
                 "name": "workshop_list",
-                "description": "List all workshops with optional filtering by status, language, and date",
+                "description": "List all workshops. Note: Workshops are always listed in pairs (En and Rs) representing 1 workshop; look for the language badge. We provide workshops 3 nights a week (M, W, Th). Always check today's date to understand the year/month context.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1812,7 +1812,7 @@ def _list_workshop_tools():
             },
             {
                 "name": "workshop_registrations",
-                "description": "Get registration entries for a workshop",
+                "description": "Get registration entries for a workshop. When adding persons as subscribers based on these registrations (e.g. to MailerLite), add 'Serbia' as country and include phone if available.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1937,7 +1937,7 @@ def _list_workshop_tools():
             },
             {
                 "name": "workshop_planner",
-                "description": "Plan upcoming workshops. See what dates (M, W, Th) are filled or open for the next X days.",
+                "description": "Plan upcoming workshops. Note: Workshops are held M, W, Th. Use this to see what dates are filled or open for the next X days. Always verify day-of-week calculations; if uncertain, ask the user.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
