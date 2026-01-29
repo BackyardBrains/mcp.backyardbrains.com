@@ -326,8 +326,12 @@ class AssistantGoogleClient:
         return results.get('files', [])
     
     def get_doc_by_name(self, folder_name: str, doc_name: str) -> Optional[str]:
-        """Get the ID of a doc by name within a folder."""
-        folder_id = self.get_subfolder_id(folder_name)
+        """Get the ID of a doc by name within a folder (or 'base' for root)."""
+        if folder_name == "base":
+            folder_id = self.root_folder_id
+        else:
+            folder_id = self.get_subfolder_id(folder_name)
+            
         if not folder_id:
             return None
         
@@ -421,6 +425,26 @@ class AssistantGoogleClient:
         ).execute()
         
         return True
+
+    def create_doc(self, folder_name: str, title: str, content: Optional[str] = None) -> str:
+        """Create a new Google Doc in a subfolder."""
+        folder_id = self.get_subfolder_id(folder_name)
+        if not folder_id:
+            raise ValueError(f"Folder '{folder_name}' not found.")
+
+        file_metadata = {
+            'name': title,
+            'mimeType': 'application/vnd.google-apps.document',
+            'parents': [folder_id]
+        }
+        
+        doc = self.drive.files().create(body=file_metadata, fields='id').execute()
+        doc_id = doc.get('id')
+        
+        if content:
+            self.write_doc_content(doc_id, content)
+            
+        return doc_id
     
     def read_file_content(self, file_id: str) -> str:
         """Read content from a file (handles Google Docs and other formats)."""
@@ -695,6 +719,18 @@ def _list_assistant_tools():
                 }
             },
             {
+                "name": "assistant_create_project",
+                "description": "[WRITE] Create a new project document in the projects/ folder.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Project title (will be the Doc name)"},
+                        "content": {"type": "string", "description": "Initial markdown content (optional)"}
+                    },
+                    "required": ["title"]
+                }
+            },
+            {
                 "name": "assistant_append_log",
                 "description": "[APPEND] Add an entry to the activity log.",
                 "inputSchema": {
@@ -907,16 +943,16 @@ async def handle_assistant_tool_call(name: str, args: Dict[str, Any], user_email
         # Drive Tools - Read
         # ---------------------------------------------------------------------
         if name == "assistant_get_rules":
-            doc_id = client.get_doc_by_name("rules", "rules")
+            doc_id = client.get_doc_by_name("base", "rules")
             if not doc_id:
-                return {"content": [{"type": "text", "text": "No rules document found. Create a doc named 'rules' in the rules/ folder."}]}
+                return {"content": [{"type": "text", "text": "No rules document found. Create a doc named 'rules' in your root folder."}]}
             content = client.read_doc_content(doc_id)
             return {"content": [{"type": "text", "text": content}]}
         
         elif name == "assistant_get_priorities":
-            doc_id = client.get_doc_by_name("priorities", "priorities")
+            doc_id = client.get_doc_by_name("base", "priorities")
             if not doc_id:
-                return {"content": [{"type": "text", "text": "No priorities document found."}]}
+                return {"content": [{"type": "text", "text": "No priorities document found in root folder."}]}
             content = client.read_doc_content(doc_id)
             return {"content": [{"type": "text", "text": content}]}
         
@@ -971,6 +1007,16 @@ async def handle_assistant_tool_call(name: str, args: Dict[str, Any], user_email
             
             client.write_doc_content(project_id, content)
             return {"content": [{"type": "text", "text": "Project updated successfully."}]}
+
+        elif name == "assistant_create_project":
+            title = args.get("title")
+            content = args.get("content")
+            
+            try:
+                doc_id = client.create_doc("projects", title, content)
+                return {"content": [{"type": "text", "text": f"Project '{title}' created successfully. Doc ID: {doc_id}"}]}
+            except Exception as e:
+                return {"isError": True, "content": [{"type": "text", "text": f"Failed to create project: {e}"}]}
         
         elif name == "assistant_append_log":
             entry = args.get("entry", "")
@@ -998,13 +1044,13 @@ async def handle_assistant_tool_call(name: str, args: Dict[str, Any], user_email
                 # Generate new session ID
                 session_id = f"sess_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
             
-            doc_id = client.get_doc_by_name("logs", "sessions")
+            doc_id = client.get_doc_by_name("base", "sessions")
             if not doc_id:
                 # Try alternative name
-                doc_id = client.get_doc_by_name("logs", "session_log")
+                doc_id = client.get_doc_by_name("base", "session_log")
             
             if not doc_id:
-                return {"isError": True, "content": [{"type": "text", "text": "Sessions log not found. Create 'sessions' doc in logs/ folder."}]}
+                return {"isError": True, "content": [{"type": "text", "text": "Sessions log not found. Create 'sessions' doc in your root folder."}]}
             
             log_entry = f"\n| {session_id} | {timestamp} | {user_email.split('@')[0]} | {summary} | {status} |"
             client.append_to_doc(doc_id, log_entry)
