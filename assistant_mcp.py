@@ -520,6 +520,10 @@ def assistant_index():
 def assistant_healthz():
     return {"status": "ok", "service": "assistant"}
 
+@router.get("/favicon.ico")
+async def assistant_favicon():
+    return Response(status_code=204)
+
 
 @router.get("/google/login")
 async def assistant_google_login(request: Request):
@@ -1416,3 +1420,74 @@ async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require
     
     else:
         return _rpc_error(rpc_id, -32601, f"Method {method} not found")
+
+
+@router.post("/tool/{name}")
+async def handle_assistant_rest_tool_call(name: str, body: Dict[str, Any], payload: Dict = Depends(require_assistant_auth)):
+    """REST endpoint for ChatGPT Actions to call specific tools."""
+    user_email = payload.get("email")
+    if not user_email:
+        raise HTTPException(status_code=401, detail="User email not found in token")
+    
+    # Handle both tool(args) and tool(**args) patterns
+    result = await handle_assistant_tool_call(name, body, user_email)
+    return result
+
+
+@router.get("/openai.json")
+async def assistant_openapi_spec(request: Request):
+    """Generate ChatGPT-compatible OpenAPI spec for Assistant tools."""
+    # Use the request's actual host for the server URL
+    base_url = str(request.base_url).rstrip("/")
+    if "https" not in base_url and "localhost" not in base_url:
+        base_url = base_url.replace("http://", "https://")
+    
+    tools = _list_assistant_tools()["tools"]
+    paths = {}
+    
+    for tool in tools:
+        # Construct OpenAPI path for each tool
+        paths[f"/assistant/tool/{tool['name']}"] = {
+            "post": {
+                "operationId": tool["name"],
+                "summary": tool["description"],
+                "responses": {
+                    "200": {
+                        "description": "Successful response",
+                        "content": {
+                            "application/json": {
+                                "schema": {"type": "object"}
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": tool["inputSchema"]
+                        }
+                    }
+                }
+            }
+        }
+    
+    return {
+        "openapi": "3.1.0",
+        "info": {
+            "title": "Assistant MCP REST Mirror",
+            "description": "Exposes Assistant MCP tools as REST endpoints for ChatGPT Actions",
+            "version": "1.0.0"
+        },
+        "servers": [{"url": base_url}],
+        "paths": paths,
+        "components": {
+            "securitySchemes": {
+                "bearerAuth": {
+                    "type": "http",
+                    "scheme": "bearer"
+                }
+            }
+        },
+        "security": [{"bearerAuth": []}]
+    }
