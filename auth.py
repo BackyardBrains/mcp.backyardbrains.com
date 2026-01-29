@@ -126,26 +126,28 @@ def _log_scope_claims(payload: Dict[str, Any], *, context: str) -> None:
 
 
 async def _extract_credentials(request: Request, creds: Optional[HTTPAuthorizationCredentials]):
-    # Fallback to manual header inspection if creds is None (fixing POST issue)
-    if creds is None:
-        auth_header = request.headers.get("authorization", "")
-        if auth_header.lower().startswith("bearer "):
-            return auth_header.split(" ", 1)[1].strip()
+    # 1. Check for Bearer Header (Standard)
+    if creds is not None and creds.scheme.lower() == "bearer":
+        return creds.credentials
+        
+    # 2. Manual Header Check (Fallback)
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip()
 
-    if creds is None or creds.scheme.lower() != "bearer":
-        logger.warning("Missing/invalid Authorization header for %s %s", request.method, request.url.path)
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization required",
-            headers={
-                "WWW-Authenticate": (
-                    'Bearer '
-                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource", '
-                    'scope="mcp:read"'
-                )
-            },
-        )
-    return creds.credentials
+    # 3. NEW: Check Query Parameter (Required for Claude Desktop SSE)
+    # Allows: https://.../sse?token=eyJ...
+    token_param = request.query_params.get("token")
+    if token_param:
+        return token_param
+
+    # 4. If all fail, raise 401
+    logger.warning("Missing/invalid Authorization credential for %s %s", request.method, request.url.path)
+    raise HTTPException(
+        status_code=401,
+        detail="Authorization required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 async def require_auth(request: Request, creds: Optional[HTTPAuthorizationCredentials] = Depends(security)):
