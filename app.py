@@ -111,7 +111,7 @@ async def mcp_manifest():
             "logging": {}
         },
         "serverInfo": {
-            "name": "xero-metabase-mcp",
+            "name": "byb-mcp-v2",
             "version": "1.0.0"
         }
     }
