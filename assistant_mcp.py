@@ -9,24 +9,22 @@ import os
 import json
 import logging
 import base64
-import secrets
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from pathlib import Path
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request, Response, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from cryptography.fernet import Fernet
 
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google.auth.transport.requests import Request as GoogleRequest
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
 from utils import MCP_PROTOCOL_VERSION, _rpc_result, _rpc_error, logger, safe_dumps
-from auth import require_assistant_google_auth, create_assistant_token, ASSISTANT_JWT_SECRET, ASSISTANT_JWT_ALGORITHM
-import jwt
+from auth import require_assistant_auth
 
 # =============================================================================
 # Configuration
@@ -44,6 +42,9 @@ ASSISTANT_TOKEN_STORE_PATH = os.environ.get(
 ASSISTANT_USERS_CONFIG_PATH = os.environ.get(
     "ASSISTANT_USERS_CONFIG_PATH", ".assistant_users.json"
 )
+
+# Service Account Configuration (if set, uses service account instead of per-user OAuth)
+ASSISTANT_SERVICE_ACCOUNT_FILE = os.environ.get("ASSISTANT_SERVICE_ACCOUNT_FILE")
 
 # MCP Base URL for OAuth callbacks
 MCP_BASE_URL = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
@@ -200,11 +201,28 @@ class AssistantGoogleClient:
         self._calendar = None
         self._folder_cache = {}  # Cache folder IDs
     
-    def _get_credentials(self) -> Credentials:
-        """Get and refresh Google credentials for this user."""
+    def _get_credentials(self):
+        """Get Google credentials - service account or per-user OAuth."""
+        
+        # Service Account Mode - use shared service account for all users
+        if ASSISTANT_SERVICE_ACCOUNT_FILE and os.path.exists(ASSISTANT_SERVICE_ACCOUNT_FILE):
+            logger.info(f"Using service account for {self.email}")
+            # Service account scopes (no Gmail for service accounts without domain-wide delegation)
+            sa_scopes = [
+                'https://www.googleapis.com/auth/drive',
+                'https://www.googleapis.com/auth/documents',
+                'https://www.googleapis.com/auth/calendar',
+            ]
+            creds = service_account.Credentials.from_service_account_file(
+                ASSISTANT_SERVICE_ACCOUNT_FILE,
+                scopes=sa_scopes
+            )
+            return creds
+        
+        # Per-User OAuth Mode - use individual user tokens
         token_data = get_user_tokens(self.email)
         if not token_data:
-            raise ValueError(f"No tokens found for {self.email}. Please authenticate.")
+            raise ValueError(f"No tokens found for {self.email}. Please authenticate via /assistant/google/login")
         
         # Load client config for refresh
         client_config = {}
@@ -246,6 +264,8 @@ class AssistantGoogleClient:
     
     @property
     def gmail(self):
+        if ASSISTANT_SERVICE_ACCOUNT_FILE:
+            raise ValueError("Gmail is not available in service account mode (requires domain-wide delegation)")
         if not self._gmail:
             self._gmail = build('gmail', 'v1', credentials=self.creds)
         return self._gmail
@@ -453,194 +473,8 @@ def clear_client_cache(email: str = None):
 
 
 # =============================================================================
-# OAuth 2.0 Authorization Server (for Claude MCP discovery)
+# OAuth Endpoints
 # =============================================================================
-
-# Temporary storage for OAuth authorization codes (code -> {email, expires, code_challenge, redirect_uri})
-_oauth_codes: Dict[str, Dict[str, Any]] = {}
-# Pending OAuth requests (state -> {redirect_uri, state, code_challenge, code_challenge_method})
-_pending_oauth: Dict[str, Dict[str, Any]] = {}
-
-OAUTH_CODE_EXPIRY_SECONDS = 300  # 5 minutes
-
-
-def _cleanup_expired_codes():
-    """Remove expired authorization codes."""
-    now = datetime.now(timezone.utc).timestamp()
-    expired = [code for code, data in _oauth_codes.items() if data.get("expires", 0) < now]
-    for code in expired:
-        del _oauth_codes[code]
-    expired_pending = [state for state, data in _pending_oauth.items() if data.get("expires", 0) < now]
-    for state in expired_pending:
-        del _pending_oauth[state]
-
-
-@router.get("/oauth/authorize")
-async def oauth_authorize(
-    request: Request,
-    client_id: str = None,
-    redirect_uri: str = None,
-    response_type: str = "code",
-    state: str = None,
-    code_challenge: str = None,
-    code_challenge_method: str = None,
-    scope: str = None,
-):
-    """
-    OAuth 2.0 Authorization endpoint.
-    Redirects to Google OAuth, then back to the client with an auth code.
-    """
-    _cleanup_expired_codes()
-    
-    if response_type != "code":
-        raise HTTPException(status_code=400, detail="Only response_type=code is supported")
-    
-    if not redirect_uri:
-        raise HTTPException(status_code=400, detail="redirect_uri is required")
-    
-    # Generate our own state to track this OAuth request
-    internal_state = secrets.token_urlsafe(32)
-    
-    # Store the pending OAuth request
-    _pending_oauth[internal_state] = {
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "client_state": state,  # The client's state to return
-        "code_challenge": code_challenge,
-        "code_challenge_method": code_challenge_method,
-        "expires": datetime.now(timezone.utc).timestamp() + OAUTH_CODE_EXPIRY_SECONDS,
-    }
-    
-    # Store internal state in session for the Google callback
-    request.session["oauth_internal_state"] = internal_state
-    
-    # Redirect to Google OAuth
-    google_redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/assistant/google/callback"
-    
-    if not os.path.exists(ASSISTANT_GOOGLE_CREDENTIALS_FILE):
-        raise HTTPException(
-            status_code=500,
-            detail=f"Google credentials file not found: {ASSISTANT_GOOGLE_CREDENTIALS_FILE}"
-        )
-    
-    flow = Flow.from_client_secrets_file(
-        ASSISTANT_GOOGLE_CREDENTIALS_FILE,
-        scopes=ASSISTANT_GOOGLE_SCOPES,
-        redirect_uri=google_redirect_uri
-    )
-    
-    authorization_url, google_state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true',
-        prompt='consent'
-    )
-    
-    # Store Google state in session
-    request.session['oauth_state'] = google_state
-    
-    return RedirectResponse(url=authorization_url)
-
-
-@router.post("/oauth/token")
-async def oauth_token(request: Request):
-    """
-    OAuth 2.0 Token endpoint.
-    Exchanges authorization code for access token (our JWT).
-    """
-    _cleanup_expired_codes()
-    
-    # Parse form data or JSON
-    content_type = request.headers.get("content-type", "")
-    if "application/x-www-form-urlencoded" in content_type:
-        form_data = await request.form()
-        data = dict(form_data)
-    elif "application/json" in content_type:
-        data = await request.json()
-    else:
-        # Try form data first
-        try:
-            form_data = await request.form()
-            data = dict(form_data)
-        except:
-            data = await request.json()
-    
-    grant_type = data.get("grant_type")
-    code = data.get("code")
-    redirect_uri = data.get("redirect_uri")
-    code_verifier = data.get("code_verifier")
-    
-    if grant_type != "authorization_code":
-        return {"error": "unsupported_grant_type", "error_description": "Only authorization_code is supported"}
-    
-    if not code:
-        return {"error": "invalid_request", "error_description": "code is required"}
-    
-    # Look up the authorization code
-    code_data = _oauth_codes.get(code)
-    if not code_data:
-        return {"error": "invalid_grant", "error_description": "Invalid or expired authorization code"}
-    
-    # Check expiration
-    if code_data.get("expires", 0) < datetime.now(timezone.utc).timestamp():
-        del _oauth_codes[code]
-        return {"error": "invalid_grant", "error_description": "Authorization code expired"}
-    
-    # Verify PKCE if code_challenge was provided
-    if code_data.get("code_challenge"):
-        if not code_verifier:
-            return {"error": "invalid_request", "error_description": "code_verifier is required"}
-        
-        # Verify code_verifier against code_challenge
-        import hashlib
-        import base64
-        if code_data.get("code_challenge_method") == "S256":
-            computed = base64.urlsafe_b64encode(
-                hashlib.sha256(code_verifier.encode()).digest()
-            ).rstrip(b'=').decode()
-        else:
-            computed = code_verifier
-        
-        if computed != code_data["code_challenge"]:
-            return {"error": "invalid_grant", "error_description": "code_verifier mismatch"}
-    
-    # Delete the used code
-    email = code_data["email"]
-    del _oauth_codes[code]
-    
-    # Generate our JWT
-    access_token = create_assistant_token(email)
-    
-    logger.info(f"OAuth token issued for {email}")
-    
-    return {
-        "access_token": access_token,
-        "token_type": "Bearer",
-        "expires_in": 30 * 24 * 60 * 60,  # 30 days in seconds
-    }
-
-
-# =============================================================================
-# Google OAuth Endpoints
-# =============================================================================
-
-@router.get("/.well-known/oauth-authorization-server")
-def assistant_oauth_metadata():
-    """
-    OAuth 2.0 Authorization Server Metadata at the assistant path.
-    Some clients look for this at {issuer}/.well-known/oauth-authorization-server
-    """
-    base_url = "https://mcp.backyardbrains.com"
-    return {
-        "issuer": f"{base_url}/assistant",
-        "authorization_endpoint": f"{base_url}/assistant/oauth/authorize",
-        "token_endpoint": f"{base_url}/assistant/oauth/token",
-        "scopes_supported": ["assistant"],
-        "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code"],
-        "code_challenge_methods_supported": ["S256", "plain"],
-        "token_endpoint_auth_methods_supported": ["none"],
-    }
-
 
 @router.get("/")
 @router.get("")
@@ -654,8 +488,6 @@ def assistant_index():
             "mcp": "/assistant/mcp",
             "google_login": "/assistant/google/login",
             "google_status": "/assistant/google/status",
-            "oauth_authorize": "/assistant/oauth/authorize",
-            "oauth_token": "/assistant/oauth/token",
         },
     }
 
@@ -732,108 +564,18 @@ async def assistant_google_callback(request: Request, code: str, state: str = No
                 status_code=403
             )
     
-    # Save Google tokens
+    # Save tokens
     token_data = json.loads(creds.to_json())
     save_user_tokens(email, token_data)
     clear_client_cache(email)
     
     logger.info(f"Google OAuth completed for {email}")
     
-    # Check if this is part of an OAuth 2.0 flow (from Claude)
-    internal_state = request.session.get("oauth_internal_state")
-    if internal_state and internal_state in _pending_oauth:
-        pending = _pending_oauth.pop(internal_state)
-        request.session.pop("oauth_internal_state", None)
-        
-        # Generate authorization code
-        auth_code = secrets.token_urlsafe(32)
-        _oauth_codes[auth_code] = {
-            "email": email,
-            "expires": datetime.now(timezone.utc).timestamp() + OAUTH_CODE_EXPIRY_SECONDS,
-            "code_challenge": pending.get("code_challenge"),
-            "code_challenge_method": pending.get("code_challenge_method"),
-            "redirect_uri": pending.get("redirect_uri"),
-        }
-        
-        # Redirect back to client with authorization code
-        client_redirect = pending["redirect_uri"]
-        params = {"code": auth_code}
-        if pending.get("client_state"):
-            params["state"] = pending["client_state"]
-        
-        redirect_url = f"{client_redirect}{'&' if '?' in client_redirect else '?'}{urlencode(params)}"
-        logger.info(f"OAuth flow: redirecting to client with auth code for {email}")
-        return RedirectResponse(url=redirect_url)
-    
-    # Direct login flow - show token page
-    mcp_token = create_assistant_token(email)
-    
-    # Build the URL-based endpoint
-    mcp_url = f"https://mcp.backyardbrains.com/assistant/u/{mcp_token}"
-    
     return HTMLResponse(content=f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Assistant MCP - Authorization Complete</title>
-            <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 700px; margin: 50px auto; padding: 20px; }}
-                h1 {{ color: #1a73e8; }}
-                .url-box {{ background: #d4edda; border: 2px solid #28a745; border-radius: 8px; padding: 15px; margin: 20px 0; word-break: break-all; font-family: monospace; font-size: 13px; }}
-                .token-box {{ background: #f5f5f5; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin: 20px 0; word-break: break-all; font-family: monospace; font-size: 11px; }}
-                .copy-btn {{ background: #28a745; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; margin-top: 10px; font-size: 16px; }}
-                .copy-btn:hover {{ background: #218838; }}
-                .copy-btn-secondary {{ background: #6c757d; font-size: 14px; padding: 8px 16px; }}
-                .copy-btn-secondary:hover {{ background: #5a6268; }}
-                .success {{ color: #0d9488; font-weight: bold; display: none; margin-left: 10px; }}
-                .instructions {{ background: #e8f4f8; border-radius: 8px; padding: 15px; margin: 20px 0; }}
-                .primary {{ background: #d4edda; border-left: 4px solid #28a745; }}
-                code {{ background: #eee; padding: 2px 6px; border-radius: 3px; }}
-                h2 {{ color: #333; margin-top: 30px; }}
-            </style>
-        </head>
-        <body>
-            <h1>Authorization Complete!</h1>
-            <p>Logged in as: <strong>{email}</strong></p>
-            <p>Scopes authorized: Drive, Gmail, Calendar</p>
-            
-            <div class="instructions primary">
-                <h3>Your MCP URL (Recommended)</h3>
-                <p>Copy this URL and add it as a new MCP server in Claude:</p>
-            </div>
-            
-            <div class="url-box" id="url">{mcp_url}</div>
-            <button class="copy-btn" onclick="copyUrl()">Copy MCP URL</button>
-            <span class="success" id="copiedUrl">Copied!</span>
-            
-            <h2>Alternative: Bearer Token</h2>
-            <div class="instructions">
-                <p>If your client supports Authorization headers, use this token with the base URL:</p>
-                <p><code>https://mcp.backyardbrains.com/assistant</code></p>
-            </div>
-            
-            <div class="token-box" id="token">{mcp_token}</div>
-            <button class="copy-btn copy-btn-secondary" onclick="copyToken()">Copy Token</button>
-            <span class="success" id="copiedToken">Copied!</span>
-            
-            <script>
-                function copyUrl() {{
-                    const url = document.getElementById('url').innerText;
-                    navigator.clipboard.writeText(url).then(() => {{
-                        document.getElementById('copiedUrl').style.display = 'inline';
-                        setTimeout(() => document.getElementById('copiedUrl').style.display = 'none', 2000);
-                    }});
-                }}
-                function copyToken() {{
-                    const token = document.getElementById('token').innerText;
-                    navigator.clipboard.writeText(token).then(() => {{
-                        document.getElementById('copiedToken').style.display = 'inline';
-                        setTimeout(() => document.getElementById('copiedToken').style.display = 'none', 2000);
-                    }});
-                }}
-            </script>
-        </body>
-        </html>
+        <h1>Google Authorization Complete!</h1>
+        <p>Logged in as: <strong>{email}</strong></p>
+        <p>You can now close this window and use the Assistant MCP.</p>
+        <p>Scopes authorized: Drive, Gmail, Calendar</p>
     """)
 
 
@@ -1581,7 +1323,7 @@ def _get_prompt(name: str):
 @router.post("/mcp")
 @router.post("/")
 @router.post("")
-async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require_assistant_google_auth)):
+async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require_assistant_auth)):
     """Handle MCP JSON-RPC requests."""
     try:
         body = await request.json()
@@ -1621,90 +1363,6 @@ async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require
     
     elif method == "resources/list":
         # Could list Drive folders as resources
-        return _rpc_result(rpc_id, {"resources": []})
-    
-    elif method == "resources/read":
-        return _rpc_result(rpc_id, {"contents": []})
-    
-    else:
-        return _rpc_error(rpc_id, -32601, f"Method {method} not found")
-
-
-# =============================================================================
-# URL-Based Token Authentication (for clients that don't support headers)
-# =============================================================================
-
-def _validate_url_token(token: str) -> Optional[str]:
-    """Validate a JWT from URL and return email, or None if invalid."""
-    try:
-        payload = jwt.decode(token, ASSISTANT_JWT_SECRET, algorithms=[ASSISTANT_JWT_ALGORITHM])
-        return payload.get("email")
-    except jwt.ExpiredSignatureError:
-        logger.warning("URL token expired")
-        return None
-    except jwt.InvalidTokenError as e:
-        logger.warning(f"Invalid URL token: {e}")
-        return None
-
-
-@router.get("/u/{token}")
-async def assistant_url_index(token: str):
-    """Index endpoint with URL-based auth."""
-    email = _validate_url_token(token)
-    if not email:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    
-    return {
-        "service": "assistant-mcp",
-        "status": "ok",
-        "authenticated_as": email,
-        "endpoints": {
-            "mcp": f"/assistant/u/{token}/mcp",
-        },
-    }
-
-
-@router.post("/u/{token}")
-@router.post("/u/{token}/mcp")
-async def handle_assistant_mcp_url_auth(request: Request, token: str):
-    """Handle MCP JSON-RPC requests with URL-based token authentication."""
-    # Validate token from URL
-    user_email = _validate_url_token(token)
-    if not user_email:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
-    
-    rpc_id = body.get("id")
-    method = body.get("method")
-    params = body.get("params", {})
-    
-    if method == "initialize":
-        return _rpc_result(rpc_id, _initialize_payload())
-    
-    elif method == "ping":
-        return _rpc_result(rpc_id, {"status": "ok"})
-    
-    elif method == "tools/list":
-        return _rpc_result(rpc_id, _list_assistant_tools())
-    
-    elif method == "tools/call":
-        name = params.get("name")
-        args = params.get("arguments", {})
-        result = await handle_assistant_tool_call(name, args, user_email)
-        return _rpc_result(rpc_id, result)
-    
-    elif method == "prompts/list":
-        return _rpc_result(rpc_id, _list_prompts())
-    
-    elif method == "prompts/get":
-        prompt_name = params.get("name")
-        return _rpc_result(rpc_id, _get_prompt(prompt_name))
-    
-    elif method == "resources/list":
         return _rpc_result(rpc_id, {"resources": []})
     
     elif method == "resources/read":

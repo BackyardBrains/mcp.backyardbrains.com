@@ -1,19 +1,12 @@
 import os
 import time
-from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
 import httpx
-import jwt
 from fastapi import HTTPException, Request, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from utils import logger
-
-# Assistant JWT configuration (Google-only auth, no Auth0)
-ASSISTANT_JWT_SECRET = os.environ.get("ASSISTANT_JWT_SECRET", "change-me-in-production")
-ASSISTANT_JWT_ALGORITHM = "HS256"
-ASSISTANT_JWT_EXPIRY_DAYS = int(os.environ.get("ASSISTANT_JWT_EXPIRY_DAYS", "30"))
 
 # Auth0 configuration
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
@@ -252,67 +245,3 @@ async def require_assistant_auth(request: Request, creds: HTTPAuthorizationCrede
             raise
         logger.warning("Token validation failed for %s %s: %s", request.method, request.url.path, exc.detail)
         raise
-
-
-# =============================================================================
-# Assistant Google-only Auth (no Auth0 required)
-# =============================================================================
-
-def create_assistant_token(email: str) -> str:
-    """Create a JWT for assistant auth after Google OAuth."""
-    payload = {
-        "email": email,
-        "exp": datetime.utcnow() + timedelta(days=ASSISTANT_JWT_EXPIRY_DAYS),
-        "iat": datetime.utcnow(),
-    }
-    return jwt.encode(payload, ASSISTANT_JWT_SECRET, algorithm=ASSISTANT_JWT_ALGORITHM)
-
-
-async def require_assistant_google_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
-    """
-    Assistant auth using our own JWT (issued after Google OAuth).
-    No Auth0 dependency - just validates the JWT we issued.
-    Returns WWW-Authenticate header pointing to our Google-based OAuth.
-    """
-    # Custom credential extraction with assistant-specific OAuth discovery
-    if creds is None or creds.scheme.lower() != "bearer":
-        logger.warning("Missing/invalid Authorization header for %s %s", request.method, request.url.path)
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization required",
-            headers={
-                "WWW-Authenticate": (
-                    'Bearer '
-                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/assistant"'
-                )
-            },
-        )
-    
-    token = creds.credentials
-    try:
-        payload = jwt.decode(token, ASSISTANT_JWT_SECRET, algorithms=[ASSISTANT_JWT_ALGORITHM])
-        return payload  # Contains {"email": "user@example.com", "exp": ..., "iat": ...}
-    except jwt.ExpiredSignatureError:
-        logger.warning("Assistant JWT expired for %s %s", request.method, request.url.path)
-        raise HTTPException(
-            status_code=401,
-            detail="Token expired - please re-authenticate via /assistant/google/login",
-            headers={
-                "WWW-Authenticate": (
-                    'Bearer '
-                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/assistant"'
-                )
-            },
-        )
-    except jwt.InvalidTokenError as exc:
-        logger.warning("Invalid assistant JWT for %s %s: %s", request.method, request.url.path, exc)
-        raise HTTPException(
-            status_code=401, 
-            detail="Invalid token",
-            headers={
-                "WWW-Authenticate": (
-                    'Bearer '
-                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/assistant"'
-                )
-            },
-        )

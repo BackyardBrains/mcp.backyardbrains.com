@@ -30,8 +30,8 @@ MCP_BASE_URL = os.getenv('MCP_BASE_URL')
 router = APIRouter()
 
 # Google Sheets Configuration
-GOOGLE_CREDENTIALS_FILE = os.environ.get("GOOGLE_CREDENTIALS_FILE", "google_credentials.json")
-GOOGLE_TOKEN_STORE_PATH = os.environ.get("GOOGLE_TOKEN_STORE_PATH", ".google_tokens.enc")
+WORKSHOPS_GOOGLE_CREDENTIALS_FILE = os.environ.get("WORKSHOPS_GOOGLE_CREDENTIALS_FILE", "workshops_google_credentials.json")
+WORKSHOPS_GOOGLE_TOKEN_STORE_PATH = os.environ.get("WORKSHOPS_GOOGLE_TOKEN_STORE_PATH", ".workshops_google_tokens.enc")
 GOOGLE_SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
 # Encryption setup (shared with Xero if TOKEN_ENC_KEY is set)
@@ -52,10 +52,10 @@ def decrypt_data(encrypted: bytes) -> bytes:
         raise ValueError("Invalid encryption key or corrupted token file")
 
 def load_google_tokens():
-    if not os.path.exists(GOOGLE_TOKEN_STORE_PATH):
+    if not os.path.exists(WORKSHOPS_GOOGLE_TOKEN_STORE_PATH):
         return None
     try:
-        with open(GOOGLE_TOKEN_STORE_PATH, 'rb') as f:
+        with open(WORKSHOPS_GOOGLE_TOKEN_STORE_PATH, 'rb') as f:
             encrypted = f.read()
         decrypted = decrypt_data(encrypted)
         return json.loads(decrypted)
@@ -67,7 +67,7 @@ def save_google_tokens(tokens: Dict):
     try:
         data = json.dumps(tokens).encode('utf-8')
         encrypted = encrypt_data(data)
-        with open(GOOGLE_TOKEN_STORE_PATH, 'wb') as f:
+        with open(WORKSHOPS_GOOGLE_TOKEN_STORE_PATH, 'wb') as f:
             f.write(encrypted)
     except Exception as e:
         logger.error(f"Failed to save Google tokens: {e}")
@@ -77,9 +77,9 @@ def get_google_credentials():
     client_config = {}
     
     # 1. Load configuration from file (needed for both Service Account and OAuth refresh)
-    if os.path.exists(GOOGLE_CREDENTIALS_FILE):
+    if os.path.exists(WORKSHOPS_GOOGLE_CREDENTIALS_FILE):
         try:
-            with open(GOOGLE_CREDENTIALS_FILE, 'r') as f:
+            with open(WORKSHOPS_GOOGLE_CREDENTIALS_FILE, 'r') as f:
                 creds_data = json.load(f)
             
             # Case A: Service Account
@@ -96,12 +96,12 @@ def get_google_credentials():
                 client_config = creds_data[client_type]
                 logger.info(f"Loaded Google OAuth client configuration (type: {client_type})")
         except Exception as e:
-            logger.error(f"Failed to read {GOOGLE_CREDENTIALS_FILE}: {e}")
+            logger.error(f"Failed to read {WORKSHOPS_GOOGLE_CREDENTIALS_FILE}: {e}")
 
     # 2. Fallback to OAuth2 User Flow if token data exists
     token_data = load_google_tokens()
     if not token_data:
-        logger.warning(f"No Google tokens found at {GOOGLE_TOKEN_STORE_PATH}")
+        logger.warning(f"No Google tokens found at {WORKSHOPS_GOOGLE_TOKEN_STORE_PATH}")
         return None
     
     # CRITICAL: Always use the client ID and secret from the current credentials file
@@ -1568,7 +1568,7 @@ async def workshop_google_auth_login(request: Request):
     """Initiate Google OAuth flow."""
     redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/workshops/google/callback" if MCP_BASE_URL else f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
     flow = Flow.from_client_secrets_file(
-        GOOGLE_CREDENTIALS_FILE,
+        WORKSHOPS_GOOGLE_CREDENTIALS_FILE,
         scopes=GOOGLE_SCOPES,
         redirect_uri=redirect_uri
     )
@@ -1587,7 +1587,7 @@ async def workshop_google_auth_callback(request: Request, code: str, state: str 
     """Handle Google OAuth callback."""
     redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/workshops/google/callback" if MCP_BASE_URL else f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
     flow = Flow.from_client_secrets_file(
-        GOOGLE_CREDENTIALS_FILE,
+        WORKSHOPS_GOOGLE_CREDENTIALS_FILE,
         scopes=GOOGLE_SCOPES,
         redirect_uri=redirect_uri
     )

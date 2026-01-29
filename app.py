@@ -122,6 +122,7 @@ async def mcp_manifest():
 @app.get("/.well-known/oauth-authorization-server/metabase")
 @app.get("/.well-known/oauth-authorization-server/meta")
 @app.get("/.well-known/oauth-authorization-server/workshops")
+@app.get("/.well-known/oauth-authorization-server/assistant")
 async def oauth_authorization_server(request: Request, api: str = "xero"):
     """
     OAuth 2.0 Authorization Server Metadata endpoint.
@@ -175,26 +176,6 @@ async def oauth_authorization_server(request: Request, api: str = "xero"):
             "client_secret_basic",
             "client_secret_post"
         ]
-    }
-
-
-@app.get("/.well-known/oauth-authorization-server/assistant")
-async def oauth_authorization_server_assistant():
-    """
-    OAuth 2.0 Authorization Server Metadata for Assistant.
-    Points to our own Google-based OAuth endpoints, not Auth0.
-    """
-    base_url = "https://mcp.backyardbrains.com"
-    
-    return {
-        "issuer": f"{base_url}/assistant",
-        "authorization_endpoint": f"{base_url}/assistant/oauth/authorize",
-        "token_endpoint": f"{base_url}/assistant/oauth/token",
-        "scopes_supported": ["assistant"],
-        "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code"],
-        "code_challenge_methods_supported": ["S256", "plain"],
-        "token_endpoint_auth_methods_supported": ["none"],  # Public client
     }
 
 
@@ -280,18 +261,17 @@ async def oauth_protected_resource_workshops():
 
 @app.get("/.well-known/oauth-protected-resource/assistant")
 async def oauth_protected_resource_assistant():
-    """
-    Protected Resource Metadata for Assistant.
-    Points to our own Google-based OAuth, not Auth0.
-    """
-    base_url = "https://mcp.backyardbrains.com"
-    
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    audience = AUTH0_ASSISTANT_AUDIENCE or _default_audience()
+    if not auth0_domain or not audience:
+        return Response(status_code=404)
+
     return {
-        "resource": f"{base_url}/assistant",
-        "authorization_servers": [f"{base_url}/assistant"],
-        "scopes_supported": ["assistant"],
+        "resource": audience,
+        "authorization_servers": [f"https://{auth0_domain}/"],
+        "scopes_supported": ["mcp:read:assistant", "mcp:write:assistant"],
         "bearer_methods_supported": ["header"],
-        "resource_documentation": f"{base_url}/assistant/google/login",
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
     }
 
 # Auth0 OIDC Discovery Passthrough (for Xero auth flow mostly)
