@@ -47,6 +47,10 @@ MCP_BASE_URL = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
 
 # Google API Scopes (all-in-one OAuth)
 ASSISTANT_GOOGLE_SCOPES = [
+    # OpenID Connect - for user identity
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
     # Drive - for assistant memory
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/documents',
