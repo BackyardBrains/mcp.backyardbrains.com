@@ -111,7 +111,7 @@ async def mcp_manifest():
             "logging": {}
         },
         "serverInfo": {
-            "name": "byb-mcp-v2",
+            "name": "byb-mcp-server",
             "version": "1.0.0"
         }
     }
