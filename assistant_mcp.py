@@ -1441,54 +1441,90 @@ async def assistant_openapi_spec(request: Request):
     base_url = str(request.base_url).rstrip("/")
     if "https" not in base_url and "localhost" not in base_url:
         base_url = base_url.replace("http://", "https://")
+        
+    # ChatGPT often prefers the full path in the server URL or relative paths from root
+    server_url = base_url
     
     tools = _list_assistant_tools()["tools"]
     paths = {}
+    schemas = {}
     
     for tool in tools:
-        # Construct OpenAPI path for each tool
-        paths[f"/assistant/tool/{tool['name']}"] = {
+        # Create a schema for each tool's input
+        schema_name = f"{tool['name']}Request"
+        schemas[schema_name] = tool["inputSchema"]
+        
+        # Determine if request body is actually needed
+        has_props = tool["inputSchema"].get("properties") or tool["inputSchema"].get("required")
+        
+        path_item = {
             "post": {
                 "operationId": tool["name"],
-                "summary": tool["description"][:100],  # Keep summary concise
+                "summary": tool["description"].split(".")[0][:100], # First sentence, max 100 chars
                 "description": tool["description"],
                 "responses": {
                     "200": {
                         "description": "Successful response",
                         "content": {
                             "application/json": {
+                                # Use a flexible schema for responses
                                 "schema": {"type": "object"}
                             }
-                        }
-                    }
-                },
-                "requestBody": {
-                    "required": True,
-                    "content": {
-                        "application/json": {
-                            "schema": tool["inputSchema"]
                         }
                     }
                 }
             }
         }
+        
+        if has_props:
+            path_item["post"]["requestBody"] = {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": f"#/components/schemas/{schema_name}"}
+                    }
+                }
+            }
+            
+        paths[f"/assistant/tool/{tool['name']}"] = path_item
+    
+    auth0_domain = os.environ.get("AUTH0_DOMAIN", "login.backyardbrains.com")
     
     return {
-        "openapi": "3.0.0",
+        "openapi": "3.1.0",
         "info": {
             "title": "Assistant MCP REST Mirror",
-            "description": "Exposes Assistant MCP tools as REST endpoints for ChatGPT Actions",
+            "description": "Standard REST interface for Assistant MCP tools",
             "version": "1.0.0"
         },
-        "servers": [{"url": base_url}],
+        "servers": [{"url": server_url}],
         "paths": paths,
         "components": {
+            "schemas": schemas,
             "securitySchemes": {
                 "bearerAuth": {
                     "type": "http",
                     "scheme": "bearer"
+                },
+                "oAuth2AuthCode": {
+                    "type": "oauth2",
+                    "description": "Auth0 OAuth2 flow",
+                    "flows": {
+                        "authorizationCode": {
+                            "authorizationUrl": f"https://{auth0_domain}/authorize",
+                            "tokenUrl": f"https://{auth0_domain}/oauth/token",
+                            "scopes": {
+                                "openid": "Standard ID scope",
+                                "profile": "Standard profile scope",
+                                "email": "Standard email scope",
+                                "mcp:read:assistant": "Read access to Assistant tools",
+                                "mcp:write:assistant": "Write access to Assistant tools"
+                            }
+                        }
+                    }
                 }
             }
         },
-        "security": [{"bearerAuth": []}]
+        # Allow either Bearer Token (API Key) or OAuth2
+        "security": [{"bearerAuth": []}, {"oAuth2AuthCode": []}]
     }
