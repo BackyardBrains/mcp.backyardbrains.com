@@ -23,7 +23,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
 from utils import MCP_PROTOCOL_VERSION, _rpc_result, _rpc_error, logger, safe_dumps
-from auth import require_assistant_auth, AUTH0_ASSISTANT_AUDIENCE
+from auth import require_assistant_google_auth, create_assistant_token
 
 # =============================================================================
 # Configuration
@@ -541,18 +541,73 @@ async def assistant_google_callback(request: Request, code: str, state: str = No
                 status_code=403
             )
     
-    # Save tokens
+    # Save Google tokens
     token_data = json.loads(creds.to_json())
     save_user_tokens(email, token_data)
     clear_client_cache(email)
     
+    # Issue our own JWT for MCP authentication
+    mcp_token = create_assistant_token(email)
+    
     logger.info(f"Google OAuth completed for {email}")
     
     return HTMLResponse(content=f"""
-        <h1>Google Authorization Complete!</h1>
-        <p>Logged in as: <strong>{email}</strong></p>
-        <p>You can now close this window and use the Assistant MCP.</p>
-        <p>Scopes authorized: Drive, Gmail, Calendar</p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Assistant MCP - Authorization Complete</title>
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 700px; margin: 50px auto; padding: 20px; }}
+                h1 {{ color: #1a73e8; }}
+                .token-box {{ background: #f5f5f5; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin: 20px 0; word-break: break-all; font-family: monospace; font-size: 12px; }}
+                .copy-btn {{ background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-top: 10px; }}
+                .copy-btn:hover {{ background: #1557b0; }}
+                .success {{ color: #0d9488; font-weight: bold; display: none; margin-left: 10px; }}
+                .instructions {{ background: #e8f4f8; border-radius: 8px; padding: 15px; margin: 20px 0; }}
+                code {{ background: #eee; padding: 2px 6px; border-radius: 3px; }}
+            </style>
+        </head>
+        <body>
+            <h1>Authorization Complete!</h1>
+            <p>Logged in as: <strong>{email}</strong></p>
+            <p>Scopes authorized: Drive, Gmail, Calendar</p>
+            
+            <div class="instructions">
+                <h3>Your MCP Bearer Token</h3>
+                <p>Copy this token and add it to your Claude MCP configuration:</p>
+            </div>
+            
+            <div class="token-box" id="token">{mcp_token}</div>
+            <button class="copy-btn" onclick="copyToken()">Copy Token</button>
+            <span class="success" id="copied">Copied!</span>
+            
+            <div class="instructions" style="margin-top: 30px;">
+                <h3>Claude Configuration</h3>
+                <p>Add this to your Claude MCP settings:</p>
+                <pre style="background: #fff; padding: 10px; border-radius: 5px; overflow-x: auto;">
+{{
+  "mcpServers": {{
+    "assistant": {{
+      "url": "https://mcp.backyardbrains.com/assistant",
+      "headers": {{
+        "Authorization": "Bearer YOUR_TOKEN_HERE"
+      }}
+    }}
+  }}
+}}</pre>
+            </div>
+            
+            <script>
+                function copyToken() {{
+                    const token = document.getElementById('token').innerText;
+                    navigator.clipboard.writeText(token).then(() => {{
+                        document.getElementById('copied').style.display = 'inline';
+                        setTimeout(() => document.getElementById('copied').style.display = 'none', 2000);
+                    }});
+                }}
+            </script>
+        </body>
+        </html>
     """)
 
 
@@ -1300,7 +1355,7 @@ def _get_prompt(name: str):
 @router.post("/mcp")
 @router.post("/")
 @router.post("")
-async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require_assistant_auth)):
+async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require_assistant_google_auth)):
     """Handle MCP JSON-RPC requests."""
     try:
         body = await request.json()
