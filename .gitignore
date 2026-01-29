@@ -142,6 +142,7 @@ google_credentials.json
 .google_tokens.enc
 
 # Assistant MCP
-assistant_google_credentials.json
 .assistant_tokens.enc
 .assistant_users.json
+.assistant_google.service.account.json
+.workshops_google.service.account.json
