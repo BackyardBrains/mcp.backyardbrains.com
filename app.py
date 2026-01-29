@@ -535,7 +535,11 @@ async def get_token_page(request: Request):
             <div class="api-selector">
                 <h3>Select API:</h3>
                 <div class="api-option">
-                    <input type="radio" id="apiXero" name="apiChoice" value="xero" checked>
+                    <input type="radio" id="apiAssistant" name="apiChoice" value="assistant" checked>
+                    <label for="apiAssistant">Assistant API (PM tools, Drive, Gmail, Calendar)</label>
+                </div>
+                <div class="api-option">
+                    <input type="radio" id="apiXero" name="apiChoice" value="xero">
                     <label for="apiXero">Xero API (accounting data)</label>
                 </div>
                 <div class="api-option">
@@ -574,16 +578,22 @@ async def auth_login(request: Request, api: str = "xero"):
     client_id = os.environ.get("AUTH0_CLIENT_ID")
     
     # Select audience and scope based on API choice
-    if api == "metabase":
+    if api == "assistant":
+        audience = AUTH0_ASSISTANT_AUDIENCE
+        scope = "openid profile email mcp:read:assistant mcp:write:assistant"
+    elif api == "metabase":
         audience = AUTH0_METABASE_AUDIENCE
         scope = "openid profile email mcp:read:metabase mcp:write:metabase"
     elif api == "workshops":
         audience = AUTH0_WORKSHOPS_AUDIENCE
         scope = "openid profile email mcp:read:workshops mcp:write:workshops mcp:admin:workshops"
-    else:
-        # Default to Xero
+    elif api == "xero":
         audience = AUTH0_XERO_AUDIENCE
         scope = "openid profile email mcp:read:xero mcp:write:xero"
+    else:
+        # Default to Assistant
+        audience = AUTH0_ASSISTANT_AUDIENCE
+        scope = "openid profile email mcp:read:assistant mcp:write:assistant"
     
     if not all([auth0_domain, client_id, audience]):
         raise HTTPException(status_code=500, detail="Auth0 not configured")
