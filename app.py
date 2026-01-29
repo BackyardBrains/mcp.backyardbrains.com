@@ -16,7 +16,8 @@ from starlette.middleware.sessions import SessionMiddleware
 load_dotenv()
 
 from utils import logger, MCP_PROTOCOL_VERSION
-from auth import AUTH0_XERO_AUDIENCE, AUTH0_METABASE_AUDIENCE, AUTH0_META_AUDIENCE, AUTH0_ASSISTANT_AUDIENCE
+from auth import AUTH0_XERO_AUDIENCE, AUTH0_METABASE_AUDIENCE, AUTH0_META_AUDIENCE
+import auth
 import xero_mcp
 import metabase_mcp
 import meta_mcp
@@ -74,9 +75,9 @@ async def root():
 # Audience helpers
 def _default_audience():
     """Choose the primary audience to use for the combined landing endpoints."""
-    return AUTH0_XERO_AUDIENCE or AUTH0_METABASE_AUDIENCE or AUTH0_META_AUDIENCE or AUTH0_ASSISTANT_AUDIENCE
+    return AUTH0_XERO_AUDIENCE or AUTH0_METABASE_AUDIENCE or AUTH0_META_AUDIENCE or getattr(auth, "AUTH0_WORKSHOPS_AUDIENCE", None) or getattr(auth, "AUTH0_ASSISTANT_AUDIENCE", None)
 
-from auth import AUTH0_WORKSHOPS_AUDIENCE
+from auth import AUTH0_WORKSHOPS_AUDIENCE, AUTH0_ASSISTANT_AUDIENCE
 
 # Global MCP Manifest
 @app.get("/.well-known/mcp.json")
@@ -110,7 +111,7 @@ async def mcp_manifest():
             "logging": {}
         },
         "serverInfo": {
-            "name": "byb-mcp-server",
+            "name": "xero-metabase-mcp",
             "version": "1.0.0"
         }
     }
@@ -201,12 +202,12 @@ async def oauth_protected_resource_root():
 @app.get("/.well-known/oauth-protected-resource/xero")
 async def oauth_protected_resource_xero():
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = AUTH0_XERO_AUDIENCE
+    audience = AUTH0_XERO_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
         return Response(status_code=404)
-    
+        
     return {
-        "resource": audience,
+        "resource": audience, # <— USE THE SAME IDENTIFIER
         "authorization_servers": [f"https://{auth0_domain}/"],
         "scopes_supported": ["mcp:read:xero", "mcp:write:xero"],
         "bearer_methods_supported": ["header"],
@@ -216,26 +217,25 @@ async def oauth_protected_resource_xero():
 @app.get("/.well-known/oauth-protected-resource/metabase")
 async def oauth_protected_resource_metabase():
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = AUTH0_METABASE_AUDIENCE
+    audience = AUTH0_METABASE_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
         return Response(status_code=404)
-    
+        
     return {
-        "resource": audience,
+        "resource": audience, # <— SAME HERE
         "authorization_servers": [f"https://{auth0_domain}/"],
         "scopes_supported": ["mcp:read:metabase", "mcp:write:metabase"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=metabase",
     }
 
-
 @app.get("/.well-known/oauth-protected-resource/meta")
 async def oauth_protected_resource_meta():
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = AUTH0_META_AUDIENCE
+    audience = AUTH0_META_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
         return Response(status_code=404)
-
+        
     return {
         "resource": audience,
         "authorization_servers": [f"https://{auth0_domain}/"],
@@ -247,10 +247,10 @@ async def oauth_protected_resource_meta():
 @app.get("/.well-known/oauth-protected-resource/workshops")
 async def oauth_protected_resource_workshops():
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = AUTH0_WORKSHOPS_AUDIENCE
+    audience = AUTH0_WORKSHOPS_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
         return Response(status_code=404)
-
+        
     return {
         "resource": audience,
         "authorization_servers": [f"https://{auth0_domain}/"],
@@ -262,10 +262,10 @@ async def oauth_protected_resource_workshops():
 @app.get("/.well-known/oauth-protected-resource/assistant")
 async def oauth_protected_resource_assistant():
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = AUTH0_ASSISTANT_AUDIENCE
+    audience = AUTH0_ASSISTANT_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
         return Response(status_code=404)
-
+        
     return {
         "resource": audience,
         "authorization_servers": [f"https://{auth0_domain}/"],

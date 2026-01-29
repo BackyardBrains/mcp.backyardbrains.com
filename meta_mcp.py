@@ -12,7 +12,7 @@ META_MCP_UPSTREAM = os.environ.get("META_MCP_UPSTREAM", "http://127.0.0.1:8088/m
 
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
 AUTH0_META_AUDIENCE = os.environ.get("AUTH0_META_AUDIENCE")  # set this
-PRM_META_URL = "https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/meta"
+PRM_META_URL = "https://mcp.backyardbrains.com/.well-known/oauth-protected-resource"
 
 _jwks = None
 
@@ -24,7 +24,7 @@ def _jwks_client():
 
 def _challenge_401():
     r = Response(status_code=401)
-    r.headers["WWW-Authenticate"] = f'Bearer realm="mcp", resource_metadata="{PRM_META_URL}", scope="mcp:read"'
+    r.headers["WWW-Authenticate"] = f'Bearer resource_metadata="{PRM_META_URL}", scope="mcp:read"'
     return r
 
 def _validate(token: str) -> dict:
