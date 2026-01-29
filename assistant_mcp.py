@@ -364,7 +364,7 @@ class AssistantGoogleClient:
         requests = []
         
         # Delete existing content (if any beyond the initial newline)
-        if end_index > 1:
+        if end_index > 2:
             requests.append({
                 'deleteContentRange': {
                     'range': {
@@ -1023,9 +1023,9 @@ async def handle_assistant_tool_call(name: str, args: Dict[str, Any], user_email
             timestamp = datetime.now(timezone.utc).isoformat()
             log_entry = f"\n[{timestamp}] {entry}"
             
-            doc_id = client.get_doc_by_name("logs", "assistant_log")
+            doc_id = client.get_doc_by_name("base", "assistant_log")
             if not doc_id:
-                return {"isError": True, "content": [{"type": "text", "text": "Log document not found. Create 'assistant_log' in logs/ folder."}]}
+                return {"isError": True, "content": [{"type": "text", "text": "Log document not found. Create 'assistant_log' in your root folder."}]}
             
             client.append_to_doc(doc_id, log_entry)
             return {"content": [{"type": "text", "text": "Log entry added."}]}
