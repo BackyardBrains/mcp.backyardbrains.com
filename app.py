@@ -16,11 +16,12 @@ from starlette.middleware.sessions import SessionMiddleware
 load_dotenv()
 
 from utils import logger, MCP_PROTOCOL_VERSION
-from auth import AUTH0_XERO_AUDIENCE, AUTH0_METABASE_AUDIENCE, AUTH0_META_AUDIENCE
+from auth import AUTH0_XERO_AUDIENCE, AUTH0_METABASE_AUDIENCE, AUTH0_META_AUDIENCE, AUTH0_ASSISTANT_AUDIENCE
 import xero_mcp
 import metabase_mcp
 import meta_mcp
 import workshops_mcp
+import assistant_mcp
 
 # Initialize FastAPI app
 app = FastAPI(title="BYB Xero & Metabase MCP Server", version="1.0.0")
@@ -57,6 +58,7 @@ app.add_middleware(RequestLoggingMiddleware)
 app.include_router(xero_mcp.router, prefix="/xero", tags=["xero"])
 app.include_router(metabase_mcp.router, prefix="/metabase", tags=["metabase"])
 app.include_router(workshops_mcp.router, prefix="/workshops", tags=["workshops"])
+app.include_router(assistant_mcp.router, prefix="/assistant", tags=["assistant"])
 app.include_router(meta_mcp.router, prefix="", tags=["meta"])
 
 # Serve static files (for token generation page)
@@ -80,12 +82,13 @@ from auth import AUTH0_WORKSHOPS_AUDIENCE
 @app.get("/.well-known/mcp.json")
 async def mcp_manifest():
     """
-    Combined MCP manifest for both Xero and Metabase.
+    Combined MCP manifest for all MCP modules.
     """
-    # Get tools from both modules
+    # Get tools from all modules
     xero_tools = xero_mcp._list_tools_payload().get("tools", [])
     metabase_tools = metabase_mcp._list_metabase_tools().get("tools", [])
     workshop_tools = workshops_mcp._list_workshop_tools().get("tools", [])
+    assistant_tools = assistant_mcp._list_assistant_tools().get("tools", [])
 
     # Get resources from Metabase
     metabase_resources = metabase_mcp._list_metabase_resources().get("resources", [])
@@ -95,7 +98,7 @@ async def mcp_manifest():
         "capabilities": {
             "tools": {
                 "listChanged": False,
-                "tools": xero_tools + metabase_tools + workshop_tools
+                "tools": xero_tools + metabase_tools + workshop_tools + assistant_tools
             },
             "resources": {
                 "listChanged": False,
@@ -107,7 +110,7 @@ async def mcp_manifest():
             "logging": {}
         },
         "serverInfo": {
-            "name": "xero-metabase-mcp",
+            "name": "byb-mcp-server",
             "version": "1.0.0"
         }
     }
@@ -148,7 +151,9 @@ async def oauth_authorization_server(request: Request, api: str = "xero"):
             "mcp:write:metabase",
             "mcp:read:workshops",
             "mcp:write:workshops",
-            "mcp:admin:workshops"
+            "mcp:admin:workshops",
+            "mcp:read:assistant",
+            "mcp:write:assistant"
         ],
         "response_types_supported": [
             "code",
@@ -184,7 +189,8 @@ async def oauth_protected_resource_root():
         "authorization_servers": [f"https://{auth0_domain}/"],
         "scopes_supported": ["mcp:read:xero", "mcp:write:xero",
             "mcp:read:metabase", "mcp:write:metabase",
-            "mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops"],
+            "mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops",
+            "mcp:read:assistant", "mcp:write:assistant"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
     }
@@ -246,6 +252,21 @@ async def oauth_protected_resource_workshops():
         "resource": audience,
         "authorization_servers": [f"https://{auth0_domain}/"],
         "scopes_supported": ["mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops"],
+        "bearer_methods_supported": ["header"],
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
+    }
+
+@app.get("/.well-known/oauth-protected-resource/assistant")
+async def oauth_protected_resource_assistant():
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    audience = AUTH0_ASSISTANT_AUDIENCE or _default_audience()
+    if not auth0_domain or not audience:
+        return Response(status_code=404)
+
+    return {
+        "resource": audience,
+        "authorization_servers": [f"https://{auth0_domain}/"],
+        "scopes_supported": ["mcp:read:assistant", "mcp:write:assistant"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
     }

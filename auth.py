@@ -16,6 +16,7 @@ AUTH0_META_AUDIENCE = os.environ.get("AUTH0_META_AUDIENCE", "https://mcp.backyar
 AUTH0_MYSQL_AUDIENCE = os.environ.get("AUTH0_MYSQL_AUDIENCE", "https://mcp.backyardbrains.com/mysql")
 # workshops audience usually same as mysql if they share the same backend, but user wants separate naming
 AUTH0_WORKSHOPS_AUDIENCE = os.environ.get("AUTH0_WORKSHOPS_AUDIENCE", "https://mcp.backyardbrains.com/workshops")
+AUTH0_ASSISTANT_AUDIENCE = os.environ.get("AUTH0_ASSISTANT_AUDIENCE", "https://mcp.backyardbrains.com/assistant")
 AUTH0_NAMESPACE = "https://mcp.backyardbrains.com"
 
 security = HTTPBearer(auto_error=False)
@@ -214,6 +215,26 @@ async def require_workshops_auth(request: Request, creds: HTTPAuthorizationCrede
         allowed_scopes = ["mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops"]
         if not check_permissions(payload, allowed_scopes):
             logger.warning("Insufficient permissions for Workshops MCP access for %s %s", request.method, request.url.path)
+            raise HTTPException(
+                status_code=403,
+                detail=f"Insufficient permissions. Required one of: {allowed_scopes}",
+            )
+        return payload
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            raise
+        logger.warning("Token validation failed for %s %s: %s", request.method, request.url.path, exc.detail)
+        raise
+
+
+async def require_assistant_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
+    """Assistant-specific auth - requires mcp:read:assistant or mcp:write:assistant scope."""
+    token = await _extract_credentials(request, creds)
+    try:
+        payload = await validate_opaque_token(token)
+        allowed_scopes = ["mcp:read:assistant", "mcp:write:assistant"]
+        if not check_permissions(payload, allowed_scopes):
+            logger.warning("Insufficient permissions for Assistant MCP access for %s %s", request.method, request.url.path)
             raise HTTPException(
                 status_code=403,
                 detail=f"Insufficient permissions. Required one of: {allowed_scopes}",

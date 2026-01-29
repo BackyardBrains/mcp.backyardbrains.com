@@ -1,0 +1,10 @@
+{
+  "users": {
+    "user@example.com": {
+      "name": "Example User",
+      "root_folder_id": "YOUR_GOOGLE_DRIVE_FOLDER_ID_HERE",
+      "enabled": true
+    }
+  },
+  "default_behavior": "reject"
+}
