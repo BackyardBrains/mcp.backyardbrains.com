@@ -25,7 +25,8 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
 from utils import MCP_PROTOCOL_VERSION, _rpc_result, _rpc_error, logger, safe_dumps
-from auth import require_assistant_google_auth, create_assistant_token
+from auth import require_assistant_google_auth, create_assistant_token, ASSISTANT_JWT_SECRET, ASSISTANT_JWT_ALGORITHM
+import jwt
 
 # =============================================================================
 # Configuration
@@ -767,6 +768,9 @@ async def assistant_google_callback(request: Request, code: str, state: str = No
     # Direct login flow - show token page
     mcp_token = create_assistant_token(email)
     
+    # Build the URL-based endpoint
+    mcp_url = f"https://mcp.backyardbrains.com/assistant/u/{mcp_token}"
+    
     return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
@@ -775,12 +779,17 @@ async def assistant_google_callback(request: Request, code: str, state: str = No
             <style>
                 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 700px; margin: 50px auto; padding: 20px; }}
                 h1 {{ color: #1a73e8; }}
-                .token-box {{ background: #f5f5f5; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin: 20px 0; word-break: break-all; font-family: monospace; font-size: 12px; }}
-                .copy-btn {{ background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-top: 10px; }}
-                .copy-btn:hover {{ background: #1557b0; }}
+                .url-box {{ background: #d4edda; border: 2px solid #28a745; border-radius: 8px; padding: 15px; margin: 20px 0; word-break: break-all; font-family: monospace; font-size: 13px; }}
+                .token-box {{ background: #f5f5f5; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin: 20px 0; word-break: break-all; font-family: monospace; font-size: 11px; }}
+                .copy-btn {{ background: #28a745; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; margin-top: 10px; font-size: 16px; }}
+                .copy-btn:hover {{ background: #218838; }}
+                .copy-btn-secondary {{ background: #6c757d; font-size: 14px; padding: 8px 16px; }}
+                .copy-btn-secondary:hover {{ background: #5a6268; }}
                 .success {{ color: #0d9488; font-weight: bold; display: none; margin-left: 10px; }}
                 .instructions {{ background: #e8f4f8; border-radius: 8px; padding: 15px; margin: 20px 0; }}
+                .primary {{ background: #d4edda; border-left: 4px solid #28a745; }}
                 code {{ background: #eee; padding: 2px 6px; border-radius: 3px; }}
+                h2 {{ color: #333; margin-top: 30px; }}
             </style>
         </head>
         <body>
@@ -788,37 +797,38 @@ async def assistant_google_callback(request: Request, code: str, state: str = No
             <p>Logged in as: <strong>{email}</strong></p>
             <p>Scopes authorized: Drive, Gmail, Calendar</p>
             
+            <div class="instructions primary">
+                <h3>Your MCP URL (Recommended)</h3>
+                <p>Copy this URL and add it as a new MCP server in Claude:</p>
+            </div>
+            
+            <div class="url-box" id="url">{mcp_url}</div>
+            <button class="copy-btn" onclick="copyUrl()">Copy MCP URL</button>
+            <span class="success" id="copiedUrl">Copied!</span>
+            
+            <h2>Alternative: Bearer Token</h2>
             <div class="instructions">
-                <h3>Your MCP Bearer Token</h3>
-                <p>Copy this token and add it to your Claude MCP configuration:</p>
+                <p>If your client supports Authorization headers, use this token with the base URL:</p>
+                <p><code>https://mcp.backyardbrains.com/assistant</code></p>
             </div>
             
             <div class="token-box" id="token">{mcp_token}</div>
-            <button class="copy-btn" onclick="copyToken()">Copy Token</button>
-            <span class="success" id="copied">Copied!</span>
-            
-            <div class="instructions" style="margin-top: 30px;">
-                <h3>Claude Configuration</h3>
-                <p>Add this to your Claude MCP settings:</p>
-                <pre style="background: #fff; padding: 10px; border-radius: 5px; overflow-x: auto;">
-{{
-  "mcpServers": {{
-    "assistant": {{
-      "url": "https://mcp.backyardbrains.com/assistant",
-      "headers": {{
-        "Authorization": "Bearer YOUR_TOKEN_HERE"
-      }}
-    }}
-  }}
-}}</pre>
-            </div>
+            <button class="copy-btn copy-btn-secondary" onclick="copyToken()">Copy Token</button>
+            <span class="success" id="copiedToken">Copied!</span>
             
             <script>
+                function copyUrl() {{
+                    const url = document.getElementById('url').innerText;
+                    navigator.clipboard.writeText(url).then(() => {{
+                        document.getElementById('copiedUrl').style.display = 'inline';
+                        setTimeout(() => document.getElementById('copiedUrl').style.display = 'none', 2000);
+                    }});
+                }}
                 function copyToken() {{
                     const token = document.getElementById('token').innerText;
                     navigator.clipboard.writeText(token).then(() => {{
-                        document.getElementById('copied').style.display = 'inline';
-                        setTimeout(() => document.getElementById('copied').style.display = 'none', 2000);
+                        document.getElementById('copiedToken').style.display = 'inline';
+                        setTimeout(() => document.getElementById('copiedToken').style.display = 'none', 2000);
                     }});
                 }}
             </script>
@@ -1611,6 +1621,90 @@ async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require
     
     elif method == "resources/list":
         # Could list Drive folders as resources
+        return _rpc_result(rpc_id, {"resources": []})
+    
+    elif method == "resources/read":
+        return _rpc_result(rpc_id, {"contents": []})
+    
+    else:
+        return _rpc_error(rpc_id, -32601, f"Method {method} not found")
+
+
+# =============================================================================
+# URL-Based Token Authentication (for clients that don't support headers)
+# =============================================================================
+
+def _validate_url_token(token: str) -> Optional[str]:
+    """Validate a JWT from URL and return email, or None if invalid."""
+    try:
+        payload = jwt.decode(token, ASSISTANT_JWT_SECRET, algorithms=[ASSISTANT_JWT_ALGORITHM])
+        return payload.get("email")
+    except jwt.ExpiredSignatureError:
+        logger.warning("URL token expired")
+        return None
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"Invalid URL token: {e}")
+        return None
+
+
+@router.get("/u/{token}")
+async def assistant_url_index(token: str):
+    """Index endpoint with URL-based auth."""
+    email = _validate_url_token(token)
+    if not email:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    return {
+        "service": "assistant-mcp",
+        "status": "ok",
+        "authenticated_as": email,
+        "endpoints": {
+            "mcp": f"/assistant/u/{token}/mcp",
+        },
+    }
+
+
+@router.post("/u/{token}")
+@router.post("/u/{token}/mcp")
+async def handle_assistant_mcp_url_auth(request: Request, token: str):
+    """Handle MCP JSON-RPC requests with URL-based token authentication."""
+    # Validate token from URL
+    user_email = _validate_url_token(token)
+    if not user_email:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    
+    rpc_id = body.get("id")
+    method = body.get("method")
+    params = body.get("params", {})
+    
+    if method == "initialize":
+        return _rpc_result(rpc_id, _initialize_payload())
+    
+    elif method == "ping":
+        return _rpc_result(rpc_id, {"status": "ok"})
+    
+    elif method == "tools/list":
+        return _rpc_result(rpc_id, _list_assistant_tools())
+    
+    elif method == "tools/call":
+        name = params.get("name")
+        args = params.get("arguments", {})
+        result = await handle_assistant_tool_call(name, args, user_email)
+        return _rpc_result(rpc_id, result)
+    
+    elif method == "prompts/list":
+        return _rpc_result(rpc_id, _list_prompts())
+    
+    elif method == "prompts/get":
+        prompt_name = params.get("name")
+        return _rpc_result(rpc_id, _get_prompt(prompt_name))
+    
+    elif method == "resources/list":
         return _rpc_result(rpc_id, {"resources": []})
     
     elif method == "resources/read":
