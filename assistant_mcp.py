@@ -1434,7 +1434,7 @@ async def handle_assistant_rest_tool_call(name: str, body: Dict[str, Any], paylo
     return result
 
 
-@router.get("/openai.json")
+@router.api_route("/openai.json", methods=["GET", "POST"])
 async def assistant_openapi_spec(request: Request):
     """Generate ChatGPT-compatible OpenAPI spec for Assistant tools."""
     # Use the request's actual host for the server URL
@@ -1450,7 +1450,8 @@ async def assistant_openapi_spec(request: Request):
         paths[f"/assistant/tool/{tool['name']}"] = {
             "post": {
                 "operationId": tool["name"],
-                "summary": tool["description"],
+                "summary": tool["description"][:100],  # Keep summary concise
+                "description": tool["description"],
                 "responses": {
                     "200": {
                         "description": "Successful response",
@@ -1473,7 +1474,7 @@ async def assistant_openapi_spec(request: Request):
         }
     
     return {
-        "openapi": "3.1.0",
+        "openapi": "3.0.0",
         "info": {
             "title": "Assistant MCP REST Mirror",
             "description": "Exposes Assistant MCP tools as REST endpoints for ChatGPT Actions",

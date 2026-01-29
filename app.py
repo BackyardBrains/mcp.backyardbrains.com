@@ -199,8 +199,8 @@ async def oauth_protected_resource_root():
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
     }
 
-@app.get("/.well-known/oauth-protected-resource/xero")
-async def oauth_protected_resource_xero():
+@app.get("/.well-known/oauth-protected-resource/xero{subpath:path}")
+async def oauth_protected_resource_xero(subpath: str = ""):
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
     audience = AUTH0_XERO_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
@@ -214,8 +214,8 @@ async def oauth_protected_resource_xero():
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=xero",
     }
 
-@app.get("/.well-known/oauth-protected-resource/metabase")
-async def oauth_protected_resource_metabase():
+@app.get("/.well-known/oauth-protected-resource/metabase{subpath:path}")
+async def oauth_protected_resource_metabase(subpath: str = ""):
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
     audience = AUTH0_METABASE_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
@@ -229,8 +229,8 @@ async def oauth_protected_resource_metabase():
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=metabase",
     }
 
-@app.get("/.well-known/oauth-protected-resource/meta")
-async def oauth_protected_resource_meta():
+@app.get("/.well-known/oauth-protected-resource/meta{subpath:path}")
+async def oauth_protected_resource_meta(subpath: str = ""):
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
     audience = AUTH0_META_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
@@ -244,8 +244,8 @@ async def oauth_protected_resource_meta():
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=meta",
     }
 
-@app.get("/.well-known/oauth-protected-resource/workshops")
-async def oauth_protected_resource_workshops():
+@app.get("/.well-known/oauth-protected-resource/workshops{subpath:path}")
+async def oauth_protected_resource_workshops(subpath: str = ""):
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
     audience = AUTH0_WORKSHOPS_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
@@ -259,8 +259,8 @@ async def oauth_protected_resource_workshops():
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=workshops",
     }
 
-@app.get("/.well-known/oauth-protected-resource/assistant")
-async def oauth_protected_resource_assistant():
+@app.get("/.well-known/oauth-protected-resource/assistant{subpath:path}")
+async def oauth_protected_resource_assistant(subpath: str = ""):
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
     audience = AUTH0_ASSISTANT_AUDIENCE or _default_audience()
     if not auth0_domain or not audience:
