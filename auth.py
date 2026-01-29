@@ -126,6 +126,12 @@ def _log_scope_claims(payload: Dict[str, Any], *, context: str) -> None:
 
 
 async def _extract_credentials(request: Request, creds: Optional[HTTPAuthorizationCredentials]):
+    # Fallback to manual header inspection if creds is None (fixing POST issue)
+    if creds is None:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            return auth_header.split(" ", 1)[1].strip()
+
     if creds is None or creds.scheme.lower() != "bearer":
         logger.warning("Missing/invalid Authorization header for %s %s", request.method, request.url.path)
         raise HTTPException(
