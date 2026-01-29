@@ -142,7 +142,7 @@ async def _extract_credentials(request: Request, creds: Optional[HTTPAuthorizati
     return creds.credentials
 
 
-async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
+async def require_auth(request: Request, creds: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Base auth - validates token via Auth0 /userinfo with no scope checking."""
     token = await _extract_credentials(request, creds)
     try:
@@ -152,7 +152,7 @@ async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = D
         raise
 
 
-async def require_xero_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
+async def require_xero_auth(request: Request, creds: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Xero-specific auth - requires mcp:read:xero or mcp:write:xero scope."""
     token = await _extract_credentials(request, creds)
     try:
@@ -171,7 +171,7 @@ async def require_xero_auth(request: Request, creds: HTTPAuthorizationCredential
         raise
 
 
-async def require_metabase_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
+async def require_metabase_auth(request: Request, creds: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Metabase-specific auth - requires mcp:read:metabase or mcp:write:metabase scope."""
     token = await _extract_credentials(request, creds)
     try:
@@ -189,7 +189,7 @@ async def require_metabase_auth(request: Request, creds: HTTPAuthorizationCreden
         logger.warning("Token validation failed for %s %s: %s", request.method, request.url.path, exc.detail)
         raise
 
-async def require_mysql_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
+async def require_mysql_auth(request: Request, creds: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """MySQL-specific auth - requires mcp:read:mysql or mcp:write:mysql scope."""
     token = await _extract_credentials(request, creds)
     try:
@@ -207,7 +207,7 @@ async def require_mysql_auth(request: Request, creds: HTTPAuthorizationCredentia
         logger.warning("Token validation failed for %s %s: %s", request.method, request.url.path, exc.detail)
         raise
 
-async def require_workshops_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
+async def require_workshops_auth(request: Request, creds: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Workshops-specific auth - requires mcp:read:workshops, mcp:write:workshops, or mcp:admin:workshops scope."""
     token = await _extract_credentials(request, creds)
     try:
@@ -227,7 +227,7 @@ async def require_workshops_auth(request: Request, creds: HTTPAuthorizationCrede
         raise
 
 
-async def require_assistant_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
+async def require_assistant_auth(request: Request, creds: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     """Assistant-specific auth - requires mcp:read:assistant or mcp:write:assistant scope."""
     token = await _extract_credentials(request, creds)
     try:
