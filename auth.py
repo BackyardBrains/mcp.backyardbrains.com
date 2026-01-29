@@ -272,8 +272,23 @@ async def require_assistant_google_auth(request: Request, creds: HTTPAuthorizati
     """
     Assistant auth using our own JWT (issued after Google OAuth).
     No Auth0 dependency - just validates the JWT we issued.
+    Returns WWW-Authenticate header pointing to our Google-based OAuth.
     """
-    token = await _extract_credentials(request, creds)
+    # Custom credential extraction with assistant-specific OAuth discovery
+    if creds is None or creds.scheme.lower() != "bearer":
+        logger.warning("Missing/invalid Authorization header for %s %s", request.method, request.url.path)
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization required",
+            headers={
+                "WWW-Authenticate": (
+                    'Bearer '
+                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/assistant"'
+                )
+            },
+        )
+    
+    token = creds.credentials
     try:
         payload = jwt.decode(token, ASSISTANT_JWT_SECRET, algorithms=[ASSISTANT_JWT_ALGORITHM])
         return payload  # Contains {"email": "user@example.com", "exp": ..., "iat": ...}
@@ -281,8 +296,23 @@ async def require_assistant_google_auth(request: Request, creds: HTTPAuthorizati
         logger.warning("Assistant JWT expired for %s %s", request.method, request.url.path)
         raise HTTPException(
             status_code=401,
-            detail="Token expired - please re-authenticate via /assistant/google/login"
+            detail="Token expired - please re-authenticate via /assistant/google/login",
+            headers={
+                "WWW-Authenticate": (
+                    'Bearer '
+                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/assistant"'
+                )
+            },
         )
     except jwt.InvalidTokenError as exc:
         logger.warning("Invalid assistant JWT for %s %s: %s", request.method, request.url.path, exc)
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(
+            status_code=401, 
+            detail="Invalid token",
+            headers={
+                "WWW-Authenticate": (
+                    'Bearer '
+                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/assistant"'
+                )
+            },
+        )
