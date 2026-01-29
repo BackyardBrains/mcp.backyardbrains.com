@@ -622,6 +622,25 @@ async def oauth_token(request: Request):
 # Google OAuth Endpoints
 # =============================================================================
 
+@router.get("/.well-known/oauth-authorization-server")
+def assistant_oauth_metadata():
+    """
+    OAuth 2.0 Authorization Server Metadata at the assistant path.
+    Some clients look for this at {issuer}/.well-known/oauth-authorization-server
+    """
+    base_url = "https://mcp.backyardbrains.com"
+    return {
+        "issuer": f"{base_url}/assistant",
+        "authorization_endpoint": f"{base_url}/assistant/oauth/authorize",
+        "token_endpoint": f"{base_url}/assistant/oauth/token",
+        "scopes_supported": ["assistant"],
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code"],
+        "code_challenge_methods_supported": ["S256", "plain"],
+        "token_endpoint_auth_methods_supported": ["none"],
+    }
+
+
 @router.get("/")
 @router.get("")
 def assistant_index():
@@ -634,6 +653,8 @@ def assistant_index():
             "mcp": "/assistant/mcp",
             "google_login": "/assistant/google/login",
             "google_status": "/assistant/google/status",
+            "oauth_authorize": "/assistant/oauth/authorize",
+            "oauth_token": "/assistant/oauth/token",
         },
     }
 
