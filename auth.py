@@ -128,18 +128,13 @@ def _log_scope_claims(payload: Dict[str, Any], *, context: str) -> None:
 async def _extract_credentials(request: Request, creds: Optional[HTTPAuthorizationCredentials]):
     if creds is None or creds.scheme.lower() != "bearer":
         logger.warning("Missing/invalid Authorization header for %s %s", request.method, request.url.path)
-        
-        # Consolidate to root metadata to avoid client confusion with multiple audiences on same host
-        metadata_url = "https://mcp.backyardbrains.com/.well-known/oauth-protected-resource"
-            
         raise HTTPException(
             status_code=401,
             detail="Authorization required",
             headers={
                 "WWW-Authenticate": (
                     'Bearer '
-                    'realm="mcp", '
-                    f'resource_metadata="{metadata_url}", '
+                    'resource_metadata="https://mcp.backyardbrains.com/.well-known/oauth-protected-resource", '
                     'scope="mcp:read"'
                 )
             },

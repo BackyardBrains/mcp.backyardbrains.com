@@ -73,8 +73,8 @@ async def root():
 
 # Audience helpers
 def _default_audience():
-    """Choose a single master audience for the entire MCP server to avoid multi-token issues in Claude."""
-    return AUTH0_META_AUDIENCE or AUTH0_XERO_AUDIENCE or "https://mcp.backyardbrains.com"
+    """Choose the primary audience to use for the combined landing endpoints."""
+    return AUTH0_XERO_AUDIENCE or AUTH0_METABASE_AUDIENCE or AUTH0_META_AUDIENCE or AUTH0_ASSISTANT_AUDIENCE
 
 from auth import AUTH0_WORKSHOPS_AUDIENCE
 
@@ -200,24 +200,79 @@ async def oauth_protected_resource_root():
 
 @app.get("/.well-known/oauth-protected-resource/xero")
 async def oauth_protected_resource_xero():
-    return await oauth_protected_resource_root()
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    audience = AUTH0_XERO_AUDIENCE
+    if not auth0_domain or not audience:
+        return Response(status_code=404)
+    
+    return {
+        "resource": audience,
+        "authorization_servers": [f"https://{auth0_domain}/"],
+        "scopes_supported": ["mcp:read:xero", "mcp:write:xero"],
+        "bearer_methods_supported": ["header"],
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=xero",
+    }
 
 @app.get("/.well-known/oauth-protected-resource/metabase")
 async def oauth_protected_resource_metabase():
-    return await oauth_protected_resource_root()
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    audience = AUTH0_METABASE_AUDIENCE
+    if not auth0_domain or not audience:
+        return Response(status_code=404)
+    
+    return {
+        "resource": audience,
+        "authorization_servers": [f"https://{auth0_domain}/"],
+        "scopes_supported": ["mcp:read:metabase", "mcp:write:metabase"],
+        "bearer_methods_supported": ["header"],
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=metabase",
+    }
 
 
 @app.get("/.well-known/oauth-protected-resource/meta")
 async def oauth_protected_resource_meta():
-    return await oauth_protected_resource_root()
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    audience = AUTH0_META_AUDIENCE
+    if not auth0_domain or not audience:
+        return Response(status_code=404)
+
+    return {
+        "resource": audience,
+        "authorization_servers": [f"https://{auth0_domain}/"],
+        "scopes_supported": ["mcp:read:meta", "mcp:write:meta"],
+        "bearer_methods_supported": ["header"],
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=meta",
+    }
 
 @app.get("/.well-known/oauth-protected-resource/workshops")
 async def oauth_protected_resource_workshops():
-    return await oauth_protected_resource_root()
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    audience = AUTH0_WORKSHOPS_AUDIENCE
+    if not auth0_domain or not audience:
+        return Response(status_code=404)
+
+    return {
+        "resource": audience,
+        "authorization_servers": [f"https://{auth0_domain}/"],
+        "scopes_supported": ["mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops"],
+        "bearer_methods_supported": ["header"],
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=workshops",
+    }
 
 @app.get("/.well-known/oauth-protected-resource/assistant")
 async def oauth_protected_resource_assistant():
-    return await oauth_protected_resource_root()
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    audience = AUTH0_ASSISTANT_AUDIENCE
+    if not auth0_domain or not audience:
+        return Response(status_code=404)
+
+    return {
+        "resource": audience,
+        "authorization_servers": [f"https://{auth0_domain}/"],
+        "scopes_supported": ["mcp:read:assistant", "mcp:write:assistant"],
+        "bearer_methods_supported": ["header"],
+        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=assistant",
+    }
 
 # Auth0 OIDC Discovery Passthrough (for Xero auth flow mostly)
 @app.get("/.well-known/openid-configuration")
