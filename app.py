@@ -73,8 +73,8 @@ async def root():
 
 # Audience helpers
 def _default_audience():
-    """Choose the primary audience to use for the combined landing endpoints."""
-    return AUTH0_XERO_AUDIENCE or AUTH0_METABASE_AUDIENCE or AUTH0_META_AUDIENCE or getattr(auth, "AUTH0_WORKSHOPS_AUDIENCE", None)
+    """Choose a single master audience for the entire MCP server to avoid multi-token issues in Claude."""
+    return AUTH0_META_AUDIENCE or AUTH0_XERO_AUDIENCE or "https://mcp.backyardbrains.com"
 
 from auth import AUTH0_WORKSHOPS_AUDIENCE
 
@@ -200,79 +200,24 @@ async def oauth_protected_resource_root():
 
 @app.get("/.well-known/oauth-protected-resource/xero")
 async def oauth_protected_resource_xero():
-    auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = AUTH0_XERO_AUDIENCE or _default_audience()
-    if not auth0_domain or not audience:
-        return Response(status_code=404)
-
-    return {
-        "resource": audience,  # <— USE THE SAME IDENTIFIER
-        "authorization_servers": [f"https://{auth0_domain}/"],
-        "scopes_supported": ["mcp:read:xero", "mcp:write:xero"],
-        "bearer_methods_supported": ["header"],
-        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
-    }
+    return await oauth_protected_resource_root()
 
 @app.get("/.well-known/oauth-protected-resource/metabase")
 async def oauth_protected_resource_metabase():
-    auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = AUTH0_METABASE_AUDIENCE or _default_audience()
-    if not auth0_domain or not audience:
-        return Response(status_code=404)
-
-    return {
-        "resource": audience,  # <— SAME HERE
-        "authorization_servers": [f"https://{auth0_domain}/"],
-        "scopes_supported": ["mcp:read:metabase", "mcp:write:metabase"],
-        "bearer_methods_supported": ["header"],
-        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
-    }
+    return await oauth_protected_resource_root()
 
 
 @app.get("/.well-known/oauth-protected-resource/meta")
 async def oauth_protected_resource_meta():
-    auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = AUTH0_META_AUDIENCE or _default_audience()
-    if not auth0_domain or not audience:
-        return Response(status_code=404)
-
-    return {
-        "resource": audience,
-        "authorization_servers": [f"https://{auth0_domain}/"],
-        "scopes_supported": ["mcp:read:meta", "mcp:write:meta"],
-        "bearer_methods_supported": ["header"],
-        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
-    }
+    return await oauth_protected_resource_root()
 
 @app.get("/.well-known/oauth-protected-resource/workshops")
 async def oauth_protected_resource_workshops():
-    auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = AUTH0_WORKSHOPS_AUDIENCE or _default_audience()
-    if not auth0_domain or not audience:
-        return Response(status_code=404)
-
-    return {
-        "resource": audience,
-        "authorization_servers": [f"https://{auth0_domain}/"],
-        "scopes_supported": ["mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops"],
-        "bearer_methods_supported": ["header"],
-        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
-    }
+    return await oauth_protected_resource_root()
 
 @app.get("/.well-known/oauth-protected-resource/assistant")
 async def oauth_protected_resource_assistant():
-    auth0_domain = os.environ.get("AUTH0_DOMAIN")
-    audience = AUTH0_ASSISTANT_AUDIENCE or _default_audience()
-    if not auth0_domain or not audience:
-        return Response(status_code=404)
-
-    return {
-        "resource": audience,
-        "authorization_servers": [f"https://{auth0_domain}/"],
-        "scopes_supported": ["mcp:read:assistant", "mcp:write:assistant"],
-        "bearer_methods_supported": ["header"],
-        "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html",
-    }
+    return await oauth_protected_resource_root()
 
 # Auth0 OIDC Discovery Passthrough (for Xero auth flow mostly)
 @app.get("/.well-known/openid-configuration")

@@ -12,7 +12,7 @@ META_MCP_UPSTREAM = os.environ.get("META_MCP_UPSTREAM", "http://127.0.0.1:8088/m
 
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
 AUTH0_META_AUDIENCE = os.environ.get("AUTH0_META_AUDIENCE")  # set this
-PRM_META_URL = "https://mcp.backyardbrains.com/.well-known/oauth-protected-resource/meta"
+PRM_META_URL = "https://mcp.backyardbrains.com/.well-known/oauth-protected-resource"
 
 _jwks = None
 

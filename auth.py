@@ -125,15 +125,12 @@ def _log_scope_claims(payload: Dict[str, Any], *, context: str) -> None:
     )
 
 
-async def _extract_credentials(request: Request, creds: Optional[HTTPAuthorizationCredentials], resource: Optional[str] = None):
+async def _extract_credentials(request: Request, creds: Optional[HTTPAuthorizationCredentials]):
     if creds is None or creds.scheme.lower() != "bearer":
         logger.warning("Missing/invalid Authorization header for %s %s", request.method, request.url.path)
         
-        # Determine resource metadata URL
-        # Point to service-specific metadata if available, otherwise root
+        # Consolidate to root metadata to avoid client confusion with multiple audiences on same host
         metadata_url = "https://mcp.backyardbrains.com/.well-known/oauth-protected-resource"
-        if resource:
-            metadata_url = f"{metadata_url}/{resource}"
             
         raise HTTPException(
             status_code=401,
@@ -141,7 +138,7 @@ async def _extract_credentials(request: Request, creds: Optional[HTTPAuthorizati
             headers={
                 "WWW-Authenticate": (
                     'Bearer '
-                    f'realm="mcp", '
+                    'realm="mcp", '
                     f'resource_metadata="{metadata_url}", '
                     'scope="mcp:read"'
                 )
@@ -162,7 +159,7 @@ async def require_auth(request: Request, creds: HTTPAuthorizationCredentials = D
 
 async def require_xero_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
     """Xero-specific auth - requires mcp:read:xero or mcp:write:xero scope."""
-    token = await _extract_credentials(request, creds, resource="xero")
+    token = await _extract_credentials(request, creds)
     try:
         payload = await validate_opaque_token(token)
         if not check_permissions(payload, ["mcp:read:xero", "mcp:write:xero"]):
@@ -181,7 +178,7 @@ async def require_xero_auth(request: Request, creds: HTTPAuthorizationCredential
 
 async def require_metabase_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
     """Metabase-specific auth - requires mcp:read:metabase or mcp:write:metabase scope."""
-    token = await _extract_credentials(request, creds, resource="metabase")
+    token = await _extract_credentials(request, creds)
     try:
         payload = await validate_opaque_token(token)
         if not check_permissions(payload, ["mcp:read:metabase", "mcp:write:metabase"]):
@@ -217,7 +214,7 @@ async def require_mysql_auth(request: Request, creds: HTTPAuthorizationCredentia
 
 async def require_workshops_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
     """Workshops-specific auth - requires mcp:read:workshops, mcp:write:workshops, or mcp:admin:workshops scope."""
-    token = await _extract_credentials(request, creds, resource="workshops")
+    token = await _extract_credentials(request, creds)
     try:
         payload = await validate_opaque_token(token)
         allowed_scopes = ["mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops"]
@@ -237,7 +234,7 @@ async def require_workshops_auth(request: Request, creds: HTTPAuthorizationCrede
 
 async def require_assistant_auth(request: Request, creds: HTTPAuthorizationCredentials = Depends(security)):
     """Assistant-specific auth - requires mcp:read:assistant or mcp:write:assistant scope."""
-    token = await _extract_credentials(request, creds, resource="assistant")
+    token = await _extract_credentials(request, creds)
     try:
         payload = await validate_opaque_token(token)
         allowed_scopes = ["mcp:read:assistant", "mcp:write:assistant"]
