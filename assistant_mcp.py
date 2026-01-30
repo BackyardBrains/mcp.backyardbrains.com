@@ -43,6 +43,16 @@ ASSISTANT_USERS_CONFIG_PATH = os.environ.get(
     "ASSISTANT_USERS_CONFIG_PATH", ".assistant_users.json"
 )
 
+# Login / OAuth Configuration
+ASSISTANT_GOOGLE_CREDENTIALS_FILE = os.environ.get(
+    "ASSISTANT_GOOGLE_CREDENTIALS_FILE", "assistant_google_credentials.json"
+)
+# Support direct env vars for OAuth (easier for server deployment)
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+GOOGLE_AUTH_URI = os.environ.get("GOOGLE_AUTH_URI", "https://accounts.google.com/o/oauth2/auth")
+GOOGLE_TOKEN_URI = os.environ.get("GOOGLE_TOKEN_URI", "https://oauth2.googleapis.com/token")
+
 # Service Account Configuration (if set, uses service account instead of per-user OAuth)
 ASSISTANT_SERVICE_ACCOUNT_FILE = os.environ.get("ASSISTANT_SERVICE_ACCOUNT_FILE")
 
@@ -546,14 +556,31 @@ async def assistant_google_login(request: Request):
     """Initiate Google OAuth flow for Drive, Gmail, and Calendar."""
     redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/assistant/google/callback"
     
-    if not os.path.exists(ASSISTANT_GOOGLE_CREDENTIALS_FILE):
-        raise HTTPException(
-            status_code=500,
-            detail=f"Google credentials file not found: {ASSISTANT_GOOGLE_CREDENTIALS_FILE}"
-        )
+    # Try to load client config
+    client_config = None
+    if os.path.exists(ASSISTANT_GOOGLE_CREDENTIALS_FILE):
+        with open(ASSISTANT_GOOGLE_CREDENTIALS_FILE, 'r') as f:
+            creds_data = json.load(f)
+            client_type = 'web' if 'web' in creds_data else ('installed' if 'installed' in creds_data else None)
+            if client_type:
+                client_config = creds_data[client_type]
+    elif GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+        # Construct config from environment variables
+        client_config = {
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "auth_uri": GOOGLE_AUTH_URI,
+            "token_uri": GOOGLE_TOKEN_URI
+        }
     
-    flow = Flow.from_client_secrets_file(
-        ASSISTANT_GOOGLE_CREDENTIALS_FILE,
+    if not client_config:
+        error_msg = f"Google OAuth configuration not found. Please upload '{ASSISTANT_GOOGLE_CREDENTIALS_FILE}' or set GOOGLE_CLIENT_ID/SECRET in .env"
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+    
+    # Construct flow object from config dict
+    flow = Flow.from_client_config(
+        {"web": client_config} if "auth_uri" in client_config else {"installed": client_config},
         scopes=ASSISTANT_GOOGLE_SCOPES,
         redirect_uri=redirect_uri
     )
@@ -575,8 +602,27 @@ async def assistant_google_callback(request: Request, code: str, state: str = No
     """Handle Google OAuth callback."""
     redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/assistant/google/callback"
     
-    flow = Flow.from_client_secrets_file(
-        ASSISTANT_GOOGLE_CREDENTIALS_FILE,
+    # Try to load client config
+    client_config = None
+    if os.path.exists(ASSISTANT_GOOGLE_CREDENTIALS_FILE):
+        with open(ASSISTANT_GOOGLE_CREDENTIALS_FILE, 'r') as f:
+            creds_data = json.load(f)
+            client_type = 'web' if 'web' in creds_data else ('installed' if 'installed' in creds_data else None)
+            if client_type:
+                client_config = creds_data[client_type]
+    elif GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+        client_config = {
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "auth_uri": GOOGLE_AUTH_URI,
+            "token_uri": GOOGLE_TOKEN_URI
+        }
+
+    if not client_config:
+        raise HTTPException(status_code=500, detail="Google OAuth configuration missing during callback")
+
+    flow = Flow.from_client_config(
+        {"web": client_config} if "auth_uri" in client_config else {"installed": client_config},
         scopes=ASSISTANT_GOOGLE_SCOPES,
         redirect_uri=redirect_uri
     )
