@@ -649,7 +649,12 @@ def _list_assistant_tools():
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_get_priorities",
@@ -657,7 +662,12 @@ def _list_assistant_tools():
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_get_resources",
@@ -665,7 +675,12 @@ def _list_assistant_tools():
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_list_projects",
@@ -673,7 +688,12 @@ def _list_assistant_tools():
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_get_project",
@@ -687,7 +707,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_list_inbox",
@@ -695,7 +720,12 @@ def _list_assistant_tools():
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_read_inbox_file",
@@ -709,7 +739,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_move_to_outbox",
@@ -723,7 +758,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_write_project",
@@ -738,7 +778,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_create_project",
@@ -753,7 +798,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_append_log",
@@ -798,7 +848,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_gmail_read",
@@ -812,7 +867,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_gmail_search",
@@ -827,7 +887,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_gmail_label",
@@ -857,7 +922,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_gmail_mark_read",
@@ -880,7 +950,12 @@ def _list_assistant_tools():
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_calendar_list_events",
@@ -896,7 +971,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_calendar_get_event",
@@ -911,7 +991,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_calendar_create_event",
@@ -931,7 +1016,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_calendar_update_event",
@@ -952,7 +1042,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "assistant_calendar_delete_event",
@@ -967,7 +1062,12 @@ def _list_assistant_tools():
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": False,
+                    "idempotentHint": False
+                }
             },
             {
                 "name": "assistant_google_account",
@@ -975,7 +1075,12 @@ def _list_assistant_tools():
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             }
         ]
     }

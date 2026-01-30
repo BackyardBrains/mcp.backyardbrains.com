@@ -185,21 +185,36 @@ def _list_metabase_tools():
                 "description": "List all dashboards",
                 "inputSchema": {"type": "object", "properties": {}},
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "metabase_list_databases",
                 "description": "List all databases connected to Metabase",
                 "inputSchema": {"type": "object", "properties": {}},
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "metabase_list_cards",
                 "description": "List all cards (saved questions)",
                 "inputSchema": {"type": "object", "properties": {}},
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "metabase_get_dashboard",
@@ -212,7 +227,12 @@ def _list_metabase_tools():
                     "required": ["dashboard_id"]
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "metabase_execute_card",
@@ -226,7 +246,12 @@ def _list_metabase_tools():
                     "required": ["card_id"]
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "metabase_execute_sql",
@@ -240,7 +265,12 @@ def _list_metabase_tools():
                     "required": ["database_id", "query"]
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "metabase_create_card",
@@ -258,7 +288,12 @@ def _list_metabase_tools():
                     "required": ["name", "dataset_query", "database_id"]
                 },
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": False,
+                    "idempotentHint": False
+                }
             },
             {
                 "name": "metabase_update_card",
@@ -277,7 +312,12 @@ def _list_metabase_tools():
                     "required": ["card_id"]
                 },
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "metabase_create_dashboard",
@@ -293,7 +333,12 @@ def _list_metabase_tools():
                     "required": ["name"]
                 },
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": False,
+                    "idempotentHint": False
+                }
             }
         ]
     }

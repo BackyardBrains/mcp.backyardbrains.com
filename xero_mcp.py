@@ -707,7 +707,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "xero_get_balance_sheet",
@@ -728,7 +733,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "xero_get_profit_and_loss",
@@ -752,7 +762,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "xero_get_cash_summary",
@@ -770,7 +785,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
 
             {
@@ -792,7 +812,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "xero_create_contacts",
@@ -802,7 +827,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:write:xero"] }
                 ],
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": False,
+                    "idempotentHint": False
+                }
             },
             {
                 "name": "xero_list_bank_transactions",
@@ -821,7 +851,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "xero_create_bank_transactions",
@@ -831,7 +866,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:write:xero"] }
                 ],
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": False,
+                    "idempotentHint": False
+                }
             },
             {
                 "name": "xero_list_accounts",
@@ -841,7 +881,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "xero_list_manual_journals",
@@ -860,7 +905,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "xero_list_organisations",
@@ -870,7 +920,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "xero_list_payments",
@@ -892,7 +947,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
 
             {
@@ -909,7 +969,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
 
 
@@ -933,7 +998,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "xero_list_items",
@@ -948,7 +1018,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "xero_list_bills",
@@ -969,7 +1044,12 @@ def _list_tools_payload():
                     { "type": "oauth2", "scopes": ["mcp:read:xero"] }
                 ],
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             }
         ]
     }

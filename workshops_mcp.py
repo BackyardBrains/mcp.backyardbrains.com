@@ -1727,7 +1727,12 @@ def _list_workshop_tools():
                     }
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_get",
@@ -1745,7 +1750,12 @@ def _list_workshop_tools():
                     "required": ["ids"]
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_create",
@@ -1775,7 +1785,12 @@ def _list_workshop_tools():
                     "required": ["title", "language", "start_date", "description", "location", "about_left", "about_right"]
                 },
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": False,
+                    "idempotentHint": False
+                }
             },
             {
                 "name": "workshop_update",
@@ -1805,7 +1820,12 @@ def _list_workshop_tools():
                     "required": ["id"]
                 },
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_find_pair",
@@ -1818,7 +1838,12 @@ def _list_workshop_tools():
                     "required": ["id"]
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_registrations",
@@ -1832,14 +1857,24 @@ def _list_workshop_tools():
                     }
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_google_account",
                 "description": "Get the email address of the currently authorized Google account",
                 "inputSchema": {"type": "object", "properties": {}},
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             # Generic SQL tool
             {
@@ -1853,14 +1888,24 @@ def _list_workshop_tools():
                     "required": ["query"]
                 },
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_get_forms",
                 "description": "List Forminator forms from wp_posts",
                 "inputSchema": {"type": "object", "properties": {}},
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_get_entries",
@@ -1873,7 +1918,12 @@ def _list_workshop_tools():
                     "required": ["form_id"]
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_get_entry_by_id",
@@ -1886,7 +1936,12 @@ def _list_workshop_tools():
                     "required": ["entry_id"]
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             # Polylang specific tools
             {
@@ -1894,7 +1949,12 @@ def _list_workshop_tools():
                 "description": "Get discovered Polylang languages and their term_taxonomy_ids",
                 "inputSchema": {"type": "object", "properties": {}},
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_set_language",
@@ -1908,7 +1968,12 @@ def _list_workshop_tools():
                     "required": ["post_id", "language"]
                 },
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_link_translations",
@@ -1924,14 +1989,24 @@ def _list_workshop_tools():
                     "required": ["post_ids_by_lang"]
                 },
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_flush_cache",
                 "description": "Flush MCP Polylang discovery cache (and document WP cache flush)",
                 "inputSchema": {"type": "object", "properties": {}},
                 "x-openai-isConsequential": True,
-                "isConsequential": True
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_read_instructors_interest",
@@ -1945,7 +2020,12 @@ def _list_workshop_tools():
                     }
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_read_feedback",
@@ -1962,7 +2042,12 @@ def _list_workshop_tools():
                     "required": ["spreadsheet_id"]
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             },
             {
                 "name": "workshop_planner",
@@ -1974,7 +2059,12 @@ def _list_workshop_tools():
                     }
                 },
                 "x-openai-isConsequential": False,
-                "isConsequential": False
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             }
         ]
     }
