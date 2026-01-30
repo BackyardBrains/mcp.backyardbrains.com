@@ -1561,21 +1561,24 @@ async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require
             # Fallback logic: If exactly one user is enabled in .assistant_users.json, use that.
             try:
                 config = load_users_config()
-                enabled_users = [email for email, u in config.get("users", {}).items() if u.get("enabled", True)]
+                users_map = config.get("users", {})
+                enabled_users = [email for email, u in users_map.items() if u.get("enabled", True)]
+                
                 if len(enabled_users) == 1:
                     user_email = enabled_users[0]
                     logger.warning(f"No email in token. Falling back to single configured user: {user_email}")
+                elif len(enabled_users) > 1:
+                    # Multiple users, cannot fallback safely
+                    logger.error(f"User identity missing in token and multiple users are configured: {enabled_users}")
+                    logger.error(f"Full payload dump: {safe_dumps(payload)}")
+                    
+                    user_list_str = ", ".join(enabled_users)
+                    return _rpc_error(rpc_id, -32600, 
+                        f"User identity missing and multiple users configured ({user_list_str}). "
+                        "Please update ChatGPT scopes to include 'openid profile email' so we can identify you."
+                    )
             except Exception as e:
                 logger.error(f"Error checking user fallback: {e}")
-
-        if not user_email:
-            # User requested full payload dump in logs for debugging
-            logger.error(f"User email not found in token for method {method}. Available payload keys: {list(payload.keys())}")
-            logger.error(f"Full payload dump: {safe_dumps(payload)}")
-            
-            # Inform the user with more context
-            sub_id = payload.get("sub", "unknown")
-            return _rpc_error(rpc_id, -32600, f"User email not found in token (sub: {sub_id}). Please ensure your account has an email address or update ChatGPT configuration.")
             
         name = params.get("name")
         args = params.get("arguments", {})

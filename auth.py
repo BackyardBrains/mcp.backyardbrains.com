@@ -6,7 +6,7 @@ import httpx
 from fastapi import HTTPException, Request, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from utils import logger
+from utils import logger, safe_dumps
 
 # Auth0 configuration
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
@@ -134,7 +134,9 @@ def extract_email(payload: Dict[str, Any]) -> Optional[str]:
 
 
 def _log_scope_claims(payload: Dict[str, Any], *, context: str) -> None:
-    """Log permissions/scope claims for debugging."""
+    """Log full payload for debugging identity issues."""
+    logger.info("Auth0 Full Payload for %s: %s", context, safe_dumps(payload))
+    
     namespaced_permissions = payload.get(f"{AUTH0_NAMESPACE}/permissions")
     permissions = payload.get("permissions")
     scope_string = payload.get("scope")
