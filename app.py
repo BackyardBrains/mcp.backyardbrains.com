@@ -549,10 +549,6 @@ async def get_token_page(request: Request):
                     <input type="radio" id="apiMetabase" name="apiChoice" value="metabase">
                     <label for="apiMetabase">Metabase API (analytics data)</label>
                 </div>
-                <div class="api-option">
-                    <input type="radio" id="apiWorkshops" name="apiChoice" value="workshops">
-                    <label for="apiWorkshops">Workshops API (WordPress data)</label>
-                </div>
             </div>
             
             <button onclick="login()" class="btn">Login with Auth0</button>

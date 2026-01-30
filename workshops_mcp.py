@@ -1563,61 +1563,6 @@ async def workshop_google_account(params: Dict[str, Any]):
     except Exception as e:
         return {"error": str(e), "client_id": getattr(creds, 'client_id', 'unknown')}
 
-@router.get("/google/login")
-async def workshop_google_auth_login(request: Request):
-    """Initiate Google OAuth flow."""
-    redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/workshops/google/callback" if MCP_BASE_URL else f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
-    
-    # Validation check for credential file type
-    if os.path.exists(WORKSHOPS_GOOGLE_CREDENTIALS_FILE):
-        with open(WORKSHOPS_GOOGLE_CREDENTIALS_FILE, 'r') as f:
-            creds_data = json.load(f)
-            if creds_data.get('type') == 'service_account':
-                 error_msg = f"Error: '{WORKSHOPS_GOOGLE_CREDENTIALS_FILE}' is a Service Account file, but a 'Web Application' OAuth client secret is required for the user login flow. Please check your .env file or upload the correct OAuth JSON."
-                 logger.error(error_msg)
-                 raise HTTPException(status_code=500, detail=error_msg)
-
-    flow = Flow.from_client_secrets_file(
-        WORKSHOPS_GOOGLE_CREDENTIALS_FILE,
-        scopes=GOOGLE_SCOPES,
-        redirect_uri=redirect_uri
-    )
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='false',
-        prompt='consent'
-    )
-    # Store state in session or just use it in the callback
-    # For simplicity, we'll just redirect
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(authorization_url)
-
-@router.get("/google/callback")
-async def workshop_google_auth_callback(request: Request, code: str, state: str = None):
-    """Handle Google OAuth callback."""
-    redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/workshops/google/callback" if MCP_BASE_URL else f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
-    
-    # Validation check for credential file type
-    if os.path.exists(WORKSHOPS_GOOGLE_CREDENTIALS_FILE):
-        with open(WORKSHOPS_GOOGLE_CREDENTIALS_FILE, 'r') as f:
-            creds_data = json.load(f)
-            if creds_data.get('type') == 'service_account':
-                 error_msg = f"Error: '{WORKSHOPS_GOOGLE_CREDENTIALS_FILE}' is a Service Account file, but a 'Web Application' OAuth client secret is required for the user login flow. Please check your .env file or upload the correct OAuth JSON."
-                 logger.error(error_msg)
-                 raise HTTPException(status_code=500, detail=error_msg)
-
-    flow = Flow.from_client_secrets_file(
-        WORKSHOPS_GOOGLE_CREDENTIALS_FILE,
-        scopes=GOOGLE_SCOPES,
-        redirect_uri=redirect_uri
-    )
-    try:
-        flow.fetch_token(code=code)
-    except Exception as e:
-        # Google sometimes returns extra scopes (e.g. if previously authorized) 
-        # which can trigger a Warning/Exception in oauthlib. 
-        # If we still got the credentials, we can proceed.
-        logger.warning(f"Google OAuth token exchange warning/error: {e}")
         if not flow.credentials:
             raise HTTPException(status_code=500, detail=f"Failed to fetch token: {str(e)}")
             
