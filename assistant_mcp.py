@@ -643,40 +643,41 @@ def _list_assistant_tools():
     """Return all assistant tool definitions."""
     return {
         "tools": [
-            # -----------------------------------------------------------------
-            # Drive Tools - Read
-            # -----------------------------------------------------------------
             {
                 "name": "assistant_get_rules",
-                "description": "CRITICAL: Call this tool FIRST at the start of every session. Returns the assistant's operating rules and behavioral guidelines. These rules govern all subsequent behavior.",
+                "description": "Returns the assistant's operating rules and behavioral guidelines. Call this first to understand constraints.",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_get_priorities",
-                "description": "[READ] Get current priorities. Call after assistant_get_rules to understand what matters most.",
+                "description": "Get current priorities. Call after assistant_get_rules to understand current focus.",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_get_resources",
-                "description": "[READ] Get reference resources and materials.",
+                "description": "Get reference resources and materials.",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_list_projects",
-                "description": "[READ] List all projects. Returns project IDs and names for use with assistant_get_project.",
+                "description": "List all projects. Returns project IDs and names for use with assistant_get_project.",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_get_project",
-                "description": "[READ] Get the full content of a specific project document.",
+                "description": "Get the full content of a specific project document.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -685,21 +686,20 @@ def _list_assistant_tools():
                     "required": ["project_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
-            # -----------------------------------------------------------------
-            # Drive Tools - Inbox/Outbox
-            # -----------------------------------------------------------------
             {
                 "name": "assistant_list_inbox",
-                "description": "[READ] List files in the inbox waiting to be processed.",
+                "description": "List files in the inbox waiting to be processed.",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_read_inbox_file",
-                "description": "[READ] Read the content of a file in the inbox.",
+                "description": "Read the content of a file in the inbox.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -708,11 +708,12 @@ def _list_assistant_tools():
                     "required": ["file_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_move_to_outbox",
-                "description": "[WRITE] Move a processed file from inbox to outbox.",
+                "description": "Move a processed file from inbox to outbox.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -721,14 +722,12 @@ def _list_assistant_tools():
                     "required": ["file_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
-            # -----------------------------------------------------------------
-            # Drive Tools - Write
-            # -----------------------------------------------------------------
             {
                 "name": "assistant_write_project",
-                "description": "[WRITE] Update a project document. IMPORTANT: Always call assistant_get_project first to read current content, then modify and write back. Max content size: 200KB.",
+                "description": "Update a project document. Always read current content first, then modify and write back.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -738,11 +737,12 @@ def _list_assistant_tools():
                     "required": ["project_id", "content"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_create_project",
-                "description": "[WRITE] Create a new project document in the projects/ folder.",
+                "description": "Create a new project document in the projects/ folder.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -752,11 +752,12 @@ def _list_assistant_tools():
                     "required": ["title"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_append_log",
-                "description": "[APPEND] Add an entry to the activity log.",
+                "description": "Add an entry to the activity log.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -765,14 +766,12 @@ def _list_assistant_tools():
                     "required": ["entry"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
-            # -----------------------------------------------------------------
-            # Session Logging
-            # -----------------------------------------------------------------
             {
                 "name": "assistant_log_session",
-                "description": "[APPEND] Log the current conversation session. Call at START with initial summary, UPDATE at END with final summary.",
+                "description": "Log the current conversation session. Call at start with initial summary, update at end with final summary.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -783,14 +782,12 @@ def _list_assistant_tools():
                     "required": ["summary"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
-            # -----------------------------------------------------------------
-            # Gmail Tools
-            # -----------------------------------------------------------------
             {
                 "name": "assistant_gmail_list",
-                "description": "[READ] List recent emails. Supports label filtering and pagination.",
+                "description": "List recent emails. Supports label filtering and pagination.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -800,11 +797,12 @@ def _list_assistant_tools():
                     }
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_gmail_read",
-                "description": "[READ] Read the full content of a specific email.",
+                "description": "Read the full content of a specific email.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -813,11 +811,12 @@ def _list_assistant_tools():
                     "required": ["message_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_gmail_search",
-                "description": "[READ] Search emails using Gmail query syntax (from:, to:, subject:, has:attachment, etc).",
+                "description": "Search emails using Gmail query syntax.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -827,11 +826,12 @@ def _list_assistant_tools():
                     "required": ["query"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_gmail_label",
-                "description": "[MODIFY] Add or remove labels from an email.",
+                "description": "Add or remove labels from an email.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -842,11 +842,12 @@ def _list_assistant_tools():
                     "required": ["message_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_gmail_archive",
-                "description": "[MODIFY] Archive an email (removes INBOX label).",
+                "description": "Archive an email (removes INBOX label).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -855,11 +856,12 @@ def _list_assistant_tools():
                     "required": ["message_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_gmail_mark_read",
-                "description": "[MODIFY] Mark an email as read or unread.",
+                "description": "Mark an email as read or unread.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -869,36 +871,36 @@ def _list_assistant_tools():
                     "required": ["message_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
-            # -----------------------------------------------------------------
-            # Calendar Tools
-            # -----------------------------------------------------------------
             {
                 "name": "assistant_calendar_list_calendars",
-                "description": "[READ] List all accessible calendars.",
+                "description": "List all accessible calendars.",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_calendar_list_events",
-                "description": "[READ] List upcoming calendar events.",
+                "description": "List upcoming calendar events.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "calendar_id": {"type": "string", "default": "primary", "description": "Calendar ID (use 'primary' for main calendar)"},
+                        "calendar_id": {"type": "string", "default": "primary", "description": "Calendar ID"},
                         "time_min": {"type": "string", "description": "ISO datetime, defaults to now"},
                         "time_max": {"type": "string", "description": "ISO datetime for end of range"},
                         "max_results": {"type": "integer", "default": 10}
                     }
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_calendar_get_event",
-                "description": "[READ] Get details of a specific calendar event.",
+                "description": "Get details of a specific calendar event.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -908,11 +910,12 @@ def _list_assistant_tools():
                     "required": ["event_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_calendar_create_event",
-                "description": "[WRITE] Create a new calendar event.",
+                "description": "Create a new calendar event.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -927,11 +930,12 @@ def _list_assistant_tools():
                     "required": ["summary", "start", "end"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_calendar_update_event",
-                "description": "[WRITE] Update an existing calendar event.",
+                "description": "Update an existing calendar event.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -947,11 +951,12 @@ def _list_assistant_tools():
                     "required": ["event_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "assistant_calendar_delete_event",
-                "description": "[DELETE] Delete a calendar event. This action is irreversible.",
+                "description": "Delete a calendar event.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -961,18 +966,17 @@ def _list_assistant_tools():
                     "required": ["event_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
-            # -----------------------------------------------------------------
-            # Account Info
-            # -----------------------------------------------------------------
             {
                 "name": "assistant_google_account",
-                "description": "[READ] Get the email address of the currently authenticated Google account.",
+                "description": "Get the email address of the currently authenticated Google account.",
                 "inputSchema": {"type": "object", "properties": {}},
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False
-            },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
+            }
         ]
     }
 
@@ -1434,11 +1438,6 @@ async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require
     method = body.get("method")
     params = body.get("params", {})
     
-    # Get user email from the Auth0 payload
-    user_email = payload.get("email")
-    if not user_email:
-        return _rpc_error(rpc_id, -32600, "User email not found in token")
-    
     if method == "initialize":
         return _rpc_result(rpc_id, _initialize_payload())
     
@@ -1449,6 +1448,11 @@ async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require
         return _rpc_result(rpc_id, _list_assistant_tools())
     
     elif method == "tools/call":
+        # Get user email from the Auth0 payload - only required for tool execution
+        user_email = payload.get("email")
+        if not user_email:
+            return _rpc_error(rpc_id, -32600, "User email not found in token")
+            
         name = params.get("name")
         args = params.get("arguments", {})
         result = await handle_assistant_tool_call(name, args, user_email)
