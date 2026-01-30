@@ -194,7 +194,7 @@ class AssistantGoogleClient:
         if not self.root_folder_id:
             raise ValueError(f"No root_folder_id configured for {email}")
         
-        self.creds = self._get_credentials()
+        self.sa_creds, self.user_creds = self._get_credentials()
         self._drive = None
         self._docs = None
         self._gmail = None
@@ -202,78 +202,94 @@ class AssistantGoogleClient:
         self._folder_cache = {}  # Cache folder IDs
     
     def _get_credentials(self):
-        """Get Google credentials - service account or per-user OAuth."""
+        """Get Google credentials - both service account and per-user OAuth if available."""
+        sa_creds = None
+        user_creds = None
         
-        # Service Account Mode - use shared service account for all users
+        # 1. Load Service Account if configured
         if ASSISTANT_SERVICE_ACCOUNT_FILE and os.path.exists(ASSISTANT_SERVICE_ACCOUNT_FILE):
-            logger.info(f"Using service account for {self.email}")
-            # Service account scopes (no Gmail for service accounts without domain-wide delegation)
-            sa_scopes = [
-                'https://www.googleapis.com/auth/drive',
-                'https://www.googleapis.com/auth/documents',
-                'https://www.googleapis.com/auth/calendar',
-            ]
-            creds = service_account.Credentials.from_service_account_file(
-                ASSISTANT_SERVICE_ACCOUNT_FILE,
-                scopes=sa_scopes
-            )
-            return creds
+            try:
+                # Service account scopes (no Gmail for SAs without domain-wide delegation)
+                sa_scopes = [
+                    'https://www.googleapis.com/auth/drive',
+                    'https://www.googleapis.com/auth/documents',
+                    'https://www.googleapis.com/auth/calendar',
+                ]
+                sa_creds = service_account.Credentials.from_service_account_file(
+                    ASSISTANT_SERVICE_ACCOUNT_FILE,
+                    scopes=sa_scopes
+                )
+                logger.debug(f"Loaded service account credentials for {self.email}")
+            except Exception as e:
+                logger.error(f"Failed to load service account: {e}")
         
-        # Per-User OAuth Mode - use individual user tokens
+        # 2. Load Per-User OAuth if available
         token_data = get_user_tokens(self.email)
-        if not token_data:
-            raise ValueError(f"No tokens found for {self.email}. Please authenticate via /assistant/google/login")
-        
-        # Load client config for refresh
-        client_config = {}
-        if os.path.exists(ASSISTANT_GOOGLE_CREDENTIALS_FILE):
-            with open(ASSISTANT_GOOGLE_CREDENTIALS_FILE, 'r') as f:
-                creds_data = json.load(f)
-            client_type = 'web' if 'web' in creds_data else ('installed' if 'installed' in creds_data else None)
-            if client_type:
-                client_config = creds_data[client_type]
-        
-        # Merge client config into token data for refresh
-        if client_config:
-            token_data['client_id'] = client_config.get('client_id')
-            token_data['client_secret'] = client_config.get('client_secret')
-            if 'token_uri' in client_config:
-                token_data['token_uri'] = client_config['token_uri']
-        
-        creds = Credentials.from_authorized_user_info(token_data, ASSISTANT_GOOGLE_SCOPES)
-        
-        # Refresh if expired
-        if creds and creds.expired and creds.refresh_token:
-            logger.info(f"Refreshing Google token for {self.email}")
-            creds.refresh(GoogleRequest())
-            save_user_tokens(self.email, json.loads(creds.to_json()))
-        
-        return creds
+        if token_data:
+            try:
+                # Load client config for refresh
+                client_config = {}
+                if os.path.exists(ASSISTANT_GOOGLE_CREDENTIALS_FILE):
+                    with open(ASSISTANT_GOOGLE_CREDENTIALS_FILE, 'r') as f:
+                        creds_data = json.load(f)
+                    client_type = 'web' if 'web' in creds_data else ('installed' if 'installed' in creds_data else None)
+                    if client_type:
+                        client_config = creds_data[client_type]
+                
+                # Merge client config into token data for refresh
+                if client_config:
+                    token_data['client_id'] = client_config.get('client_id')
+                    token_data['client_secret'] = client_config.get('client_secret')
+                    if 'token_uri' in client_config:
+                        token_data['token_uri'] = client_config['token_uri']
+                
+                creds = Credentials.from_authorized_user_info(token_data, ASSISTANT_GOOGLE_SCOPES)
+                
+                # Refresh if expired
+                if creds and creds.expired and creds.refresh_token:
+                    logger.info(f"Refreshing Google token for {self.email}")
+                    creds.refresh(GoogleRequest())
+                    save_user_tokens(self.email, json.loads(creds.to_json()))
+                
+                user_creds = creds
+                logger.debug(f"Loaded user OAuth credentials for {self.email}")
+            except Exception as e:
+                logger.error(f"Failed to load/refresh user tokens for {self.email}: {e}")
+
+        if not sa_creds and not user_creds:
+            raise ValueError(f"No credentials available for {self.email}. Please authenticate via /assistant/google/login")
+            
+        return sa_creds, user_creds
     
+    @property
+    def effective_creds(self):
+        """Effective credentials, prioritizing per-user OAuth."""
+        return self.user_creds or self.sa_creds
+
     @property
     def drive(self):
         if not self._drive:
-            self._drive = build('drive', 'v3', credentials=self.creds)
+            self._drive = build('drive', 'v3', credentials=self.effective_creds)
         return self._drive
     
     @property
     def docs(self):
         if not self._docs:
-            self._docs = build('docs', 'v1', credentials=self.creds)
+            self._docs = build('docs', 'v1', credentials=self.effective_creds)
         return self._docs
     
     @property
     def gmail(self):
-        if ASSISTANT_SERVICE_ACCOUNT_FILE:
-            raise ValueError("Gmail is not available in service account mode (requires domain-wide delegation)")
+        if not self.user_creds:
+            raise ValueError("Gmail requires per-user authentication. Please visit /assistant/google/login")
         if not self._gmail:
-            self._gmail = build('gmail', 'v1', credentials=self.creds)
+            self._gmail = build('gmail', 'v1', credentials=self.user_creds)
         return self._gmail
     
     @property
     def calendar(self):
         if not self._calendar:
-            self._calendar = build('calendar', 'v3', credentials=self.creds)
+            self._calendar = build('calendar', 'v3', credentials=self.effective_creds)
         return self._calendar
     
     # -------------------------------------------------------------------------
@@ -1469,6 +1485,22 @@ async def handle_assistant_tool_call(name: str, args: Dict[str, Any], user_email
         else:
             return {"isError": True, "content": [{"type": "text", "text": f"Unknown tool: {name}"}]}
     
+    except ValueError as e:
+        # Handle specific authentication errors with a clear call to action
+        error_msg = str(e)
+        if "/assistant/google/login" in error_msg:
+            logger.warning(f"Auth required for {name}: {error_msg}")
+            return {
+                "isError": True,
+                "content": [{"type": "text", "text": f"Authentication required: {error_msg}"}],
+                "metadata": {"reason": "auth_required", "login_url": f"{MCP_BASE_URL.rstrip('/')}/assistant/google/login"}
+            }
+        logger.error(f"Validation error in assistant tool {name}: {e}")
+        return {
+            "isError": True,
+            "content": [{"type": "text", "text": f"Error: {error_msg}"}],
+            "metadata": {"reason": "validation_error"}
+        }
     except Exception as e:
         logger.error(f"Error executing assistant tool {name}: {e}")
         return {

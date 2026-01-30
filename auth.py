@@ -118,17 +118,36 @@ def extract_email(payload: Dict[str, Any]) -> Optional[str]:
     """
     # 1. Standard OIDC claim
     if payload.get("email"):
+        logger.debug("Identity: Extracted email from 'email' claim")
         return payload["email"]
     
     # 2. Namespaced claim often used in Auth0
     if payload.get(f"{AUTH0_NAMESPACE}/email"):
+        logger.debug(f"Identity: Extracted email from '{AUTH0_NAMESPACE}/email' claim")
         return payload[f"{AUTH0_NAMESPACE}/email"]
         
     # 3. Fallbacks common in some OAuth providers
-    for fallback_key in ["unique_name", "preferred_username"]:
+    for fallback_key in ["unique_name", "preferred_username", "nickname"]:
         val = payload.get(fallback_key)
-        if val and "@" in val:
-            return val
+        if val:
+            if "@" in str(val):
+                logger.debug(f"Identity: Extracted email from '{fallback_key}' claim")
+                return str(val)
+            # Handle nicknames that might be missing the domain if we have a default (e.g. backyardbrains.com)
+            if fallback_key == "nickname" and not "@" in str(val):
+                # Only use nickname if it's likely the prefix for an internal email
+                # This is a heuristic, but common in BYB setup
+                email = f"{val}@backyardbrains.com"
+                logger.debug(f"Identity: Constructed email from nickname '{val}' -> {email}")
+                return email
+
+    # 4. Check 'sub' if it contains an email (google-oauth2|user@domain.com)
+    sub = payload.get("sub", "")
+    if "|" in sub:
+        parts = sub.split("|")
+        if len(parts) > 1 and "@" in parts[1]:
+            logger.debug(f"Identity: Extracted email from 'sub' claim: {parts[1]}")
+            return parts[1]
             
     return None
 
