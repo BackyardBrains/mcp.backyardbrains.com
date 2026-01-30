@@ -1554,9 +1554,17 @@ async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require
     
     elif method == "tools/call":
         # Get user email from the Auth0 payload - only required for tool execution
-        user_email = payload.get("email")
+        from auth import extract_email
+        user_email = extract_email(payload)
+        
         if not user_email:
-            return _rpc_error(rpc_id, -32600, "User email not found in token")
+            # User requested full payload dump in logs for debugging
+            logger.error(f"User email not found in token for method {method}. Available payload keys: {list(payload.keys())}")
+            logger.error(f"Full payload dump: {safe_dumps(payload)}")
+            
+            # Inform the user with more context
+            sub_id = payload.get("sub", "unknown")
+            return _rpc_error(rpc_id, -32600, f"User email not found in token (sub: {sub_id}). Please ensure your account has an email address.")
             
         name = params.get("name")
         args = params.get("arguments", {})

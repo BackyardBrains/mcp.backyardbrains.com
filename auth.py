@@ -111,6 +111,28 @@ def check_permissions(payload: Dict[str, Any], required_scopes: list[str]) -> bo
     return False
 
 
+def extract_email(payload: Dict[str, Any]) -> Optional[str]:
+    """
+    Safely extract email from various possible claims in the Auth0 payload.
+    Looks for standard 'email' claim first, then common namespaced or fallback ones.
+    """
+    # 1. Standard OIDC claim
+    if payload.get("email"):
+        return payload["email"]
+    
+    # 2. Namespaced claim often used in Auth0
+    if payload.get(f"{AUTH0_NAMESPACE}/email"):
+        return payload[f"{AUTH0_NAMESPACE}/email"]
+        
+    # 3. Fallbacks common in some OAuth providers
+    for fallback_key in ["unique_name", "preferred_username"]:
+        val = payload.get(fallback_key)
+        if val and "@" in val:
+            return val
+            
+    return None
+
+
 def _log_scope_claims(payload: Dict[str, Any], *, context: str) -> None:
     """Log permissions/scope claims for debugging."""
     namespaced_permissions = payload.get(f"{AUTH0_NAMESPACE}/permissions")
