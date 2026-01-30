@@ -9,12 +9,15 @@ import os
 import json
 import logging
 import base64
+import asyncio
+import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sse_starlette.sse import EventSourceResponse
 from cryptography.fernet import Fernet
 
 from google.oauth2.credentials import Credentials
@@ -527,13 +530,70 @@ def clear_client_cache(email: str = None):
 
 
 # =============================================================================
+# SSE Transport (Standard MCP)
+# =============================================================================
+
+# Map of sessionId -> asyncio.Queue for outgoing SSE messages
+_assistant_sse_sessions: Dict[str, asyncio.Queue] = {}
+
+async def _assistant_sse_stream(session_id: str):
+    """The actual SSE stream generator."""
+    queue = _assistant_sse_sessions.get(session_id)
+    if not queue:
+        return
+
+    try:
+        # 1. Send the endpoint event
+        post_url = f"{MCP_BASE_URL.rstrip('/')}/assistant/mcp?session_id={session_id}"
+        yield {
+            "event": "endpoint",
+            "data": post_url
+        }
+
+        # 2. Forward messages from the queue
+        while True:
+            try:
+                msg = await asyncio.wait_for(queue.get(), timeout=15.0)
+                yield {
+                    "event": "message",
+                    "data": safe_dumps(msg)
+                }
+            except asyncio.TimeoutError:
+                # EventSourceResponse handles keep-alives automatically if configured, 
+                # but we can also yield a comment to be safe.
+                yield ": keep-alive"
+            except Exception as e:
+                logger.error(f"SSE stream error for {session_id}: {e}")
+                break
+    finally:
+        _assistant_sse_sessions.pop(session_id, None)
+        logger.info(f"SSE session {session_id} closed")
+
+
+# =============================================================================
 # OAuth Endpoints
 # =============================================================================
 
 @router.get("/")
 @router.get("")
-def assistant_index():
-    """Basic index endpoint."""
+async def assistant_index(request: Request):
+    """Basic index endpoint. Supports SSE transport if requested."""
+    # Check if this is an SSE connection request (ChatGPT uses this)
+    accept = request.headers.get("accept", "")
+    if "text/event-stream" in accept:
+        session_id = str(uuid.uuid4())
+        _assistant_sse_sessions[session_id] = asyncio.Queue()
+        logger.info(f"Starting Assistant SSE session: {session_id}")
+        
+        return EventSourceResponse(
+            _assistant_sse_stream(session_id),
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+
     return {
         "service": "assistant-mcp",
         "status": "ok",
@@ -1744,14 +1804,27 @@ async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require
     method = body.get("method")
     params = body.get("params", {})
     
+    # Check for SSE session
+    session_id = request.query_params.get("session_id")
+    sse_queue = _assistant_sse_sessions.get(session_id) if session_id else None
+
+    async def _send_response(resp: Dict):
+        if sse_queue:
+            # Route response to SSE stream
+            await sse_queue.put(resp)
+            return Response(status_code=202)
+        else:
+            # Standard direct JSON response
+            return resp
+
     if method == "initialize":
-        return _rpc_result(rpc_id, _initialize_payload())
+        return await _send_response(_rpc_result(rpc_id, _initialize_payload()))
     
     elif method == "ping":
-        return _rpc_result(rpc_id, {"status": "ok"})
+        return await _send_response(_rpc_result(rpc_id, {"status": "ok"}))
     
     elif method == "tools/list":
-        return _rpc_result(rpc_id, _list_assistant_tools())
+        return await _send_response(_rpc_result(rpc_id, _list_assistant_tools()))
     
     elif method == "tools/call":
         # Get user email from the Auth0 payload - only required for tool execution
@@ -1774,31 +1847,31 @@ async def handle_assistant_mcp(request: Request, payload: Dict = Depends(require
                     logger.error(f"Full payload dump: {safe_dumps(payload)}")
                     
                     user_list_str = ", ".join(enabled_users)
-                    return _rpc_error(rpc_id, -32600, 
+                    error_resp = _rpc_error(rpc_id, -32600, 
                         f"User identity missing and multiple users configured ({user_list_str}). "
                         "Please update ChatGPT scopes to include 'openid profile email' so we can identify you."
                     )
+                    return await _send_response(error_resp)
             except Exception as e:
                 logger.error(f"Error checking user fallback: {e}")
             
         name = params.get("name")
         args = params.get("arguments", {})
         result = await handle_assistant_tool_call(name, args, user_email)
-        return _rpc_result(rpc_id, result)
+        return await _send_response(_rpc_result(rpc_id, result))
     
     elif method == "prompts/list":
-        return _rpc_result(rpc_id, _list_prompts())
+        return await _send_response(_rpc_result(rpc_id, _list_prompts()))
     
     elif method == "prompts/get":
         prompt_name = params.get("name")
-        return _rpc_result(rpc_id, _get_prompt(prompt_name))
+        return await _send_response(_rpc_result(rpc_id, _get_prompt(prompt_name)))
     
     elif method == "resources/list":
-        # Could list Drive folders as resources
-        return _rpc_result(rpc_id, {"resources": []})
+        return await _send_response(_rpc_result(rpc_id, {"resources": []}))
     
     elif method == "resources/read":
-        return _rpc_result(rpc_id, {"contents": []})
+        return await _send_response(_rpc_result(rpc_id, {"contents": []}))
     
     else:
-        return _rpc_error(rpc_id, -32601, f"Method {method} not found")
+        return await _send_response(_rpc_error(rpc_id, -32601, f"Method {method} not found"))
