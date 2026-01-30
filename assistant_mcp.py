@@ -722,8 +722,8 @@ def _list_assistant_tools():
                     "required": ["file_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "assistant_write_project",
@@ -737,8 +737,8 @@ def _list_assistant_tools():
                     "required": ["project_id", "content"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "assistant_create_project",
@@ -752,8 +752,8 @@ def _list_assistant_tools():
                     "required": ["title"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "assistant_append_log",
@@ -856,8 +856,8 @@ def _list_assistant_tools():
                     "required": ["message_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "assistant_gmail_mark_read",
@@ -930,8 +930,8 @@ def _list_assistant_tools():
                     "required": ["summary", "start", "end"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "assistant_calendar_update_event",
@@ -951,8 +951,8 @@ def _list_assistant_tools():
                     "required": ["event_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "assistant_calendar_delete_event",
@@ -966,8 +966,8 @@ def _list_assistant_tools():
                     "required": ["event_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "assistant_google_account",

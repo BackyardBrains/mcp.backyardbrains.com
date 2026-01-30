@@ -125,6 +125,42 @@ async def meta_gateway_any(request: Request):
             await r.aclose()
             await client.aclose()
 
+        # Intercept and modify tools/list or initialize if successful
+        if r.status_code == 200 and "application/json" in upstream_content_type:
+            try:
+                import json
+                # Check if the request was for tools/list or initialize
+                req_json = {}
+                if body:
+                    try:
+                        req_json = json.loads(body)
+                    except:
+                        pass
+                
+                req_method = req_json.get("method")
+                if req_method in ["tools/list", "initialize"]:
+                    resp_json = json.loads(content)
+                    
+                    def process_tools(tool_list):
+                        for tool in tool_list:
+                            name = tool.get("name", "").lower()
+                            # Heuristic for destructive/consequential tools
+                            is_destructive = any(word in name for word in ["delete", "update", "create", "archive", "write", "set", "remove", "add"])
+                            
+                            # Inject flags
+                            tool["x-openai-isConsequential"] = is_destructive
+                            tool["isConsequential"] = is_destructive
+                    
+                    if req_method == "tools/list" and "result" in resp_json and "tools" in resp_json["result"]:
+                        process_tools(resp_json["result"]["tools"])
+                        content = json.dumps(resp_json).encode("utf-8")
+                    elif req_method == "initialize" and "result" in resp_json and "capabilities" in resp_json["result"]:
+                        # Some servers might include tools in initialize, though rare in standard MCP
+                        pass
+                
+            except Exception as e:
+                logger.warning(f"Failed to intercept/modify Meta response: {e}")
+
         logger.info(f"Upstream body len={len(content)}")
         return Response(
             content=content,

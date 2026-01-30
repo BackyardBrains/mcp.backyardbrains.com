@@ -1725,27 +1725,31 @@ def _list_workshop_tools():
                         "limit": { "type": "number", "default": 50 },
                         "include_meta": { "type": "boolean", "default": False }
                     }
-                }
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "workshop_get",
-                "description": "Get full details for specific workshop(s) by ID",
+                "description": "Get detailed information for one or more workshops by ID.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "ids": { "type": "array", "items": { "type": "number" } },
+                        "ids": { "type": "array", "items": { "type": "number" }, "description": "Workshop IDs" },
                         "include_gallery": { "type": "boolean", "default": True },
                         "include_registrations": { "type": "boolean", "default": False },
                         "include_feedback": { "type": "boolean", "default": False },
-                        "feedback_spreadsheet_rs": { "type": "string", "description": "Spreadsheet ID for Serbian feedback" },
-                        "feedback_spreadsheet_en": { "type": "string", "description": "Spreadsheet ID for English feedback" }
+                        "feedback_spreadsheet_rs": { "type": "string", "description": "Serbian feedback sheet ID" },
+                        "feedback_spreadsheet_en": { "type": "string", "description": "English feedback sheet ID" }
                     },
                     "required": ["ids"]
-                }
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "workshop_create",
-                "description": "Create a new workshop",
+                "description": "Create a new workshop. (Language 'en' or 'sr' is required)",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1769,7 +1773,9 @@ def _list_workshop_tools():
                         "slug": { "type": "string", "description": "Manually override the URL slug. It will be sanitized and checked for uniqueness." }
                     },
                     "required": ["title", "language", "start_date", "description", "location", "about_left", "about_right"]
-                }
+                },
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "workshop_update",
@@ -1797,7 +1803,9 @@ def _list_workshop_tools():
                         "slug": { "type": "string", "description": "Update the URL slug. It will be sanitized and checked for uniqueness." }
                     },
                     "required": ["id"]
-                }
+                },
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "workshop_find_pair",
@@ -1808,7 +1816,9 @@ def _list_workshop_tools():
                         "id": { "type": "number" }
                     },
                     "required": ["id"]
-                }
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "workshop_registrations",
@@ -1820,12 +1830,16 @@ def _list_workshop_tools():
                         "workshop_title": { "type": "string" },
                         "include_details": { "type": "boolean", "default": False }
                     }
-                }
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "workshop_google_account",
                 "description": "Get the email address of the currently authorized Google account",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             # Generic SQL tool
             {
@@ -1837,12 +1851,16 @@ def _list_workshop_tools():
                         "query": {"type": "string", "description": "SQL query to execute"}
                     },
                     "required": ["query"]
-                }
+                },
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "workshop_get_forms",
                 "description": "List Forminator forms from wp_posts",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "workshop_get_entries",
@@ -1853,7 +1871,9 @@ def _list_workshop_tools():
                         "form_id": {"type": "integer", "description": "ID of the form"}
                     },
                     "required": ["form_id"]
-                }
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "workshop_get_entry_by_id",
@@ -1864,13 +1884,17 @@ def _list_workshop_tools():
                         "entry_id": {"type": "integer", "description": "ID of the entry"}
                     },
                     "required": ["entry_id"]
-                }
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             # Polylang specific tools
             {
                 "name": "polylang_get_languages",
                 "description": "Get discovered Polylang languages and their term_taxonomy_ids",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "workshop_set_language",
@@ -1882,7 +1906,9 @@ def _list_workshop_tools():
                         "language": {"type": "string", "enum": ["en", "sr"]}
                     },
                     "required": ["post_id", "language"]
-                }
+                },
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "workshop_link_translations",
@@ -1896,12 +1922,16 @@ def _list_workshop_tools():
                         }
                     },
                     "required": ["post_ids_by_lang"]
-                }
+                },
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "workshop_flush_cache",
                 "description": "Flush MCP Polylang discovery cache (and document WP cache flush)",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "workshop_read_instructors_interest",
@@ -1913,7 +1943,9 @@ def _list_workshop_tools():
                         "range_name": { "type": "string", "description": "Range to read (e.g. 'Sheet1!A:Z'). If omitted, the first sheet tab will be detected automatically." },
                         "normalize": { "type": "boolean", "description": "Whether to normalize Serbian headers to English keys.", "default": True }
                     }
-                }
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "workshop_read_feedback",
@@ -1928,12 +1960,9 @@ def _list_workshop_tools():
                         "normalize": { "type": "boolean", "description": "Map headers to English keys and convert scores to numbers", "default": True }
                     },
                     "required": ["spreadsheet_id"]
-                }
-            },
-            {
-                "name": "workshop_google_account",
-                "description": "Get identity of the currently authorized Google account",
-                "inputSchema": {"type": "object", "properties": {}}
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "workshop_planner",
@@ -1943,7 +1972,9 @@ def _list_workshop_tools():
                     "properties": {
                         "days": { "type": "number", "description": "Number of days to look ahead from today", "default": 30 }
                     }
-                }
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             }
         ]
     }

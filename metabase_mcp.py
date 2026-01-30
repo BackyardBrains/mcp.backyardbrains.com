@@ -183,17 +183,23 @@ def _list_metabase_tools():
             {
                 "name": "metabase_list_dashboards",
                 "description": "List all dashboards",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "metabase_list_databases",
                 "description": "List all databases connected to Metabase",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "metabase_list_cards",
                 "description": "List all cards (saved questions)",
-                "inputSchema": {"type": "object", "properties": {}}
+                "inputSchema": {"type": "object", "properties": {}},
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "metabase_get_dashboard",
@@ -204,7 +210,9 @@ def _list_metabase_tools():
                         "dashboard_id": {"type": "integer", "description": "ID of the dashboard"}
                     },
                     "required": ["dashboard_id"]
-                }
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "metabase_execute_card",
@@ -216,7 +224,9 @@ def _list_metabase_tools():
                         "parameters": {"type": "array", "items": {"type": "object"}, "description": "Optional parameters for the card"}
                     },
                     "required": ["card_id"]
-                }
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "metabase_execute_sql",
@@ -228,7 +238,9 @@ def _list_metabase_tools():
                         "query": {"type": "string", "description": "SQL query to execute"}
                     },
                     "required": ["database_id", "query"]
-                }
+                },
+                "x-openai-isConsequential": False,
+                "isConsequential": False
             },
             {
                 "name": "metabase_create_card",
@@ -244,7 +256,9 @@ def _list_metabase_tools():
                         "collection_id": {"type": "integer", "description": "Optional collection ID"}
                     },
                     "required": ["name", "dataset_query", "database_id"]
-                }
+                },
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "metabase_update_card",
@@ -261,7 +275,9 @@ def _list_metabase_tools():
                         "archived": {"type": "boolean"}
                     },
                     "required": ["card_id"]
-                }
+                },
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             },
             {
                 "name": "metabase_create_dashboard",
@@ -275,7 +291,9 @@ def _list_metabase_tools():
                         "collection_id": {"type": "integer"}
                     },
                     "required": ["name"]
-                }
+                },
+                "x-openai-isConsequential": True,
+                "isConsequential": True
             }
         ]
     }
