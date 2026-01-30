@@ -1567,6 +1567,16 @@ async def workshop_google_account(params: Dict[str, Any]):
 async def workshop_google_auth_login(request: Request):
     """Initiate Google OAuth flow."""
     redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/workshops/google/callback" if MCP_BASE_URL else f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
+    
+    # Validation check for credential file type
+    if os.path.exists(WORKSHOPS_GOOGLE_CREDENTIALS_FILE):
+        with open(WORKSHOPS_GOOGLE_CREDENTIALS_FILE, 'r') as f:
+            creds_data = json.load(f)
+            if creds_data.get('type') == 'service_account':
+                 error_msg = f"Error: '{WORKSHOPS_GOOGLE_CREDENTIALS_FILE}' is a Service Account file, but a 'Web Application' OAuth client secret is required for the user login flow. Please check your .env file or upload the correct OAuth JSON."
+                 logger.error(error_msg)
+                 raise HTTPException(status_code=500, detail=error_msg)
+
     flow = Flow.from_client_secrets_file(
         WORKSHOPS_GOOGLE_CREDENTIALS_FILE,
         scopes=GOOGLE_SCOPES,
@@ -1586,6 +1596,16 @@ async def workshop_google_auth_login(request: Request):
 async def workshop_google_auth_callback(request: Request, code: str, state: str = None):
     """Handle Google OAuth callback."""
     redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/workshops/google/callback" if MCP_BASE_URL else f"{str(request.base_url).rstrip('/')}/workshops/google/callback"
+    
+    # Validation check for credential file type
+    if os.path.exists(WORKSHOPS_GOOGLE_CREDENTIALS_FILE):
+        with open(WORKSHOPS_GOOGLE_CREDENTIALS_FILE, 'r') as f:
+            creds_data = json.load(f)
+            if creds_data.get('type') == 'service_account':
+                 error_msg = f"Error: '{WORKSHOPS_GOOGLE_CREDENTIALS_FILE}' is a Service Account file, but a 'Web Application' OAuth client secret is required for the user login flow. Please check your .env file or upload the correct OAuth JSON."
+                 logger.error(error_msg)
+                 raise HTTPException(status_code=500, detail=error_msg)
+
     flow = Flow.from_client_secrets_file(
         WORKSHOPS_GOOGLE_CREDENTIALS_FILE,
         scopes=GOOGLE_SCOPES,

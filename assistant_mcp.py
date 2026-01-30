@@ -578,7 +578,13 @@ async def assistant_google_login(request: Request):
         }
     
     if not client_config:
-        error_msg = f"Google OAuth configuration not found. Please upload '{ASSISTANT_GOOGLE_CREDENTIALS_FILE}' or set GOOGLE_CLIENT_ID/SECRET in .env"
+        error_msg = f"Google OAuth configuration not found at '{ASSISTANT_GOOGLE_CREDENTIALS_FILE}'"
+        if os.path.exists(ASSISTANT_GOOGLE_CREDENTIALS_FILE):
+             with open(ASSISTANT_GOOGLE_CREDENTIALS_FILE, 'r') as f:
+                 data = json.load(f)
+                 if data.get('type') == 'service_account':
+                     error_msg = f"Error: '{ASSISTANT_GOOGLE_CREDENTIALS_FILE}' is a Service Account file, but a 'Web Application' OAuth client secret is required here. Please download the correct JSON from Google Cloud Console."
+        
         logger.error(error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
     
@@ -606,6 +612,15 @@ async def assistant_google_callback(request: Request, code: str, state: str = No
     """Handle Google OAuth callback."""
     redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/assistant/google/callback"
     
+    # Validation check for credential file type
+    if os.path.exists(ASSISTANT_GOOGLE_CREDENTIALS_FILE):
+        with open(ASSISTANT_GOOGLE_CREDENTIALS_FILE, 'r') as f:
+            creds_data = json.load(f)
+            if creds_data.get('type') == 'service_account':
+                 error_msg = f"Error: '{ASSISTANT_GOOGLE_CREDENTIALS_FILE}' is a Service Account file, but a 'Web Application' OAuth client secret is required for the user login flow. Please check your .env file or upload the correct OAuth JSON."
+                 logger.error(error_msg)
+                 raise HTTPException(status_code=500, detail=error_msg)
+
     # Try to load client config
     client_config = None
     if os.path.exists(ASSISTANT_GOOGLE_CREDENTIALS_FILE):
