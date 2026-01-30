@@ -453,8 +453,12 @@ class AssistantGoogleClient:
         return True
 
     def create_doc(self, folder_name: str, title: str, content: Optional[str] = None) -> str:
-        """Create a new Google Doc in a subfolder."""
-        folder_id = self.get_subfolder_id(folder_name)
+        """Create a new Google Doc in a subfolder (or 'base' for root)."""
+        if folder_name == "base":
+            folder_id = self.root_folder_id
+        else:
+            folder_id = self.get_subfolder_id(folder_name)
+            
         if not folder_id:
             raise ValueError(f"Folder '{folder_name}' not found.")
 
@@ -719,6 +723,25 @@ def _list_assistant_tools():
                 }
             },
             {
+                "name": "assistant_write_rules",
+                "description": "WARNING: Use extreme caution. This updates the assistant's core operating rules. Always read the current rules first, then modify and write back the full content.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string", "description": "Full markdown content for the rules"}
+                    },
+                    "required": ["content"]
+                },
+                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
+                "x-openai-isConsequential": True,
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
+            },
+            {
                 "name": "assistant_get_priorities",
                 "description": "Get current priorities. Call after assistant_get_rules to understand current focus.",
                 "inputSchema": {"type": "object", "properties": {}},
@@ -728,6 +751,57 @@ def _list_assistant_tools():
                 "annotations": {
                     "readOnlyHint": True,
                     "destructiveHint": False,
+                    "idempotentHint": True
+                }
+            },
+            {
+                "name": "assistant_write_priorities",
+                "description": "WARNING: Updates the assistant's high-level priorities. Always read current priorities first, then modify and write back the full content.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string", "description": "Full markdown content for priorities"}
+                    },
+                    "required": ["content"]
+                },
+                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
+                "x-openai-isConsequential": True,
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
+                    "idempotentHint": True
+                }
+            },
+            {
+                "name": "assistant_get_deadlines",
+                "description": "Get the deadlines file content. Use this to track important dates and milestones.",
+                "inputSchema": {"type": "object", "properties": {}},
+                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
+                "x-openai-isConsequential": False,
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
+            },
+            {
+                "name": "assistant_write_deadlines",
+                "description": "WARNING: Updates the deadlines file. Always read current deadlines first, then modify and write back the full content.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string", "description": "Full markdown content for deadlines"}
+                    },
+                    "required": ["content"]
+                },
+                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
+                "x-openai-isConsequential": True,
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": True,
                     "idempotentHint": True
                 }
             },
@@ -1174,6 +1248,15 @@ async def handle_assistant_tool_call(name: str, args: Dict[str, Any], user_email
             content = client.read_doc_content(doc_id)
             return {"content": [{"type": "text", "text": content}]}
         
+        elif name == "assistant_write_rules":
+            content = args.get("content", "")
+            doc_id = client.get_doc_by_name("base", "rules")
+            if not doc_id:
+                doc_id = client.create_doc("base", "rules", content)
+                return {"content": [{"type": "text", "text": "Created 'rules' document and wrote content."}]}
+            client.write_doc_content(doc_id, content)
+            return {"content": [{"type": "text", "text": "Rules updated successfully."}]}
+
         elif name == "assistant_get_priorities":
             doc_id = client.get_doc_by_name("base", "priorities")
             if not doc_id:
@@ -1181,6 +1264,31 @@ async def handle_assistant_tool_call(name: str, args: Dict[str, Any], user_email
             content = client.read_doc_content(doc_id)
             return {"content": [{"type": "text", "text": content}]}
         
+        elif name == "assistant_write_priorities":
+            content = args.get("content", "")
+            doc_id = client.get_doc_by_name("base", "priorities")
+            if not doc_id:
+                doc_id = client.create_doc("base", "priorities", content)
+                return {"content": [{"type": "text", "text": "Created 'priorities' document and wrote content."}]}
+            client.write_doc_content(doc_id, content)
+            return {"content": [{"type": "text", "text": "Priorities updated successfully."}]}
+
+        elif name == "assistant_get_deadlines":
+            doc_id = client.get_doc_by_name("base", "deadlines")
+            if not doc_id:
+                return {"content": [{"type": "text", "text": "No deadlines document found in root folder."}]}
+            content = client.read_doc_content(doc_id)
+            return {"content": [{"type": "text", "text": content}]}
+        
+        elif name == "assistant_write_deadlines":
+            content = args.get("content", "")
+            doc_id = client.get_doc_by_name("base", "deadlines")
+            if not doc_id:
+                doc_id = client.create_doc("base", "deadlines", content)
+                return {"content": [{"type": "text", "text": "Created 'deadlines' document and wrote content."}]}
+            client.write_doc_content(doc_id, content)
+            return {"content": [{"type": "text", "text": "Deadlines updated successfully."}]}
+
         elif name == "assistant_get_resources":
             doc_id = client.get_doc_by_name("resources", "resources")
             if not doc_id:
