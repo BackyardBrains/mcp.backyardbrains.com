@@ -1483,7 +1483,8 @@ async def handle_tool_call(name: str, args: Dict):
             # Method signature: get_attachments(xero_tenant_id, entity, id, opts...)
             # entity is 'Invoices'
             try:
-                attachments_resp = accounting_api.get_attachments(tenant_id, "Invoices", inv_id)
+                # Use get_invoice_attachments which is specific to text/pdf on invoices/bills
+                attachments_resp = accounting_api.get_invoice_attachments(tenant_id, inv_id)
             except Exception as e:
                 # 404 might mean no attachments or bad ID
                 return {"content": [{"type": "text", "text": f"Error fetching attachments (check ID?): {e}"}]}
@@ -1516,9 +1517,9 @@ async def handle_tool_call(name: str, args: Dict):
                             
                             # Note: wrapper returns separate thing? 
                             # Let's try standard method:
-                            content_resp = accounting_api.get_attachment_content(
+                            # Use specific get_invoice_attachment_content
+                            content_resp = accounting_api.get_invoice_attachment_content(
                                 tenant_id, 
-                                "Invoices", 
                                 inv_id, 
                                 att.attachment_id,
                                 _preload_content=True # We want the body
