@@ -1,7 +1,7 @@
 import os
 import logging
 import uvicorn
-import requests
+import httpx
 import secrets
 from urllib.parse import urlencode
 from dotenv import load_dotenv
@@ -282,7 +282,8 @@ async def openid_configuration():
     if not auth0_domain:
         return Response(status_code=404)
     
-    resp = requests.get(f"https://{auth0_domain}/.well-known/openid-configuration")
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"https://{auth0_domain}/.well-known/openid-configuration")
     return Response(content=resp.content, media_type="application/json", status_code=resp.status_code)
 
 @app.get("/.well-known/jwks.json")
@@ -292,7 +293,8 @@ async def jwks_json():
     if not auth0_domain:
         return Response(status_code=404)
     
-    resp = requests.get(f"https://{auth0_domain}/.well-known/jwks.json")
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"https://{auth0_domain}/.well-known/jwks.json")
     return Response(content=resp.content, media_type="application/json", status_code=resp.status_code)
 
 # OAuth Token Generation Endpoints
@@ -652,32 +654,37 @@ async def auth_callback(request: Request, code: str = None, state: str = None, e
     }
     
     try:
-        response = requests.post(token_url, json=token_data, timeout=10)
-        response.raise_for_status()
-        token_response = response.json()
-        
-        access_token = token_response.get("access_token")
-        if not access_token:
-            raise HTTPException(status_code=500, detail="No access token in response")
-        
-        # Get user info
-        userinfo_url = f"https://{auth0_domain}/userinfo"
-        headers = {"Authorization": f"Bearer {access_token}"}
-        user_response = requests.get(userinfo_url, headers=headers, timeout=10)
-        user_response.raise_for_status()
-        user_info = user_response.json()
-        
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(token_url, json=token_data)
+            response.raise_for_status()
+            token_response = response.json()
+            
+            access_token = token_response.get("access_token")
+            if not access_token:
+                raise HTTPException(status_code=500, detail="No access token in response")
+            
+            # Get user info
+            userinfo_url = f"https://{auth0_domain}/userinfo"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            user_response = await client.get(userinfo_url, headers=headers)
+            user_response.raise_for_status()
+            user_info = user_response.json()
+            
         # Store token and user info in session
+        # Only store necessary fields to keep cookie size small
         request.session["access_token"] = access_token
-        request.session["user_info"] = user_info
+        request.session["user_info"] = {"email": user_info.get("email"), "name": user_info.get("name")}
         request.session.pop("oauth_state", None)
         
         # Redirect to token display page
         return RedirectResponse(url="/auth/token", status_code=303)
         
-    except requests.RequestException as e:
-        logger.error(f"Token exchange failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Token exchange failed: {str(e)}")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Token exchange failed: {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail=f"Token exchange failed: {str(e)}")
+    except httpx.RequestError as e:
+        logger.error(f"Token exchange connection error: {e}")
+        raise HTTPException(status_code=500, detail=f"Token exchange connection error: {str(e)}")
 
 # Health Check
 @app.get("/health")
