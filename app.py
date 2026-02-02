@@ -551,6 +551,10 @@ async def get_token_page(request: Request):
                     <input type="radio" id="apiMetabase" name="apiChoice" value="metabase">
                     <label for="apiMetabase">Metabase API (analytics data)</label>
                 </div>
+                <div class="api-option">
+                    <input type="radio" id="apiMeta" name="apiChoice" value="meta">
+                    <label for="apiMeta">Meta API (Facebook/Instagram Ads)</label>
+                </div>
             </div>
             
             <button onclick="login()" class="btn">Login with Auth0</button>
@@ -585,6 +589,9 @@ async def auth_login(request: Request, api: str = "xero"):
     elif api == "metabase":
         audience = AUTH0_METABASE_AUDIENCE
         scope = "openid profile email mcp:read:metabase mcp:write:metabase"
+    elif api == "meta":
+        audience = AUTH0_META_AUDIENCE
+        scope = "openid profile email mcp:read:meta mcp:write:meta"
     elif api == "workshops":
         audience = AUTH0_WORKSHOPS_AUDIENCE
         scope = "openid profile email mcp:read:workshops mcp:write:workshops mcp:admin:workshops"
