@@ -12,6 +12,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import RedirectResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 import uuid
+import io
+import pypdf
 from jose import jwt, JWTError
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -1053,6 +1055,27 @@ def _list_tools_payload():
                     "destructiveHint": False,
                     "idempotentHint": True
                 }
+            },
+            {
+                "name": "xero_get_attachments",
+                "description": "Get attachments for a specific Invoice or Bill (Xero uses InvoiceID for both). Returns text content for PDFs.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "invoiceId": {"type": "string", "description": "The Xero InvoiceID (UUID) of the Invoice or Bill."},
+                        "includeContent": {"type": "boolean", "description": "Download and extract text content (default: true)"}
+                    }
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:read:xero"] }
+                ],
+                "x-openai-isConsequential": False,
+                "isConsequential": False,
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                    "idempotentHint": True
+                }
             }
         ]
     }
@@ -1078,6 +1101,8 @@ _TOOL_NAME_ALIASES = {
     "xero.list_quotes": "xero_list_quotes",
     "xero.list_items": "xero_list_items",
     "xero.list_bills": "xero_list_bills",
+    "xero.get_invoice_attachments": "xero_get_attachments",
+    "xero.get_bill_attachments": "xero_get_attachments",
 }
 
 async def handle_tool_call(name: str, args: Dict):
@@ -1445,6 +1470,85 @@ async def handle_tool_call(name: str, args: Dict):
 
             bills = accounting_api.get_invoices(tenant_id, **b_kwargs)
             return {"content": [{"type": "text", "text": safe_dumps([b.to_dict() for b in bills.invoices])}]}
+
+        elif name == "xero_get_attachments":
+            inv_id = _get_arg(args, "invoiceId", "invoice_id")
+            if not inv_id:
+                 return {"isError": True, "content": [{"type": "text", "text": "invoiceId is required"}]}
+            
+            include_content = bool(_get_arg(args, "includeContent", "include_content", default=True))
+
+            # 1. Fetch attachments list
+            # The Xero Python SDK has 'get_attachments' for Invoices
+            # Method signature: get_attachments(xero_tenant_id, entity, id, opts...)
+            # entity is 'Invoices'
+            try:
+                attachments_resp = accounting_api.get_attachments(tenant_id, "Invoices", inv_id)
+            except Exception as e:
+                # 404 might mean no attachments or bad ID
+                return {"content": [{"type": "text", "text": f"Error fetching attachments (check ID?): {e}"}]}
+
+            attachments_list = attachments_resp.attachments or []
+            results = []
+
+            for att in attachments_list:
+                info = {
+                    "attachmentId": att.attachment_id,
+                    "fileName": att.file_name,
+                    "mimeType": att.mime_type,
+                    "contentLength": att.content_length,
+                }
+                
+                if include_content:
+                    # Filter for likely text candidates
+                    # PDF or text
+                    is_pdf = (att.mime_type == "application/pdf")
+                    is_text = (att.mime_type.startswith("text/"))
+
+                    if is_pdf or is_text:
+                        try:
+                            # 2. Get content stream
+                            # get_attachment_content returns the raw bytes/stream
+                            # SDK returns the raw response object usually if using the right method, 
+                            # but accounting_api.get_attachment_content returns a file object or bytes.
+                            # Let's check SDK doc usage. Usually api_client.call_api ... 
+                            # but accounting_api.get_attachment_content(tenant_id, 'Invoices', inv_id, att.attachment_id)
+                            
+                            # Note: wrapper returns separate thing? 
+                            # Let's try standard method:
+                            content_resp = accounting_api.get_attachment_content(
+                                tenant_id, 
+                                "Invoices", 
+                                inv_id, 
+                                att.attachment_id,
+                                _preload_content=True # We want the body
+                            )
+                            # In recent xero-python, this returns the bytes directly 
+                            
+                            if is_pdf:
+                                try:
+                                    reader = pypdf.PdfReader(io.BytesIO(content_resp))
+                                    text_pages = []
+                                    for page in reader.pages:
+                                        text_pages.append(page.extract_text())
+                                    info["extractedText"] = "\n".join(text_pages)
+                                except Exception as pdf_err:
+                                    logger.warning(f"Failed to parse PDF {att.file_name}: {pdf_err}")
+                                    info["error"] = f"PDF parsing failed: {pdf_err}"
+                            
+                            elif is_text:
+                                try:
+                                    info["extractedText"] = content_resp.decode('utf-8')
+                                except:
+                                     info["extractedText"] = str(content_resp)
+
+                        except Exception as fetch_err:
+                            logger.warning(f"Failed to fetch content for {att.file_name}: {fetch_err}")
+                            info["error"] = f"Fetch failed: {fetch_err}"
+
+                results.append(info)
+
+            return {"content": [{"type": "text", "text": safe_dumps(results)}]}
 
         return {
             "isError": True,
