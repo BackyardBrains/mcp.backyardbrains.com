@@ -14,6 +14,7 @@ from sse_starlette.sse import EventSourceResponse
 import uuid
 import io
 import pypdf
+import openpyxl
 from jose import jwt, JWTError
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -1521,6 +1522,10 @@ async def handle_tool_call(name: str, args: Dict):
                             kwargs = {"_preload_content": True}
                             if is_pdf:
                                 kwargs["content_type"] = "application/pdf"
+                            elif is_xlsx:
+                                kwargs["content_type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            elif is_image:
+                                kwargs["content_type"] = att.mime_type or "image/png"
                                 
                             content_resp = accounting_api.get_invoice_attachment_by_file_name(
                                 tenant_id, 
@@ -1541,12 +1546,34 @@ async def handle_tool_call(name: str, args: Dict):
                                     logger.warning(f"Failed to parse PDF {att.file_name}: {pdf_err}")
                                     info["error"] = f"PDF parsing failed: {pdf_err}"
                             
+                            elif is_xlsx:
+                                try:
+                                    wb = openpyxl.load_workbook(io.BytesIO(content_resp), data_only=True)
+                                    sheet_data = []
+                                    for sheet in wb.sheetnames:
+                                        ws = wb[sheet]
+                                        sheet_content = []
+                                        for row in ws.iter_rows(values_only=True):
+                                            # Filter empty rows/cells to keep it clean
+                                            if any(row):
+                                                sheet_content.append([str(c) if c is not None else "" for c in row])
+                                        if sheet_content:
+                                            sheet_data.append(f"Sheet: {sheet}\n" + "\n".join([" | ".join(r) for r in sheet_content]))
+                                    info["extractedText"] = "\n\n".join(sheet_data)
+                                except Exception as xls_err:
+                                     logger.warning(f"Failed to parse XLSX {att.file_name}: {xls_err}")
+                                     info["error"] = f"XLSX parsing failed: {xls_err}"
+
                             elif is_text:
                                 try:
                                     info["extractedText"] = content_resp.decode('utf-8')
                                 except:
                                      info["extractedText"] = str(content_resp)
-
+                            
+                            elif is_image:
+                                info["note"] = "Image file found. OCR not currently enabled but file is present."
+                                # Future: return base64 or perform external OCR
+                                
                         except Exception as fetch_err:
                             logger.warning(f"Failed to fetch content for {att.file_name}: {fetch_err}")
                             info["error"] = f"Fetch failed: {fetch_err}"
