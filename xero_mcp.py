@@ -1519,7 +1519,8 @@ async def handle_tool_call(name: str, args: Dict):
                             # Note: wrapper returns separate thing? 
                             # Let's try standard method:
                             # Use get_invoice_attachment_by_file_name which is correct for xero-python 9.x
-                            kwargs = {"_preload_content": True}
+                            # Use _preload_content=False to get raw bytes and avoid auto-decoding to str
+                            kwargs = {"_preload_content": False}
                             if is_pdf:
                                 kwargs["content_type"] = "application/pdf"
                             elif is_xlsx:
@@ -1533,11 +1534,14 @@ async def handle_tool_call(name: str, args: Dict):
                                 att.file_name,
                                 **kwargs
                             )
+                            
+                            # content_resp is a RESTResponse, .data contains the raw bytes
+                            file_bytes = content_resp.data
                             # In recent xero-python, this returns the bytes directly 
                             
                             if is_pdf:
                                 try:
-                                    reader = pypdf.PdfReader(io.BytesIO(content_resp))
+                                    reader = pypdf.PdfReader(io.BytesIO(file_bytes))
                                     text_pages = []
                                     for page in reader.pages:
                                         text_pages.append(page.extract_text())
@@ -1548,7 +1552,7 @@ async def handle_tool_call(name: str, args: Dict):
                             
                             elif is_xlsx:
                                 try:
-                                    wb = openpyxl.load_workbook(io.BytesIO(content_resp), data_only=True)
+                                    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
                                     sheet_data = []
                                     for sheet in wb.sheetnames:
                                         ws = wb[sheet]
@@ -1566,9 +1570,9 @@ async def handle_tool_call(name: str, args: Dict):
 
                             elif is_text:
                                 try:
-                                    info["extractedText"] = content_resp.decode('utf-8')
+                                    info["extractedText"] = file_bytes.decode('utf-8')
                                 except:
-                                     info["extractedText"] = str(content_resp)
+                                     info["extractedText"] = str(file_bytes)
                             
                             elif is_image:
                                 info["note"] = "Image file found. OCR not currently enabled but file is present."
