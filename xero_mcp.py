@@ -1518,11 +1518,15 @@ async def handle_tool_call(name: str, args: Dict):
                             # Note: wrapper returns separate thing? 
                             # Let's try standard method:
                             # Use get_invoice_attachment_by_file_name which is correct for xero-python 9.x
+                            kwargs = {"_preload_content": True}
+                            if is_pdf:
+                                kwargs["content_type"] = "application/pdf"
+                                
                             content_resp = accounting_api.get_invoice_attachment_by_file_name(
                                 tenant_id, 
                                 inv_id, 
                                 att.file_name,
-                                _preload_content=True # We want the body
+                                **kwargs
                             )
                             # In recent xero-python, this returns the bytes directly 
                             
