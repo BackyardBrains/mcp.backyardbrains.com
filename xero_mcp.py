@@ -18,7 +18,7 @@ import openpyxl
 from jose import jwt, JWTError
 from cryptography.fernet import Fernet, InvalidToken
 
-from xero_python.accounting import AccountingApi, Contact, Contacts, BankTransaction, BankTransactions, Journal, ManualJournal, ManualJournals, Payment, Quote, Account, Organisation
+from xero_python.accounting import AccountingApi, Contact, Contacts, BankTransaction, BankTransactions, Journal, ManualJournal, ManualJournals, Payment, Quote, Account, Organisation, Invoice, Invoices, LineItem
 from xero_python.api_client import ApiClient
 from xero_python.api_client.oauth2 import OAuth2Token
 from xero_python.api_client.configuration import Configuration
@@ -1077,6 +1077,45 @@ def _list_tools_payload():
                     "destructiveHint": False,
                     "idempotentHint": True
                 }
+            },
+            {
+                "name": "xero_update_invoice",
+                "description": "Update an existing invoice (e.g. change line items, status, dates).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "invoiceId": {"type": "string", "description": "The Xero InvoiceID (UUID) to update."},
+                        "lineItems": {
+                            "type": "array", 
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "description": {"type": "string"},
+                                    "quantity": {"type": "number"},
+                                    "unitAmount": {"type": "number"},
+                                    "itemCode": {"type": "string"},
+                                    "accountCode": {"type": "string"},
+                                    "lineItemId": {"type": "string", "description": "ID of existing line item to update (optional)"}
+                                }
+                            }
+                        },
+                        "date": {"type": "string", "description": "Invoice date (YYYY-MM-DD)"},
+                        "dueDate": {"type": "string", "description": "Due date (YYYY-MM-DD)"},
+                        "status": {"type": "string", "description": "New status (e.g. AUTHORISED, DRAFT)"},
+                        "reference": {"type": "string"}
+                    },
+                    "required": ["invoiceId"]
+                },
+                "securitySchemes": [
+                    { "type": "oauth2", "scopes": ["mcp:write:xero"] }
+                ],
+                "x-openai-isConsequential": True,
+                "isConsequential": True,
+                "annotations": {
+                    "readOnlyHint": False,
+                    "destructiveHint": False,
+                    "idempotentHint": False
+                }
             }
         ]
     }
@@ -1104,6 +1143,7 @@ _TOOL_NAME_ALIASES = {
     "xero.list_bills": "xero_list_bills",
     "xero.get_invoice_attachments": "xero_get_attachments",
     "xero.get_bill_attachments": "xero_get_attachments",
+    "xero.update_invoice": "xero_update_invoice",
 }
 
 async def handle_tool_call(name: str, args: Dict):
@@ -1585,6 +1625,61 @@ async def handle_tool_call(name: str, args: Dict):
                 results.append(info)
 
             return {"content": [{"type": "text", "text": safe_dumps(results)}]}
+
+        elif name == "xero_update_invoice":
+            inv_id = _get_arg(args, "invoiceId", "invoice_id")
+            if not inv_id:
+                  return {"isError": True, "content": [{"type": "text", "text": "invoiceId is required"}]}
+            
+            # Prepare update fields
+            update_data = {}
+            
+            # Dates
+            u_date = _get_arg(args, "date")
+            if u_date:
+                d = _parse_iso_date(u_date)
+                if d: update_data["date"] = d
+            
+            u_due_date = _get_arg(args, "dueDate", "due_date")
+            if u_due_date:
+                d = _parse_iso_date(u_due_date)
+                if d: update_data["due_date"] = d
+                
+            # Status / Ref
+            u_status = _get_arg(args, "status")
+            if u_status: update_data["status"] = u_status
+            
+            u_ref = _get_arg(args, "reference")
+            if u_ref: update_data["reference"] = u_ref
+            
+            # Line Items
+            u_line_items = _get_arg(args, "lineItems", "line_items")
+            if u_line_items and isinstance(u_line_items, list):
+                lines = []
+                for li in u_line_items:
+                    li_obj = LineItem()
+                    if "description" in li: li_obj.description = li["description"]
+                    if "quantity" in li: li_obj.quantity = li["quantity"]
+                    if "unitAmount" in li: li_obj.unit_amount = li["unitAmount"]
+                    if "itemCode" in li: li_obj.item_code = li["itemCode"]
+                    if "accountCode" in li: li_obj.account_code = li["accountCode"]
+                    if "lineItemId" in li: li_obj.line_item_id = li["lineItemId"]
+                    lines.append(li_obj)
+                update_data["line_items"] = lines
+                
+            # Perform Update
+            # We MUST set InvoiceID to ensure we update the right one
+            update_data["invoice_id"] = inv_id
+            
+            inv_obj = Invoice(**update_data)
+            
+            # Xero Update requires a list of invoices
+            try:
+                updated_invoices = accounting_api.update_invoice(tenant_id, inv_id, invoices=Invoices(invoices=[inv_obj]))
+                return {"content": [{"type": "text", "text": safe_dumps([i.to_dict() for i in updated_invoices.invoices])}]}
+            except Exception as e:
+                logger.exception("Failed to update invoice %s", inv_id)
+                return {"isError": True, "content": [{"type": "text", "text": f"Update failed: {safe_exception_message(e)}"}]}
 
         return {
             "isError": True,
