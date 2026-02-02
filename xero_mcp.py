@@ -7,9 +7,11 @@ from typing import Dict, Any, List, Tuple, Set
 from urllib.parse import urlencode
 from datetime import datetime, date
 
-from fastapi import HTTPException, Request, Depends
+from fastapi import HTTPException, Request, Depends, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import RedirectResponse, JSONResponse
+from sse_starlette.sse import EventSourceResponse
+import uuid
 from jose import jwt, JWTError
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -24,6 +26,7 @@ from utils import MCP_PROTOCOL_VERSION, safe_dumps, _as_float, _rpc_result, _rpc
 from auth import require_xero_auth
 
 # Environment variables
+MCP_BASE_URL = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
 XERO_CLIENT_ID = os.environ.get("XERO_CLIENT_ID")
 XERO_CLIENT_SECRET = os.environ.get("XERO_CLIENT_SECRET")
 XERO_REDIRECT_URI = os.environ.get("XERO_REDIRECT_URI")
@@ -1466,6 +1469,46 @@ async def handle_tool_call(name: str, args: Dict):
             "metadata": {"reason": "exception", "exceptionType": type(e).__name__}
         }
 
+
+# =============================================================================
+# SSE Transport
+# =============================================================================
+
+# Map of sessionId -> asyncio.Queue for outgoing SSE messages
+_xero_sse_sessions: Dict[str, asyncio.Queue] = {}
+
+async def _xero_sse_stream(session_id: str):
+    """The actual SSE stream generator."""
+    queue = _xero_sse_sessions.get(session_id)
+    if not queue:
+        return
+
+    try:
+        # 1. Send the endpoint event
+        post_url = f"{MCP_BASE_URL.rstrip('/')}/xero/mcp?session_id={session_id}"
+        yield {
+            "event": "endpoint",
+            "data": post_url
+        }
+
+        # 2. Forward messages from the queue
+        while True:
+            try:
+                msg = await asyncio.wait_for(queue.get(), timeout=15.0)
+                yield {
+                    "event": "message",
+                    "data": safe_dumps(msg)
+                }
+            except asyncio.TimeoutError:
+                # Keep-alive
+                yield ": keep-alive"
+            except Exception as e:
+                logger.error(f"SSE stream error for {session_id}: {e}")
+                break
+    finally:
+        _xero_sse_sessions.pop(session_id, None)
+        logger.info(f"SSE session {session_id} closed")
+
 # ---- Router Setup ----
 from fastapi import APIRouter
 
@@ -1473,8 +1516,24 @@ router = APIRouter()
 
 @router.get("/")
 @router.get("")
-def xero_index():
-    """Basic index endpoint so /xero/ doesn't 404 behind nginx."""
+async def xero_index(request: Request):
+    """Basic index endpoint. Supports SSE transport if requested."""
+    # Check if this is an SSE connection request
+    accept = request.headers.get("accept", "")
+    if "text/event-stream" in accept:
+        session_id = str(uuid.uuid4())
+        _xero_sse_sessions[session_id] = asyncio.Queue()
+        logger.info(f"Starting Xero SSE session: {session_id}")
+        
+        return EventSourceResponse(
+            _xero_sse_stream(session_id),
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+
     return {
         "service": "xero-mcp",
         "status": "ok",
@@ -1578,39 +1637,74 @@ async def handle_mcp_request(request: Request, payload: Dict = Depends(require_x
     rpc_id = body.get("id")
     method = body.get("method")
     params = body.get("params", {})
+    
+    # Check for SSE session
+    session_id = request.query_params.get("session_id")
+    sse_queue = _xero_sse_sessions.get(session_id) if session_id else None
+
+    # Helper to send response via SSE or directly
+    def _send_response(resp: Dict):
+        if sse_queue:
+            # Route response to SSE stream - put in queue (sync required for regular def? no, async queue put)
+            # But wait, queue.put is not async, queue.put_nowait is. queue.put is async in asyncio.Queue?
+            # Actually queue.put is async. We need to await it. 
+            # But this helper needs to be async.
+            pass # We'll handle this inline below because wrapping it is tricky with return types
+        return resp
+        
+    async def _respond(resp: Dict):
+        if sse_queue:
+            await sse_queue.put(resp)
+            return Response(status_code=202) # Accepted
+        else:
+            return resp
 
     if method == "initialize":
-        return _rpc_result(rpc_id, _initialize_payload())
+        return await _respond(_rpc_result(rpc_id, _initialize_payload()))
 
     elif method == "ping":
-        return _rpc_result(rpc_id, {"status": "ok"})
+        return await _respond(_rpc_result(rpc_id, {"status": "ok"}))
 
     elif method == "tools/list":
-        return _rpc_result(rpc_id, _list_tools_payload())
+        return await _respond(_rpc_result(rpc_id, _list_tools_payload()))
     
     elif method == "tools/call":
         name = params.get("name")
         args = params.get("arguments", {})
         result = await handle_tool_call(name, args)
+        
+        # Handle HTTP status for errors (only relevant for direct response)
         if isinstance(result, dict) and result.get("isError"):
-            status = int(result.get("httpStatus", 502))
-            return JSONResponse(status_code=status, content=_rpc_result(rpc_id, result))
-        return _rpc_result(rpc_id, result)
+             # If SSE, we just send the JSON-RPC error message. The status code of the POST 
+             # is 202, but the SSE message has the error.
+             # If valid direct response, we return JSONResponse(status=502).
+             # Let's standardize: _respond handles the routing.
+             # If direct response error, we might want to set status code.
+             
+             final_resp = _rpc_result(rpc_id, result)
+             if sse_queue:
+                 await sse_queue.put(final_resp)
+                 return Response(status_code=202)
+             else:
+                 status = int(result.get("httpStatus", 502))
+                 return JSONResponse(status_code=status, content=final_resp)
+        
+        return await _respond(_rpc_result(rpc_id, result))
 
     elif method == "resources/list":
-        return _rpc_result(rpc_id, {"resources": []})
+        return await _respond(_rpc_result(rpc_id, {"resources": []}))
     
     elif method == "resources/read":
-        return _rpc_result(rpc_id, {"contents": []})
+        return await _respond(_rpc_result(rpc_id, {"contents": []}))
 
     elif method == "prompts/list":
-        return _rpc_result(rpc_id, {"prompts": []})
+        return await _respond(_rpc_result(rpc_id, {"prompts": []}))
 
     elif method == "prompts/get":
-         return _rpc_result(rpc_id, {"messages": []})
+         return await _respond(_rpc_result(rpc_id, {"messages": []}))
 
     else:
-        return _rpc_error(rpc_id, -32601, f"Method {method} not found")
+        return await _respond(_rpc_error(rpc_id, -32601, f"Method {method} not found"))
 
 
 
