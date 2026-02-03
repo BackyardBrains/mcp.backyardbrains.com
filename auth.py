@@ -47,8 +47,11 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
         load_dotenv(dotenv_path=env_path, override=True)
         jwt_secret = os.environ.get("JWT_SECRET")
 
-    if jwt_secret:
         try:
+            # DEBUG: Peak at the header
+            header = jwt.get_unverified_header(token)
+            logger.info(f"JWT Debug: Token header alg: {header.get('alg')}. Expected: {ALGORITHM}")
+            
             payload = jwt.decode(token, jwt_secret, algorithms=[ALGORITHM])
             # If successful, return payload directly
             # We might want to refresh the cache/log it, but for now just return it
