@@ -7,9 +7,12 @@ from fastapi import HTTPException, Request, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from utils import logger, safe_dumps
+from jose import jwt, JWTError
 
 # Auth0 configuration
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
+JWT_SECRET = os.environ.get("JWT_SECRET") 
+ALGORITHM = "HS256"
 AUTH0_XERO_AUDIENCE = os.environ.get("AUTH0_XERO_AUDIENCE", "https://mcp.backyardbrains.com/xero")
 AUTH0_METABASE_AUDIENCE = os.environ.get("AUTH0_METABASE_AUDIENCE", "https://mcp.backyardbrains.com/metabase")
 AUTH0_META_AUDIENCE = os.environ.get("AUTH0_META_AUDIENCE", "https://mcp.backyardbrains.com/meta")
@@ -26,7 +29,23 @@ _USERINFO_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
 AUTH0_USERINFO_CACHE_SECONDS = int(os.environ.get("AUTH0_USERINFO_CACHE_SECONDS", "300"))
 
 async def validate_opaque_token(token: str) -> Dict[str, Any]:
-    """Validate an opaque/JWE token by calling Auth0's /userinfo endpoint."""
+    """
+    Validate a token. 
+    First attempts to validate as a local long-lived JWT API Key.
+    If that fails, validates as an opaque/JWE token by calling Auth0's /userinfo endpoint.
+    """
+    
+    # 1. Try to validate as local JWT (API Key)
+    if JWT_SECRET:
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+            # If successful, return payload directly
+            # We might want to refresh the cache/log it, but for now just return it
+            # Ensure it has necessary fields
+            return payload
+        except JWTError:
+            # Not a valid local JWT, fall back to Auth0 opaque token validation
+            pass
 
     if not AUTH0_DOMAIN:
         raise HTTPException(status_code=500, detail="Auth0 domain not configured")
@@ -166,6 +185,32 @@ def _log_scope_claims(payload: Dict[str, Any], *, context: str) -> None:
         permissions if permissions is not None else "<missing>",
         scope_string if scope_string is not None else "<missing>",
     )
+
+
+def create_api_token(user_info: Dict[str, Any], permissions: list[str], scopes: list[str], expiration_days: int = 365) -> str:
+    """Create a long-lived JWT API key signed with our local secret."""
+    if not JWT_SECRET:
+        raise ValueError("JWT_SECRET not configured")
+        
+    now = time.time()
+    exp = now + (expiration_days * 24 * 60 * 60)
+    
+    payload = {
+        "sub": user_info.get("sub", "api-key-user"),
+        "email": user_info.get("email"),
+        "name": user_info.get("name"),
+        "permissions": permissions,
+        "scope": " ".join(scopes),
+        "iat": now,
+        "exp": exp,
+        "iss": "byb-mcp-server-apikey"
+    }
+    
+    # Add namespaced permissions/email if needed by other tools
+    if user_info.get("email"):
+        payload[f"{AUTH0_NAMESPACE}/email"] = user_info["email"]
+    
+    return jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
 
 
 async def _extract_credentials(request: Request, creds: Optional[HTTPAuthorizationCredentials]):

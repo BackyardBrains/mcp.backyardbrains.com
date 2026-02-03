@@ -16,7 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 load_dotenv()
 
 from utils import logger, MCP_PROTOCOL_VERSION
-from auth import AUTH0_XERO_AUDIENCE, AUTH0_METABASE_AUDIENCE, AUTH0_META_AUDIENCE
+from auth import AUTH0_XERO_AUDIENCE, AUTH0_METABASE_AUDIENCE, AUTH0_META_AUDIENCE, create_api_token, validate_opaque_token
 import auth
 import xero_mcp
 import metabase_mcp
@@ -298,6 +298,40 @@ async def jwks_json():
     return Response(content=resp.content, media_type="application/json", status_code=resp.status_code)
 
 # OAuth Token Generation Endpoints
+# API Key Generation Endpoint
+@app.post("/auth/create-api-key")
+async def create_api_key_endpoint(request: Request):
+    token = request.session.get("access_token")
+    user_info = request.session.get("user_info")
+    
+    if not token or not user_info:
+        raise HTTPException(status_code=401, detail="Not logged in")
+
+    # validate_opaque_token to get full claims (permissions, etc.) from Auth0
+    # We re-fetch this to ensure we are baking in the current permissions
+    try:
+        full_payload = await validate_opaque_token(token)
+    except HTTPException:
+        # Token might be expired
+        raise HTTPException(status_code=401, detail="Session expired, please log in again")
+
+    permissions = full_payload.get("permissions", [])
+    scope_string = full_payload.get("scope", "")
+    scopes = scope_string.split() if scope_string else []
+    
+    # Merge namespaced permissions
+    namespaced = full_payload.get(f"{auth.AUTH0_NAMESPACE}/permissions", [])
+    if namespaced:
+        permissions.extend(namespaced)
+        permissions = list(set(permissions))
+
+    try:
+        api_key = create_api_token(full_payload, permissions, scopes, expiration_days=365)
+        return {"api_key": api_key}
+    except ValueError as e:
+         raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/auth/token", response_class=HTMLResponse)
 async def get_token_page(request: Request):
     """Display token generation page with API selector and login button."""
@@ -419,7 +453,8 @@ async def get_token_page(request: Request):
                 <div class="token-box" id="tokenBox">{token}</div>
                 
                 <button class="btn copy-btn" onclick="copyToken()">📋 Copy Token</button>
-                <a href="/auth/logout" class="btn logout-btn">Logout</a>
+                <button class="btn" style="background: #ea580c; margin-left: 10px;" onclick="createApiKey()">🔑 Create 1-Year Key</button>
+                <a href="/auth/logout" class="btn logout-btn" style="margin-left: 10px;">Logout</a>
                 
                 {'<div style="margin-top: 15px;"><h3 style="font-size: 14px; color: #666; margin-bottom: 8px;">Your Permissions:</h3>' + "".join([f'<span class="scope-tag">{p}</span>' for p in mcp_perms]) + '</div>' if mcp_perms else ''}
                 
@@ -436,9 +471,40 @@ async def get_token_page(request: Request):
                     const token = document.getElementById('tokenBox').textContent;
                     navigator.clipboard.writeText(token).then(() => {{
                         const btn = event.target;
+                        const originalText = btn.textContent;
                         btn.textContent = '✅ Copied!';
-                        setTimeout(() => {{ btn.textContent = '📋 Copy Token'; }}, 2000);
+                        setTimeout(() => {{ btn.textContent = originalText; }}, 2000);
                     }});
+                }}
+                
+                async function createApiKey() {{
+                    if (!confirm("Create a 1-year API Key? This key will have the same permissions as your current session.")) return;
+                    
+                    try {{
+                        const response = await fetch('/auth/create-api-key', {{ method: 'POST' }});
+                        if (!response.ok) throw new Error(await response.text());
+                        
+                        const data = await response.json();
+                        const tokenBox = document.getElementById('tokenBox');
+                        tokenBox.textContent = data.api_key;
+                        tokenBox.style.border = "2px solid #ea580c";
+                        tokenBox.style.background = "#fff7ed";
+                        
+                        // Show success message
+                        let msg = document.getElementById('key-success-msg');
+                        if (!msg) {{
+                            msg = document.createElement('div');
+                            msg.id = 'key-success-msg';
+                            msg.style.color = "#ea580c";
+                            msg.style.fontWeight = "bold";
+                            msg.style.marginTop = "10px";
+                            tokenBox.parentNode.insertBefore(msg, tokenBox.nextSibling);
+                        }}
+                        msg.textContent = "✅ Generated 1-Year API Key! Copy it now.";
+                        
+                    }} catch (e) {{
+                        alert("Error creating API key: " + e.message);
+                    }}
                 }}
             </script>
         </body>
