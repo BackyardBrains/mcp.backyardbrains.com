@@ -354,125 +354,265 @@ async def get_token_page(request: Request):
         
         html = f"""
         <!DOCTYPE html>
-        <html>
+        <html lang="en">
         <head>
-            <title>Your MCP Token</title>
+            <title>Backyard Brains | MCP Token</title>
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
             <style>
+                /* ==========================================================================
+                   BYB Design System - CSS Variables
+                   ========================================================================== */
+                :root {{
+                    /* COLORS */
+                    --byb-color-dark: #000000;
+                    --byb-color-orange: #ff805f;
+                    --byb-color-purpure: #FFD90F;
+                    --byb-color-white: #ffffff;
+                    
+                    /* Support */
+                    --byb-color-hover-orange: #f07859;
+                    --byb-color-tinted-orange: #ffcdbf;
+                    --byb-color-very-light-tinted-orange: #fff5f2;
+                    
+                    /* Grey Scale */
+                    --byb-color-grey-text: #707070;
+                    --byb-color-grey: #dbdbdb;
+                    --byb-color-grey-divider: #e9e9e9;
+                    --byb-color-grey-bg: #eeeeee;
+                    --byb-color-grey-bg-light: #f5f5f5;
+                    
+                    /* Helper/Semantic */
+                    --byb-color-success: #00aa4f;
+                    --byb-color-success-bg: #c8ebd8;
+                    --byb-color-info-bg: #FFF4B8;
+                    --byb-color-info-border: #FFD90F;
+                    --byb-color-info-text: #854d0e;
+
+                    /* TYPOGRAPHY */
+                    --byb-font-display: 'Boldoa Mat', 'Impact', sans-serif;
+                    --byb-font-body: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+                    
+                    --byb-font-weight-regular: 400;
+                    --byb-font-weight-medium: 500;
+                    --byb-font-weight-bold: 700;
+
+                    /* SPACING */
+                    --byb-space-1: 4px;
+                    --byb-space-2: 8px;
+                    --byb-space-3: 12px;
+                    --byb-space-4: 16px;
+                    --byb-space-6: 24px;
+                    --byb-space-8: 32px;
+                    
+                    /* BORDERS */
+                    --byb-border-radius-md: 4px;
+                    --byb-border-radius-lg: 6px;
+                    --byb-border-radius-full: 999px;
+                    
+                    /* SHADOWS */
+                    --byb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+                    --byb-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+                    --byb-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+                    
+                    /* ANIMATION */
+                    --byb-duration-fast: 100ms;
+                    --byb-ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+                }}
+
                 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+                
                 body {{
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    font-family: var(--byb-font-body);
+                    background-color: var(--byb-color-grey-bg);
+                    color: var(--byb-color-dark);
                     min-height: 100vh;
                     display: flex;
+                    flex-direction: column;
                     align-items: center;
                     justify-content: center;
                     padding: 20px;
+                    -webkit-font-smoothing: antialiased;
                 }}
+
                 .container {{
-                    background: white;
-                    border-radius: 16px;
-                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                    background: var(--byb-color-white);
+                    border-radius: var(--byb-border-radius-lg);
+                    box-shadow: var(--byb-shadow-lg);
                     max-width: 600px;
                     width: 100%;
-                    padding: 40px;
+                    padding: 48px;
+                    text-align: center;
                 }}
-                h1 {{ color: #333; margin-bottom: 10px; font-size: 28px; }}
-                .subtitle {{ color: #666; margin-bottom: 30px; font-size: 14px; }}
-                .user-info {{
-                    background: #dbeafe;
-                    border-radius: 8px;
-                    padding: 12px;
-                    margin-bottom: 20px;
-                    font-size: 14px;
-                    color: #1e40af;
+
+                h1 {{ 
+                    font-family: var(--byb-font-body);
+                    font-weight: var(--byb-font-weight-bold);
+                    color: var(--byb-color-dark);
+                    margin-bottom: var(--byb-space-2);
+                    font-size: 24px;
                 }}
-                .token-box {{
-                    background: #f7f9fc;
-                    border: 2px solid #e1e8ed;
-                    border-radius: 8px;
-                    padding: 20px;
-                    margin: 20px 0;
-                    word-break: break-all;
-                    font-family: 'Courier New', monospace;
-                    font-size: 12px;
-                    color: #333;
-                    max-height: 200px;
-                    overflow-y: auto;
-                }}
-                .btn {{
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                    border: none;
-                    padding: 14px 32px;
-                    border-radius: 8px;
+                
+                .subtitle {{
+                    font-family: var(--byb-font-body);
+                    color: var(--byb-color-grey-text);
+                    margin-bottom: var(--byb-space-6);
                     font-size: 16px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: transform 0.2s, box-shadow 0.2s;
-                    display: inline-block;
-                    text-decoration: none;
                 }}
-                .btn:hover {{
-                    transform: translateY(-2px);
-                    box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
-                }}
-                .copy-btn {{ background: #10b981; margin-right: 10px; }}
-                .logout-btn {{ background: #6b7280; }}
-                .info {{
-                    background: #fef3c7;
-                    border-left: 4px solid #f59e0b;
-                    padding: 12px 16px;
-                    margin: 20px 0;
-                    border-radius: 4px;
+
+                .user-badge {{
+                    display: inline-flex;
+                    align-items: center;
+                    background-color: var(--byb-color-very-light-tinted-orange);
+                    color: var(--byb-color-orange);
+                    padding: 8px 16px;
+                    border-radius: var(--byb-border-radius-full);
                     font-size: 14px;
-                    color: #92400e;
+                    font-weight: var(--byb-font-weight-medium);
+                    margin-bottom: var(--byb-space-8);
+                }}
+
+                /* Section Label */
+                .section-label {{
+                    text-align: left;
+                    font-size: 12px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    color: var(--byb-color-grey-text);
+                    margin-bottom: var(--byb-space-2);
+                    font-weight: var(--byb-font-weight-bold);
+                }}
+
+                /* Token Display */
+                .token-display {{
+                    background-color: var(--byb-color-grey-bg-light);
+                    border: 1px solid var(--byb-color-grey);
+                    border-radius: var(--byb-border-radius-md);
+                    padding: var(--byb-space-4);
+                    margin-bottom: var(--byb-space-6);
+                    font-family: 'Roboto Mono', monospace;
+                    font-size: 13px;
+                    color: var(--byb-color-dark);
+                    word-break: break-all;
+                    text-align: left;
+                    max-height: 150px;
+                    overflow-y: auto;
+                    line-height: 1.5;
+                }}
+
+                /* Action Buttons */
+                .btn-row {{
+                    display: flex;
+                    gap: var(--byb-space-3);
+                    margin-bottom: var(--byb-space-6);
+                    flex-wrap: wrap;
+                }}
+
+                .byb-btn {{
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 48px;
+                    padding: 0 24px;
+                    border-radius: var(--byb-border-radius-lg);
+                    font-family: var(--byb-font-body);
+                    font-weight: var(--byb-font-weight-medium);
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    font-size: 14px;
+                    cursor: pointer;
+                    text-decoration: none;
+                    transition: all var(--byb-duration-fast) var(--byb-ease-default);
+                    border: 1px solid transparent;
+                    flex: 1;
+                }}
+                
+                .byb-btn--primary {{
+                    background-color: var(--byb-color-success); /* Green for copy */
+                    color: var(--byb-color-white);
+                }}
+                .byb-btn--primary:hover {{ background-color: #008f42; margin-top: -1px; margin-bottom: 1px; box-shadow: var(--byb-shadow-md); }}
+                
+                .byb-btn--secondary {{
+                    background-color: var(--byb-color-orange);
+                    color: var(--byb-color-white);
+                }}
+                .byb-btn--secondary:hover {{ background-color: var(--byb-color-hover-orange); margin-top: -1px; margin-bottom: 1px; box-shadow: var(--byb-shadow-md); }}
+                
+                .byb-btn--outline {{
+                    background-color: transparent;
+                    color: var(--byb-color-grey-text);
+                    border-color: var(--byb-color-grey);
+                    flex: 0 0 auto;
+                }}
+                .byb-btn--outline:hover {{ color: var(--byb-color-dark); border-color: var(--byb-color-dark); }}
+
+                /* Info Info */
+                .info-box {{
+                    background: var(--byb-color-info-bg);
+                    border-left: 4px solid var(--byb-color-info-border);
+                    padding: 16px;
+                    border-radius: var(--byb-border-radius-md);
+                    font-size: 14px;
+                    color: var(--byb-color-info-text);
+                    text-align: left;
+                    margin-bottom: var(--byb-space-6);
+                    line-height: 1.6;
+                }}
+
+                /* Scopes */
+                .scopes-container {{
+                    text-align: left;
+                    margin-bottom: var(--byb-space-6);
                 }}
                 .scope-tag {{
                     display: inline-block;
-                    background: #e0e7ff;
-                    color: #4338ca;
-                    padding: 4px 12px;
-                    border-radius: 12px;
-                    font-size: 12px;
-                    margin: 4px;
-                    font-family: 'Courier New', monospace;
+                    background: var(--byb-color-grey-bg);
+                    color: var(--byb-color-grey-text);
+                    padding: 4px 10px;
+                    border-radius: 99px;
+                    font-size: 11px;
+                    margin: 0 4px 4px 0;
+                    font-family: 'Roboto Mono', monospace;
                 }}
             </style>
         </head>
         <body>
             <div class="container">
-                <h1>🔐 MCP Access Token</h1>
-                <p class="subtitle">Your personal bearer token for Antigravity MCP</p>
+                <h1>MCP Access Token</h1>
+                <p class="subtitle">Secure Bearer Token Generated</p>
                 
-                <div class="user-info">
-                    Logged in as <strong>{user_info.get('email', user_info.get('name', 'User'))}</strong>
+                <div class="user-badge">
+                    {user_info.get('email', user_info.get('name', 'User'))}
                 </div>
                 
-                <h2 style="font-size: 18px; margin-bottom: 10px; color: #333;">Your Access Token</h2>
-                <div class="token-box" id="tokenBox">{token}</div>
+                <div class="section-label">Your Token</div>
+                <div class="token-display" id="tokenBox">{token}</div>
                 
-                <button class="btn copy-btn" onclick="copyToken()">📋 Copy Token</button>
-                <button class="btn" style="background: #ea580c; margin-left: 10px;" onclick="createApiKey()">🔑 Create 1-Year Key</button>
-                <a href="/auth/logout" class="btn logout-btn" style="margin-left: 10px;">Logout</a>
+                <div class="btn-row">
+                    <button class="byb-btn byb-btn--primary" onclick="copyToken()">Copy Token</button>
+                    <button class="byb-btn byb-btn--secondary" onclick="createApiKey()">Create 1-Year Key</button>
+                    <a href="/auth/logout" class="byb-btn byb-btn--outline">Logout</a>
+                </div>
                 
-                {'<div style="margin-top: 15px;"><h3 style="font-size: 14px; color: #666; margin-bottom: 8px;">Your Permissions:</h3>' + "".join([f'<span class="scope-tag">{p}</span>' for p in mcp_perms]) + '</div>' if mcp_perms else ''}
+                {f'<div class="scopes-container"><div class="section-label">Active Permissions</div>' + "".join([f'<span class="scope-tag">{p}</span>' for p in mcp_perms]) + '</div>' if mcp_perms else ''}
                 
-                <div class="info">
-                    <strong>How to use:</strong><br>
-                    1. Copy the token above<br>
-                    2. Open your Antigravity MCP config<br>
-                    3. Replace the Authorization header value with: <code>Bearer YOUR_TOKEN</code><br>
-                    4. Save and reconnect
+                <div class="info-box">
+                    <strong>Instructions:</strong><br>
+                    1. Copy the token above.<br>
+                    2. Paste it into your MCP Client configuration as: <code>Bearer YOUR_TOKEN</code><br>
+                    3. Save and restart your client.
                 </div>
             </div>
             <script>
                 function copyToken() {{
                     const token = document.getElementById('tokenBox').textContent;
                     navigator.clipboard.writeText(token).then(() => {{
-                        const btn = event.target;
+                        const btn = document.querySelector('.byb-btn--primary');
                         const originalText = btn.textContent;
-                        btn.textContent = '✅ Copied!';
+                        btn.textContent = 'Copied!';
                         setTimeout(() => {{ btn.textContent = originalText; }}, 2000);
                     }});
                 }}
@@ -487,148 +627,354 @@ async def get_token_page(request: Request):
                         const data = await response.json();
                         const tokenBox = document.getElementById('tokenBox');
                         tokenBox.textContent = data.api_key;
-                        tokenBox.style.border = "2px solid #ea580c";
-                        tokenBox.style.background = "#fff7ed";
+                        tokenBox.style.border = "2px solid var(--byb-color-success)";
+                        tokenBox.style.backgroundColor = "var(--byb-color-success-bg)";
+                        tokenBox.style.color = "#005a2b";
                         
                         // Show success message
-                        let msg = document.getElementById('key-success-msg');
-                        if (!msg) {{
-                            msg = document.createElement('div');
-                            msg.id = 'key-success-msg';
-                            msg.style.color = "#ea580c";
-                            msg.style.fontWeight = "bold";
-                            msg.style.marginTop = "10px";
-                            tokenBox.parentNode.insertBefore(msg, tokenBox.nextSibling);
-                        }}
-                        msg.textContent = "✅ Generated 1-Year API Key! Copy it now.";
+                        const btn = document.querySelector('.byb-btn--secondary');
+                        btn.textContent = 'Key Created!';
+                        setTimeout(() => {{ btn.textContent = 'Create 1-Year Key'; }}, 3000);
                         
                     }} catch (e) {{
-                        alert("Error creating API key: " + e.message);
+                        console.error("API Key Error:", e);
+                        alert("Error: " + e.message + "\n\nSee server logs for details.");
                     }}
                 }}
             </script>
         </body>
         </html>
         """
-        return HTMLResponse(content=html)
+
     
     # Not logged in - show login page with API selector
     html = """
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
-        <title>Get Your MCP Token</title>
+        <title>Backyard Brains | MCP Access</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
         <style>
+            /* ==========================================================================
+               BYB Design System - CSS Variables
+               ========================================================================== */
+            :root {
+                /* COLORS */
+                --byb-color-dark: #000000;
+                --byb-color-orange: #ff805f;
+                --byb-color-purpure: #FFD90F;
+                --byb-color-yellow: #ffc600;
+                --byb-color-green: #00aa4f;
+                --byb-color-blue: #0093ff;
+                --byb-color-white: #ffffff;
+                
+                --byb-color-hover-orange: #f07859;
+                --byb-color-tinted-orange: #ffcdbf;
+                --byb-color-light-tinted-orange: #ffe3db;
+                --byb-color-very-light-tinted-orange: #fff5f2;
+                
+                --byb-color-grey-text: #707070;
+                --byb-color-grey: #dbdbdb;
+                --byb-color-grey-divider: #e9e9e9;
+                --byb-color-grey-bg: #eeeeee;
+                --byb-color-grey-bg-light: #f5f5f5;
+
+                /* TYPOGRAPHY */
+                --byb-font-display: 'Boldoa Mat', 'Impact', sans-serif;
+                --byb-font-hand: 'BYB Hand Drawn', cursive;
+                --byb-font-body: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+                
+                --byb-font-weight-regular: 400;
+                --byb-font-weight-medium: 500;
+                --byb-font-weight-bold: 700;
+
+                /* SPACING */
+                --byb-space-1: 4px;
+                --byb-space-2: 8px;
+                --byb-space-3: 12px;
+                --byb-space-4: 16px;
+                --byb-space-6: 24px;
+                --byb-space-8: 32px;
+                
+                /* BORDERS */
+                --byb-border-radius-md: 4px;
+                --byb-border-radius-lg: 6px;
+                --byb-border-radius-full: 999px;
+                
+                /* SHADOWS */
+                --byb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+                --byb-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+                --byb-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+                
+                /* ANIMATION */
+                --byb-duration-fast: 100ms;
+                --byb-ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+            }
+
             * { margin: 0; padding: 0; box-sizing: border-box; }
+            
             body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                font-family: var(--byb-font-body);
+                background-color: var(--byb-color-grey-bg);
+                color: var(--byb-color-dark);
                 min-height: 100vh;
                 display: flex;
+                flex-direction: column;
                 align-items: center;
                 justify-content: center;
                 padding: 20px;
+                -webkit-font-smoothing: antialiased;
             }
+
             .container {
-                background: white;
-                border-radius: 16px;
-                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                max-width: 600px;
+                background: var(--byb-color-white);
+                border-radius: var(--byb-border-radius-lg);
+                box-shadow: var(--byb-shadow-lg);
+                max-width: 480px;
                 width: 100%;
-                padding: 40px;
+                padding: 48px;
                 text-align: center;
             }
-            h1 { color: #333; margin-bottom: 10px; font-size: 28px; }
-            .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
-            .btn {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                border: none;
-                padding: 14px 32px;
-                border-radius: 8px;
+
+            .logo-area {
+                margin-bottom: var(--byb-space-6);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            /* Mimicking the logo with text if image fails, but using the official BYB orange */
+            .logo-text {
+                font-family: var(--byb-font-display), var(--byb-font-body); /* Fallback */
+                font-size: 24px;
+                font-weight: var(--byb-font-weight-bold);
+                letter-spacing: -0.5px;
+            }
+            .logo-text span { color: var(--byb-color-orange); }
+
+            h1 { 
+                font-family: var(--byb-font-body);
+                font-weight: var(--byb-font-weight-bold);
+                color: var(--byb-color-dark);
+                margin-bottom: var(--byb-space-2);
+                font-size: 24px;
+            }
+            
+            .subtitle {
+                font-family: var(--byb-font-body);
+                color: var(--byb-color-grey-text);
+                margin-bottom: var(--byb-space-8);
                 font-size: 16px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: transform 0.2s, box-shadow 0.2s;
-                display: inline-block;
-                text-decoration: none;
+                line-height: 1.5;
             }
-            .btn:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
-            }
-            .info {
-                background: #fef3c7;
-                border-left: 4px solid #f59e0b;
-                padding: 12px 16px;
-                margin: 20px 0;
-                border-radius: 4px;
-                font-size: 14px;
-                text-align: left;
-                color: #92400e;
-            }
+
+            /* API Selector List */
             .api-selector {
-                margin: 20px 0;
-                padding: 20px;
-                background: #f7f9fc;
-                border-radius: 8px;
                 text-align: left;
+                margin-bottom: var(--byb-space-8);
             }
-            .api-selector h3 {
-                margin-bottom: 12px;
-                font-size: 16px;
-                color: #333;
+            
+            .api-group-label {
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                color: var(--byb-color-grey-text);
+                margin-bottom: var(--byb-space-3);
+                font-weight: var(--byb-font-weight-bold);
             }
-            .api-option {
-                margin: 8px 0;
+
+            /* Custom Radio Card */
+            .radio-card {
+                position: relative;
+                margin-bottom: var(--byb-space-3);
+            }
+            
+            .radio-card input[type="radio"] {
+                position: absolute;
+                opacity: 0;
+                width: 0;
+                height: 0;
+            }
+
+            .radio-card label {
+                display: flex;
+                align-items: flex-start;
+                padding: var(--byb-space-4);
+                background-color: var(--byb-color-white);
+                border: 2px solid var(--byb-color-grey);
+                border-radius: var(--byb-border-radius-md);
                 cursor: pointer;
+                transition: all var(--byb-duration-fast) var(--byb-ease-default);
             }
-            .api-option input[type="radio"] {
-                margin-right: 8px;
-                cursor: pointer;
+            
+            .radio-card label:hover {
+                border-color: var(--byb-color-dark);
             }
-            .api-option label {
+
+            .radio-card input:checked + label {
+                border-color: var(--byb-color-orange);
+                background-color: var(--byb-color-very-light-tinted-orange);
+            }
+            
+            /* Custom Radio Circle */
+            .radio-circle {
+                flex-shrink: 0;
+                width: 20px;
+                height: 20px;
+                border: 2px solid var(--byb-color-grey);
+                border-radius: 50%;
+                margin-right: var(--byb-space-3);
+                position: relative;
+                margin-top: 2px; /* Align with title text */
+                transition: border-color var(--byb-duration-fast) var(--byb-ease-default);
+            }
+            
+            .radio-card input:checked + label .radio-circle {
+                border-color: var(--byb-color-orange);
+            }
+            
+            .radio-circle::after {
+                content: '';
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%) scale(0);
+                width: 10px;
+                height: 10px;
+                background-color: var(--byb-color-orange);
+                border-radius: 50%;
+                transition: transform var(--byb-duration-fast) var(--byb-ease-default);
+            }
+            
+            .radio-card input:checked + label .radio-circle::after {
+                transform: translate(-50%, -50%) scale(1);
+            }
+
+            .radio-content {
+                display: flex;
+                flex-direction: column;
+            }
+            .radio-title {
+                font-weight: var(--byb-font-weight-bold);
+                color: var(--byb-color-dark);
+                font-size: 15px;
+            }
+            .radio-desc {
+                font-size: 13px;
+                color: var(--byb-color-grey-text);
+                margin-top: 2px;
+            }
+
+            /* BYB Button */
+            .byb-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                height: 48px;
+                padding: 0 24px;
+                background-color: var(--byb-color-orange);
+                color: var(--byb-color-white);
+                border: 1px solid var(--byb-color-orange);
+                border-radius: var(--byb-border-radius-lg);
+                
+                font-family: var(--byb-font-body);
+                font-weight: var(--byb-font-weight-medium);
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                font-size: 15px;
                 cursor: pointer;
-                color: #555;
+                text-decoration: none;
+                
+                transition: all var(--byb-duration-fast) var(--byb-ease-default);
+            }
+            
+            .byb-btn:hover {
+                background-color: var(--byb-color-hover-orange);
+                border-color: var(--byb-color-hover-orange);
+                transform: translateY(-1px);
+                box-shadow: var(--byb-shadow-md);
+            }
+            
+            .byb-btn:active {
+                transform: translateY(0);
+                background-color: #e56847;
+            }
+
+            .footer {
+                margin-top: 32px;
+                font-size: 12px;
+                color: var(--byb-color-grey-text);
+                border-top: 1px solid var(--byb-color-grey-divider);
+                padding-top: 24px;
             }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>🔐 MCP Access Token</h1>
-            <p class="subtitle">Get your personal bearer token for Antigravity MCP</p>
+            <div class="logo-area">
+                <div class="logo-text"><span>Backyard</span>Brains</div>
+            </div>
             
-            <p style="margin-bottom: 20px; color: #666;">
-                Select which API you need access to, then log in to generate your personal MCP access token.
-            </p>
+            <h1>Intranet Access</h1>
+            <p class="subtitle">Select your workspace and login to generate your secure MCP token.</p>
             
             <div class="api-selector">
-                <h3>Select API:</h3>
-                <div class="api-option">
+                <div class="api-group-label">Select Workspace</div>
+                
+                <div class="radio-card">
                     <input type="radio" id="apiAssistant" name="apiChoice" value="assistant" checked>
-                    <label for="apiAssistant">Assistant API (PM tools, Drive, Gmail, Calendar)</label>
+                    <label for="apiAssistant">
+                        <div class="radio-circle"></div>
+                        <div class="radio-content">
+                            <span class="radio-title">Assistant (General)</span>
+                            <span class="radio-desc">Admin, Drive, Gmail, Calendar Access</span>
+                        </div>
+                    </label>
                 </div>
-                <div class="api-option">
+                
+                <div class="radio-card">
                     <input type="radio" id="apiXero" name="apiChoice" value="xero">
-                    <label for="apiXero">Xero API (accounting data)</label>
+                    <label for="apiXero">
+                        <div class="radio-circle"></div>
+                        <div class="radio-content">
+                            <span class="radio-title">Xero Accounting</span>
+                            <span class="radio-desc">Invoices, Bills, and Financial Data</span>
+                        </div>
+                    </label>
                 </div>
-                <div class="api-option">
+                
+                <div class="radio-card">
                     <input type="radio" id="apiMetabase" name="apiChoice" value="metabase">
-                    <label for="apiMetabase">Metabase API (analytics data)</label>
+                    <label for="apiMetabase">
+                        <div class="radio-circle"></div>
+                        <div class="radio-content">
+                            <span class="radio-title">Metabase Analytics</span>
+                            <span class="radio-desc">Business Dashboards & Reporting</span>
+                        </div>
+                    </label>
                 </div>
-                <div class="api-option">
+
+                <div class="radio-card">
                     <input type="radio" id="apiMeta" name="apiChoice" value="meta">
-                    <label for="apiMeta">Meta API (Facebook/Instagram Ads)</label>
+                    <label for="apiMeta">
+                        <div class="radio-circle"></div>
+                        <div class="radio-content">
+                            <span class="radio-title">Meta Ads</span>
+                            <span class="radio-desc">Marketing & Campaign Data</span>
+                        </div>
+                    </label>
                 </div>
             </div>
             
-            <button onclick="login()" class="btn">Login with Auth0</button>
+            <button onclick="login()" class="byb-btn">Login via Auth0</button>
             
-            <div class="info" style="margin-top: 30px;">
-                <strong>What is this?</strong><br>
-                This page generates a personal bearer token you can use in Antigravity's MCP configuration. Your token
-                will only have the permissions assigned to your account.
+            <div class="footer">
+                Secure access for Backyard Brains internal tools.<br>
+                Powered by Antigravity MCP.
             </div>
         </div>
         <script>
