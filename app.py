@@ -505,7 +505,7 @@ async def get_token_page(request: Request):
                     }} catch (e) {{
                          // Improved error reporting
                         console.error("API Key Error:", e);
-                        alert("Error: " + e.message + "\n\nSee server logs for more debug info.");
+                        alert("Error: " + e.message + "\\n\\nSee server logs for more debug info.");
                     }}
                 }}
             </script>
