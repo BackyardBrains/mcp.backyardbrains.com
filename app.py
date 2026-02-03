@@ -564,19 +564,19 @@ async def get_token_page(request: Request):
 
                 
                 /* Logo Component */
-                .byb-logo {
+                .byb-logo {{
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
                     text-decoration: none;
                     transition: opacity var(--byb-duration-fast) var(--byb-ease-default);
-                }
-                .byb-logo:hover { opacity: 0.85; }
-                .byb-logo__img { display: block; width: auto; height: 80px; max-width: 100%; }
+                }}
+                .byb-logo:hover {{ opacity: 0.85; }}
+                .byb-logo__img {{ display: block; width: auto; height: 80px; max-width: 100%; }}
                 
-                @media (max-width: 768px) {
-                    .byb-logo__img { height: 48px; }
-                }
+                @media (max-width: 768px) {{
+                    .byb-logo__img {{ height: 48px; }}
+                }}
 
                 /* Scopes */
                 .scopes-container {{
