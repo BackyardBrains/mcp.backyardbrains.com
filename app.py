@@ -671,6 +671,7 @@ async def get_token_page(request: Request):
         </body>
         </html>
         """
+        return HTMLResponse(content=html)
 
     
     # Not logged in - show login page with API selector
