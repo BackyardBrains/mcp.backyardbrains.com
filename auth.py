@@ -45,8 +45,9 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
             # We might want to refresh the cache/log it, but for now just return it
             # Ensure it has necessary fields
             return payload
-        except JWTError:
+        except JWTError as e:
             # Not a valid local JWT, fall back to Auth0 opaque token validation
+            logger.warning(f"JWT Validation failed ({type(e).__name__}): {e}")
             pass
 
     if not AUTH0_DOMAIN:
