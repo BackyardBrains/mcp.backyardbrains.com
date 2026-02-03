@@ -37,7 +37,16 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
     
     # 1. Try to validate as local JWT (API Key)
     # Load secret dynamically to support restart-less env updates if possible or import-order safety
+    # Load secret dynamically to support restart-less env updates if possible or import-order safety
     jwt_secret = os.environ.get("JWT_SECRET")
+    if not jwt_secret:
+        # Try emergency reload
+        from dotenv import load_dotenv
+        from pathlib import Path
+        env_path = Path(__file__).parent / ".env"
+        load_dotenv(dotenv_path=env_path, override=True)
+        jwt_secret = os.environ.get("JWT_SECRET")
+
     if jwt_secret:
         try:
             payload = jwt.decode(token, jwt_secret, algorithms=[ALGORITHM])
