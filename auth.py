@@ -11,7 +11,7 @@ from jose import jwt, JWTError
 
 # Auth0 configuration
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
-JWT_SECRET = os.environ.get("JWT_SECRET") 
+# JWT_SECRET and attributes loaded dynamically to handle import order issues
 ALGORITHM = "HS256"
 AUTH0_XERO_AUDIENCE = os.environ.get("AUTH0_XERO_AUDIENCE", "https://mcp.backyardbrains.com/xero")
 AUTH0_METABASE_AUDIENCE = os.environ.get("AUTH0_METABASE_AUDIENCE", "https://mcp.backyardbrains.com/metabase")
@@ -36,9 +36,11 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
     """
     
     # 1. Try to validate as local JWT (API Key)
-    if JWT_SECRET:
+    # Load secret dynamically to support restart-less env updates if possible or import-order safety
+    jwt_secret = os.environ.get("JWT_SECRET")
+    if jwt_secret:
         try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+            payload = jwt.decode(token, jwt_secret, algorithms=[ALGORITHM])
             # If successful, return payload directly
             # We might want to refresh the cache/log it, but for now just return it
             # Ensure it has necessary fields
@@ -189,7 +191,8 @@ def _log_scope_claims(payload: Dict[str, Any], *, context: str) -> None:
 
 def create_api_token(user_info: Dict[str, Any], permissions: list[str], scopes: list[str], expiration_days: int = 365) -> str:
     """Create a long-lived JWT API key signed with our local secret."""
-    if not JWT_SECRET:
+    jwt_secret = os.environ.get("JWT_SECRET")
+    if not jwt_secret:
         raise ValueError("JWT_SECRET not configured")
         
     now = time.time()
@@ -210,7 +213,7 @@ def create_api_token(user_info: Dict[str, Any], permissions: list[str], scopes: 
     if user_info.get("email"):
         payload[f"{AUTH0_NAMESPACE}/email"] = user_info["email"]
     
-    return jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
+    return jwt.encode(payload, jwt_secret, algorithm=ALGORITHM)
 
 
 async def _extract_credentials(request: Request, creds: Optional[HTTPAuthorizationCredentials]):
