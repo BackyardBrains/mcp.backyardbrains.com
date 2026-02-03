@@ -192,8 +192,21 @@ def _log_scope_claims(payload: Dict[str, Any], *, context: str) -> None:
 def create_api_token(user_info: Dict[str, Any], permissions: list[str], scopes: list[str], expiration_days: int = 365) -> str:
     """Create a long-lived JWT API key signed with our local secret."""
     jwt_secret = os.environ.get("JWT_SECRET")
+    
+    # DEBUG: Log status (careful not to log the full secret)
+    logger.info(f"JWT Debug: Initial check - Secret found? {bool(jwt_secret)}")
+    
     if not jwt_secret:
-        raise ValueError("JWT_SECRET not configured")
+        # Emergency reload of .env in case it was updated while server running
+        from dotenv import load_dotenv
+        logger.warning("JWT_SECRET not found in env, reloading .env file...")
+        load_dotenv(override=True)
+        jwt_secret = os.environ.get("JWT_SECRET")
+        logger.info(f"JWT Debug: After reload - Secret found? {bool(jwt_secret)}")
+
+    if not jwt_secret:
+        logger.error(f"JWT_SECRET still not configured after reload. Env vars available: {list(os.environ.keys())}")
+        raise ValueError(f"JWT_SECRET not configured. Server Env Keys: {list(os.environ.keys())}")
         
     now = time.time()
     exp = now + (expiration_days * 24 * 60 * 60)

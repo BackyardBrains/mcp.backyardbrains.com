@@ -502,9 +502,11 @@ async def get_token_page(request: Request):
                         }}
                         msg.textContent = "✅ Generated 1-Year API Key! Copy it now.";
                         
-                    }} catch (e) {{
-                        alert("Error creating API key: " + e.message);
-                    }}
+                    } catch (e) {
+                         // Improved error reporting
+                        console.error("API Key Error:", e);
+                        alert("Error: " + e.message + "\n\nSee server logs for more debug info.");
+                    }
                 }}
             </script>
         </body>
