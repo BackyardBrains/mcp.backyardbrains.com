@@ -759,6 +759,31 @@ async def auth_callback(request: Request, code: str = None, state: str = None, e
         logger.error(f"Token exchange connection error: {e}")
         raise HTTPException(status_code=500, detail=f"Token exchange connection error: {str(e)}")
 
+
+@app.get("/auth/logout")
+async def auth_logout(request: Request):
+    """Log out of the application and Auth0."""
+    # Clear local session
+    request.session.clear()
+    
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    client_id = os.environ.get("AUTH0_CLIENT_ID")
+    
+    if not auth0_domain or not client_id:
+        return RedirectResponse(url="/")
+        
+    # Build Auth0 logout URL
+    base_url = request.url_for("root")
+    # returnTo must be in the Allowed Logout URLs in Auth0 application settings
+    # We'll assume the root URL is allowed
+    params = {
+        "client_id": client_id,
+        "returnTo": str(base_url) 
+    }
+    logout_url = f"https://{auth0_domain}/v2/logout?{urlencode(params)}"
+    
+    return RedirectResponse(url=logout_url)
+
 # Health Check
 @app.get("/health")
 def health_check():
