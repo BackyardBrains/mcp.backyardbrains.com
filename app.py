@@ -562,6 +562,22 @@ async def get_token_page(request: Request):
                     line-height: 1.6;
                 }}
 
+                
+                /* Logo Component */
+                .byb-logo {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    text-decoration: none;
+                    transition: opacity var(--byb-duration-fast) var(--byb-ease-default);
+                }
+                .byb-logo:hover { opacity: 0.85; }
+                .byb-logo__img { display: block; width: auto; height: 80px; max-width: 100%; }
+                
+                @media (max-width: 768px) {
+                    .byb-logo__img { height: 48px; }
+                }
+
                 /* Scopes */
                 .scopes-container {{
                     text-align: left;
@@ -581,6 +597,11 @@ async def get_token_page(request: Request):
         </head>
         <body>
             <div class="container">
+                            <div class="logo-area">
+                <a href="/" class="byb-logo byb-logo--horizontal">
+                    <img src="/static/logo.svg" alt="Backyard Brains" class="byb-logo__img">
+                </a>
+            </div>
                 <h1>MCP Access Token</h1>
                 <p class="subtitle">Secure Bearer Token Generated</p>
                 
@@ -771,7 +792,23 @@ async def get_token_page(request: Request):
                 line-height: 1.5;
             }
 
-            /* API Selector List */
+            
+                /* Logo Component */
+                .byb-logo {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    text-decoration: none;
+                    transition: opacity var(--byb-duration-fast) var(--byb-ease-default);
+                }
+                .byb-logo:hover { opacity: 0.85; }
+                .byb-logo__img { display: block; width: auto; height: 80px; max-width: 100%; }
+                
+                @media (max-width: 768px) {
+                    .byb-logo__img { height: 48px; }
+                }
+
+                /* API Selector List */
             .api-selector {
                 text-align: left;
                 margin-bottom: var(--byb-space-8);
@@ -915,8 +952,10 @@ async def get_token_page(request: Request):
     </head>
     <body>
         <div class="container">
-            <div class="logo-area">
-                <div class="logo-text"><span>Backyard</span>Brains</div>
+                        <div class="logo-area">
+                <a href="/" class="byb-logo byb-logo--horizontal">
+                    <img src="/static/logo.svg" alt="Backyard Brains" class="byb-logo__img">
+                </a>
             </div>
             
             <h1>Intranet Access</h1>
