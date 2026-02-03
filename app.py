@@ -338,6 +338,11 @@ async def get_token_page(request: Request):
     token = request.session.get("access_token")
     user_info = request.session.get("user_info")
     
+    logger.info(f"Token Page: Session keys: {list(request.session.keys())}")
+    token = request.session.get("access_token")
+    user_info = request.session.get("user_info")
+    logger.info(f"Token Page: Found token: {bool(token)}, Found user_info: {bool(user_info)}")
+    
     if token and user_info:
         # Parse token to show permissions
         import base64
@@ -1133,6 +1138,11 @@ async def auth_callback(request: Request, code: str = None, state: str = None, e
         request.session["access_token"] = access_token
         request.session["user_info"] = {"email": user_info.get("email"), "name": user_info.get("name")}
         request.session.pop("oauth_state", None)
+        
+        # DEBUG: Check session size
+        import json
+        session_size = len(json.dumps(dict(request.session)))
+        logger.info(f"Callback: Storing session. Access Token len: {len(access_token)}. Approx session JSON size: {session_size} bytes")
         
         # Redirect to token display page
         return RedirectResponse(url="/auth/token", status_code=303)
