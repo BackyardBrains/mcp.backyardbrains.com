@@ -291,7 +291,22 @@ async def openid_configuration():
     
     async with httpx.AsyncClient() as client:
         resp = await client.get(f"https://{auth0_domain}/.well-known/openid-configuration")
-    return Response(content=resp.content, media_type="application/json", status_code=resp.status_code)
+    
+    if resp.status_code != 200:
+        return Response(content=resp.content, media_type="application/json", status_code=resp.status_code)
+        
+    # Intercept and modify the registration_endpoint
+    config = resp.json()
+    
+    enable_dynamic_registration = os.environ.get("AUTH0_ENABLE_DYNAMIC_CLIENT_REGISTRATION", "").lower() == "true"
+    if enable_dynamic_registration:
+        base_mcp_url = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
+        config["registration_endpoint"] = f"{base_mcp_url}/auth/fake_register"
+    else:
+        # If disabled, remove it entirely so clients don't try to register with Auth0
+        config.pop("registration_endpoint", None)
+        
+    return config
 
 @app.get("/.well-known/jwks.json")
 async def jwks_json():
