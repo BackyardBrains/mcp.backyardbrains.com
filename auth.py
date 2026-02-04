@@ -56,7 +56,11 @@ async def validate_opaque_token(token: str) -> Dict[str, Any]:
             return payload
         except JWTError as e:
             # Not a valid local JWT, fall back to Auth0 opaque token validation
-            logger.warning(f"JWT Validation failed ({type(e).__name__}): {e}")
+            # If it's just padding, it's likely an opaque token which is expected
+            if "Invalid payload padding" in str(e):
+                logger.debug(f"JWT Validation skipped (Opaque Token detected): {e}")
+            else:
+                logger.warning(f"JWT Validation failed ({type(e).__name__}): {e}")
             pass
 
     if not AUTH0_DOMAIN:
