@@ -134,6 +134,7 @@ async def oauth_authorization_server(request: Request, api: str = "xero"):
         return Response(status_code=404)
     
     base_mcp_url = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
+    base_url = f"https://{auth0_domain}"
     
     metadata = {
         "issuer": f"{base_mcp_url}/",
