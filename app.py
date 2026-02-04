@@ -133,10 +133,10 @@ async def oauth_authorization_server(request: Request, api: str = "xero"):
     if not auth0_domain:
         return Response(status_code=404)
     
-    base_url = f"https://{auth0_domain}"
+    base_mcp_url = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
     
     metadata = {
-        "issuer": f"{base_url}/",
+        "issuer": f"{base_mcp_url}/",
         "authorization_endpoint": f"{base_url}/authorize",
         "token_endpoint": f"{base_url}/oauth/token",
         "userinfo_endpoint": f"{base_url}/userinfo",
@@ -195,9 +195,11 @@ async def oauth_protected_resource_root():
     if not auth0_domain or not audience:
         return Response(status_code=404)
     
+    base_mcp_url = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
+    
     return {
         "resource": audience,
-        "authorization_servers": [f"https://{auth0_domain}/"],
+        "authorization_servers": [f"{base_mcp_url}/"],
         "scopes_supported": ["mcp:read:xero", "mcp:write:xero",
             "mcp:read:metabase", "mcp:write:metabase",
             "mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops",
@@ -213,9 +215,11 @@ async def oauth_protected_resource_xero(subpath: str = ""):
     if not auth0_domain or not audience:
         return Response(status_code=404)
         
+    base_mcp_url = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
+
     return {
         "resource": audience, # <— USE THE SAME IDENTIFIER
-        "authorization_servers": [f"https://{auth0_domain}/"],
+        "authorization_servers": [f"{base_mcp_url}/"],
         "scopes_supported": ["mcp:read:xero", "mcp:write:xero"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=xero",
@@ -228,9 +232,11 @@ async def oauth_protected_resource_metabase(subpath: str = ""):
     if not auth0_domain or not audience:
         return Response(status_code=404)
         
+    base_mcp_url = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
+
     return {
         "resource": audience, # <— SAME HERE
-        "authorization_servers": [f"https://{auth0_domain}/"],
+        "authorization_servers": [f"{base_mcp_url}/"],
         "scopes_supported": ["mcp:read:metabase", "mcp:write:metabase"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=metabase",
@@ -243,9 +249,11 @@ async def oauth_protected_resource_meta(subpath: str = ""):
     if not auth0_domain or not audience:
         return Response(status_code=404)
         
+    base_mcp_url = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
+        
     return {
         "resource": audience,
-        "authorization_servers": [f"https://{auth0_domain}/"],
+        "authorization_servers": [f"{base_mcp_url}/"],
         "scopes_supported": ["mcp:read:meta", "mcp:write:meta"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=meta",
@@ -258,9 +266,11 @@ async def oauth_protected_resource_workshops(subpath: str = ""):
     if not auth0_domain or not audience:
         return Response(status_code=404)
         
+    base_mcp_url = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
+        
     return {
         "resource": audience,
-        "authorization_servers": [f"https://{auth0_domain}/"],
+        "authorization_servers": [f"{base_mcp_url}/"],
         "scopes_supported": ["mcp:read:workshops", "mcp:write:workshops", "mcp:admin:workshops"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=workshops",
@@ -273,9 +283,11 @@ async def oauth_protected_resource_assistant(subpath: str = ""):
     if not auth0_domain or not audience:
         return Response(status_code=404)
         
+    base_mcp_url = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
+        
     return {
         "resource": audience,
-        "authorization_servers": [f"https://{auth0_domain}/"],
+        "authorization_servers": [f"{base_mcp_url}/"],
         "scopes_supported": ["mcp:read:assistant", "mcp:write:assistant"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://mcp.backyardbrains.com/static/get-token.html?api=assistant",
