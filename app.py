@@ -178,9 +178,12 @@ async def oauth_authorization_server(request: Request, api: str = "xero"):
             "client_secret_post"
         ]
     }
-    enable_dynamic_registration = os.environ.get("AUTH0_ENABLE_DYNAMIC_CLIENT_REGISTRATION", "").lower() in {"1", "true", "yes"}
+    enable_dynamic_registration = os.environ.get("AUTH0_ENABLE_DYNAMIC_CLIENT_REGISTRATION", "").lower() == "true"
     if enable_dynamic_registration:
-        metadata["registration_endpoint"] = f"{base_url}/oidc/register"
+        # Use our own "Mock" registration endpoint instead of Auth0's
+        # This allows ChatGPT to "register" dynamically, but we just hand it the static env creds
+        base_mcp_url = os.environ.get("MCP_BASE_URL", "https://mcp.backyardbrains.com")
+        metadata["registration_endpoint"] = f"{base_mcp_url}/auth/fake_register"
     return metadata
 
 
@@ -365,6 +368,36 @@ async def create_api_key_endpoint(request: Request):
         return {"api_key": api_key}
     except ValueError as e:
          raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.post("/auth/fake_register")
+async def fake_register(request: Request):
+    """
+    Mocks the OIDC Dynamic Client Registration endpoint.
+    Returns the STATIC credentials to the LLM, making it think it created a new app.
+    """
+    # 1. Get the static credentials from .env
+    client_id = os.environ.get("AUTH0_CLIENT_ID")
+    client_secret = os.environ.get("AUTH0_CLIENT_SECRET")
+    
+    if not client_id or not client_secret:
+        return Response(status_code=500, content="Server misconfigured: Missing static credentials")
+
+    # 2. Return them in the standard OIDC JSON format
+    return {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "client_id_issued_at": 0,
+        "client_secret_expires_at": 0, # Never expires
+        "redirect_uris": [
+            # We accept whatever the LLM asks for, effectively "trusting" the static app settings
+            "https://chatgpt.com/connector_platform_oauth_redirect",
+            "https://claude.ai/api/mcp/auth_callback"
+        ],
+        "grant_types": ["authorization_code", "refresh_token"],
+        "token_endpoint_auth_method": "client_secret_post"
+    }
 
 
 @app.get("/auth/token", response_class=HTMLResponse)
