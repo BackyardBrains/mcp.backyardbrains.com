@@ -135,17 +135,17 @@ async def oauth_authorization_server(request: Request, api: str = "xero"):
     
     base_url = f"https://{auth0_domain}"
     
-    return {
+    metadata = {
         "issuer": f"{base_url}/",
         "authorization_endpoint": f"{base_url}/authorize",
         "token_endpoint": f"{base_url}/oauth/token",
         "userinfo_endpoint": f"{base_url}/userinfo",
         "jwks_uri": f"{base_url}/.well-known/jwks.json",
-        "registration_endpoint": f"{base_url}/oidc/register",
         "scopes_supported": [
             "openid",
             "profile",
             "email",
+            "offline_access",
             "mcp:read",
             "mcp:write",
             "mcp:read:xero",
@@ -178,6 +178,10 @@ async def oauth_authorization_server(request: Request, api: str = "xero"):
             "client_secret_post"
         ]
     }
+    enable_dynamic_registration = os.environ.get("AUTH0_ENABLE_DYNAMIC_CLIENT_REGISTRATION", "").lower() in {"1", "true", "yes"}
+    if enable_dynamic_registration:
+        metadata["registration_endpoint"] = f"{base_url}/oidc/register"
+    return metadata
 
 
 # OAuth 2.0 Protected Resource Metadata (RFC 9470)
@@ -302,8 +306,32 @@ async def jwks_json():
 @app.post("/auth/create-api-key")
 async def create_api_key_endpoint(request: Request):
     token = request.session.get("access_token")
+    refresh_token = request.session.get("refresh_token")
     user_info = request.session.get("user_info")
     
+    if not token and refresh_token:
+        try:
+            token, rotated_refresh_token = await _refresh_access_token(refresh_token)
+        except httpx.HTTPStatusError as exc:
+            logger.warning("Refresh token failed: %s", exc.response.text)
+            raise HTTPException(status_code=401, detail="Session expired, please log in again")
+        request.session["access_token"] = token
+        if rotated_refresh_token:
+            request.session["refresh_token"] = rotated_refresh_token
+
+        auth0_domain = os.environ.get("AUTH0_DOMAIN")
+        if auth0_domain:
+            async with httpx.AsyncClient(timeout=10) as client:
+                userinfo_url = f"https://{auth0_domain}/userinfo"
+                headers = {"Authorization": f"Bearer {token}"}
+                user_response = await client.get(userinfo_url, headers=headers)
+                user_response.raise_for_status()
+                user_info = user_response.json()
+            request.session["user_info"] = {
+                "email": user_info.get("email"),
+                "name": user_info.get("name"),
+            }
+
     if not token or not user_info:
         raise HTTPException(status_code=401, detail="Not logged in")
 
@@ -311,9 +339,16 @@ async def create_api_key_endpoint(request: Request):
     # We re-fetch this to ensure we are baking in the current permissions
     try:
         full_payload = await validate_opaque_token(token)
-    except HTTPException:
-        # Token might be expired
-        raise HTTPException(status_code=401, detail="Session expired, please log in again")
+    except HTTPException as exc:
+        if exc.status_code == 401 and refresh_token:
+            token, rotated_refresh_token = await _refresh_access_token(refresh_token)
+            request.session["access_token"] = token
+            if rotated_refresh_token:
+                request.session["refresh_token"] = rotated_refresh_token
+            full_payload = await validate_opaque_token(token)
+        else:
+            # Token might be expired
+            raise HTTPException(status_code=401, detail="Session expired, please log in again")
 
     permissions = full_payload.get("permissions", [])
     scope_string = full_payload.get("scope", "")
@@ -1033,32 +1068,63 @@ async def get_token_page(request: Request):
     """
     return HTMLResponse(content=html)
 
+
+async def _refresh_access_token(refresh_token: str) -> tuple[str, str | None]:
+    """Use Auth0 refresh token to obtain a new access token."""
+    auth0_domain = os.environ.get("AUTH0_DOMAIN")
+    client_id = os.environ.get("AUTH0_CLIENT_ID")
+    client_secret = os.environ.get("AUTH0_CLIENT_SECRET")
+
+    if not all([auth0_domain, client_id, client_secret]):
+        raise HTTPException(status_code=500, detail="Auth0 not configured")
+
+    token_url = f"https://{auth0_domain}/oauth/token"
+    token_data = {
+        "grant_type": "refresh_token",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh_token,
+    }
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.post(token_url, json=token_data)
+        response.raise_for_status()
+        token_response = response.json()
+
+    access_token = token_response.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=500, detail="No access token in refresh response")
+
+    refreshed_refresh_token = token_response.get("refresh_token")
+    return access_token, refreshed_refresh_token
+
 @app.get("/auth/login")
 async def auth_login(request: Request, api: str = "xero"):
     """Initiate OAuth login flow with selected API audience."""
     auth0_domain = os.environ.get("AUTH0_DOMAIN")
     client_id = os.environ.get("AUTH0_CLIENT_ID")
     
+    base_scopes = "openid profile email offline_access"
     # Select audience and scope based on API choice
     if api == "assistant":
         audience = AUTH0_ASSISTANT_AUDIENCE
-        scope = "openid profile email mcp:read:assistant mcp:write:assistant"
+        scope = f"{base_scopes} mcp:read:assistant mcp:write:assistant"
     elif api == "metabase":
         audience = AUTH0_METABASE_AUDIENCE
-        scope = "openid profile email mcp:read:metabase mcp:write:metabase"
+        scope = f"{base_scopes} mcp:read:metabase mcp:write:metabase"
     elif api == "meta":
         audience = AUTH0_META_AUDIENCE
-        scope = "openid profile email mcp:read:meta mcp:write:meta"
+        scope = f"{base_scopes} mcp:read:meta mcp:write:meta"
     elif api == "workshops":
         audience = AUTH0_WORKSHOPS_AUDIENCE
-        scope = "openid profile email mcp:read:workshops mcp:write:workshops mcp:admin:workshops"
+        scope = f"{base_scopes} mcp:read:workshops mcp:write:workshops mcp:admin:workshops"
     elif api == "xero":
         audience = AUTH0_XERO_AUDIENCE
-        scope = "openid profile email mcp:read:xero mcp:write:xero"
+        scope = f"{base_scopes} mcp:read:xero mcp:write:xero"
     else:
         # Default to Assistant
         audience = AUTH0_ASSISTANT_AUDIENCE
-        scope = "openid profile email mcp:read:assistant mcp:write:assistant"
+        scope = f"{base_scopes} mcp:read:assistant mcp:write:assistant"
     
     if not all([auth0_domain, client_id, audience]):
         raise HTTPException(status_code=500, detail="Auth0 not configured")
@@ -1124,6 +1190,7 @@ async def auth_callback(request: Request, code: str = None, state: str = None, e
             token_response = response.json()
             
             access_token = token_response.get("access_token")
+            refresh_token = token_response.get("refresh_token")
             if not access_token:
                 raise HTTPException(status_code=500, detail="No access token in response")
             
@@ -1137,6 +1204,8 @@ async def auth_callback(request: Request, code: str = None, state: str = None, e
         # Store token and user info in session
         # Only store necessary fields to keep cookie size small
         request.session["access_token"] = access_token
+        if refresh_token:
+            request.session["refresh_token"] = refresh_token
         request.session["user_info"] = {"email": user_info.get("email"), "name": user_info.get("name")}
         request.session.pop("oauth_state", None)
         
