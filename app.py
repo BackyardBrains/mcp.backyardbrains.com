@@ -454,6 +454,7 @@ async def get_token_page(request: Request):
         except:
             mcp_perms = []
         
+        escape = html.escape  # avoid shadowing 'html' by the template variable below
         html = f"""
         <!DOCTYPE html>
         <html lang="en">
@@ -708,11 +709,11 @@ async def get_token_page(request: Request):
                 <p class="subtitle">Secure Bearer Token Generated</p>
                 
                 <div class="user-badge">
-                    {html.escape(user_info.get('email', user_info.get('name', 'User') or 'User'))}
+                    {escape(user_info.get('email', user_info.get('name', 'User') or 'User'))}
                 </div>
                 
                 <div class="section-label">Your Token</div>
-                <div class="token-display" id="tokenBox">{html.escape(token)}</div>
+                <div class="token-display" id="tokenBox">{escape(token)}</div>
                 
                 <div class="btn-row">
                     <button class="byb-btn byb-btn--primary" onclick="copyToken()">Copy Token</button>
@@ -720,7 +721,7 @@ async def get_token_page(request: Request):
                     <a href="/auth/logout" class="byb-btn byb-btn--outline">Logout</a>
                 </div>
                 
-                {f'<div class="scopes-container"><div class="section-label">Active Permissions</div>' + "".join([f'<span class="scope-tag">{html.escape(p)}</span>' for p in mcp_perms]) + '</div>' if mcp_perms else ''}
+                {f'<div class="scopes-container"><div class="section-label">Active Permissions</div>' + "".join([f'<span class="scope-tag">{escape(p)}</span>' for p in mcp_perms]) + '</div>' if mcp_perms else ''}
                 
                 <div class="info-box">
                     <strong>Instructions:</strong><br>
