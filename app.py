@@ -1298,13 +1298,12 @@ async def auth_logout(request: Request):
     if not auth0_domain or not client_id:
         return RedirectResponse(url="/")
         
-    # Build Auth0 logout URL
-    base_url = request.url_for("root")
+    # Build Auth0 logout URL — send user back to token page after logout
+    return_to = request.url_for("get_token_page")
     # returnTo must be in the Allowed Logout URLs in Auth0 application settings
-    # We'll assume the root URL is allowed
     params = {
         "client_id": client_id,
-        "returnTo": str(base_url) 
+        "returnTo": str(return_to),
     }
     logout_url = f"https://{auth0_domain}/v2/logout?{urlencode(params)}"
     

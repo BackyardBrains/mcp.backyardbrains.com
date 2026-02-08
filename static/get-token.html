@@ -308,7 +308,7 @@
         document.getElementById('logoutBtn').addEventListener('click', async () => {
             await auth0Client.logout({
                 logoutParams: {
-                    returnTo: window.location.origin + '/static/get-token.html'
+                    returnTo: window.location.origin + '/auth/token'
                 }
             });
         });
