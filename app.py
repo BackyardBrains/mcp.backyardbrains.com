@@ -730,7 +730,6 @@ async def get_token_page(request: Request):
                 </div>
             </div>
             <script>
-                // Avoid </script> in inline script so user content cannot break out
                 function copyToken() {{
                     const token = document.getElementById('tokenBox').textContent;
                     navigator.clipboard.writeText(token).then(() => {{
