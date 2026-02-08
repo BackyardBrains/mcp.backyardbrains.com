@@ -773,7 +773,7 @@ async def get_token_page(request: Request):
 
     
     # Not logged in - show login page with API selector
-    html = """
+    content = """
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -1129,7 +1129,7 @@ async def get_token_page(request: Request):
     </body>
     </html>
     """
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=content)
 
 
 async def _refresh_access_token(refresh_token: str) -> tuple[str, str | None]:
