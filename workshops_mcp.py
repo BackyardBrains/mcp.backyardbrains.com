@@ -84,7 +84,8 @@ def get_google_credentials():
             
             # Case A: Service Account
             if creds_data.get('type') == 'service_account':
-                logger.info("Using Google Service Account credentials")
+                email = creds_data.get('client_email')
+                logger.info(f"Using Google Service Account: {email}")
                 return service_account.Credentials.from_service_account_info(
                     creds_data, scopes=GOOGLE_SCOPES
                 )
@@ -1321,8 +1322,26 @@ async def workshop_read_instructors_interest(params: Dict[str, Any]):
         return {"instructors": instructors, "count": len(instructors)}
     except Exception as e:
         error_msg = str(e)
+        
+        # Get account email for better diagnostics
+        email = "unknown"
+        try:
+            creds = get_google_credentials()
+            if hasattr(creds, 'service_account_email'):
+                email = creds.service_account_email
+            elif hasattr(creds, 'client_id'):
+                email = f"OAuth Client: {creds.client_id}"
+        except:
+            pass
+
         if "404" in error_msg:
             error_msg = f"Spreadsheet not found (404). Check if ID {spreadsheet_id} is correct and shared with the authorized account."
+        elif "403" in error_msg:
+             return {
+                "error": f"Google Sheets permission denied (403) for {email}. Ensure this account has 'Viewer' or 'Editor' access to the spreadsheet.",
+                "auth_url": f"{MCP_BASE_URL.rstrip('/')}/workshops/google/login" if MCP_BASE_URL else "/workshops/google/login",
+                "message": f"Try sharing the spreadsheet with {email}, or log in personally via the auth_url."
+            }
         logger.error(f"Error reading instructors from Google Sheets: {e}")
         return {"error": error_msg}
 
@@ -1533,8 +1552,26 @@ async def workshop_read_feedback(params: Dict[str, Any]):
         return {"feedback": feedback_list, "count": len(feedback_list)}
     except Exception as e:
         error_msg = str(e)
+        
+        # Get account email for better diagnostics
+        email = "unknown"
+        try:
+            creds = get_google_credentials()
+            if hasattr(creds, 'service_account_email'):
+                email = creds.service_account_email
+            elif hasattr(creds, 'client_id'):
+                email = f"OAuth Client: {creds.client_id}"
+        except:
+            pass
+
         if "404" in error_msg:
             error_msg = f"Spreadsheet not found (404). Check if ID {spreadsheet_id} is correct and shared with the authorized account."
+        elif "403" in error_msg:
+             return {
+                "error": f"Google Sheets permission denied (403) for {email}. Ensure this account has 'Viewer' or 'Editor' access to the spreadsheet.",
+                "auth_url": f"{MCP_BASE_URL.rstrip('/')}/workshops/google/login" if MCP_BASE_URL else "/workshops/google/login",
+                "message": f"Try sharing the spreadsheet with {email}, or log in personally via the auth_url."
+            }
         logger.error(f"Error reading feedback from Google Sheets: {e}")
         return {"error": error_msg}
 
@@ -1563,9 +1600,69 @@ async def workshop_google_account(params: Dict[str, Any]):
     except Exception as e:
         return {"error": str(e), "client_id": getattr(creds, 'client_id', 'unknown')}
 
-        if not flow.credentials:
-            raise HTTPException(status_code=500, detail=f"Failed to fetch token: {str(e)}")
-            
+@router.get("/google/login")
+async def workshop_google_login(request: Request):
+    """Initiate Google OAuth flow for Workshops."""
+    redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/workshops/google/callback" if MCP_BASE_URL else "/workshops/google/callback"
+    
+    client_config = None
+    if os.path.exists(WORKSHOPS_GOOGLE_CREDENTIALS_FILE):
+        with open(WORKSHOPS_GOOGLE_CREDENTIALS_FILE, 'r') as f:
+            creds_data = json.load(f)
+            client_type = 'web' if 'web' in creds_data else ('installed' if 'installed' in creds_data else None)
+            if client_type:
+                client_config = creds_data[client_type]
+    
+    if not client_config:
+        error_msg = f"Google OAuth configuration not found at '{WORKSHOPS_GOOGLE_CREDENTIALS_FILE}'"
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+    
+    flow = Flow.from_client_config(
+        {"web": client_config} if "auth_uri" in client_config else {"installed": client_config},
+        scopes=GOOGLE_SCOPES,
+        redirect_uri=redirect_uri
+    )
+    
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent'
+    )
+    
+    if hasattr(request, "session"):
+        request.session['oauth_state'] = state
+    
+    return RedirectResponse(url=authorization_url)
+
+@router.get("/google/callback")
+async def workshop_google_callback(request: Request, code: str, state: str = None):
+    """Handle Google OAuth callback."""
+    redirect_uri = f"{MCP_BASE_URL.rstrip('/')}/workshops/google/callback" if MCP_BASE_URL else "/workshops/google/callback"
+    
+    client_config = None
+    if os.path.exists(WORKSHOPS_GOOGLE_CREDENTIALS_FILE):
+        with open(WORKSHOPS_GOOGLE_CREDENTIALS_FILE, 'r') as f:
+            creds_data = json.load(f)
+            client_type = 'web' if 'web' in creds_data else ('installed' if 'installed' in creds_data else None)
+            if client_type:
+                client_config = creds_data[client_type]
+    
+    if not client_config:
+        raise HTTPException(status_code=500, detail="Google OAuth configuration missing during callback")
+
+    flow = Flow.from_client_config(
+        {"web": client_config} if "auth_uri" in client_config else {"installed": client_config},
+        scopes=GOOGLE_SCOPES,
+        redirect_uri=redirect_uri
+    )
+    
+    try:
+        flow.fetch_token(code=code)
+    except Exception as e:
+        logger.error(f"Google OAuth token exchange failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Token exchange failed: {e}")
+    
     creds = flow.credentials
     save_google_tokens(json.loads(creds.to_json()))
     
