@@ -28,6 +28,11 @@ from googleapiclient.discovery import build
 
 from utils import MCP_PROTOCOL_VERSION, _rpc_result, _rpc_error, logger, safe_dumps
 from auth import require_assistant_auth
+from ontology_engine import OntologyEngine
+
+# =============================================================================
+# Configuration
+# =============================================================================
 
 # =============================================================================
 # Configuration
@@ -68,9 +73,6 @@ ASSISTANT_GOOGLE_SCOPES = [
     'openid',
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
-    # Drive - for assistant memory
-    'https://www.googleapis.com/auth/drive',
-    'https://www.googleapis.com/auth/documents',
     # Gmail - triage operations
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.modify',
@@ -86,19 +88,14 @@ else:
     _fernet = None
     logger.warning("TOKEN_ENC_KEY not set; Assistant tokens will not be encrypted!")
 
-# Drive folder permissions (guardrails)
-FOLDER_PERMISSIONS = {
-    "rules": "read",
-    "projects": "read_write",
-    "priorities": "read",
-    "resources": "read",
-    "inbox": "read",
-    "outbox": "write",
-    "logs": "append",
-    "sessions": "append",
-}
+# Ontology Configuration
+ASSISTANT_ONTOLOGY_PATH = os.environ.get(
+    "ASSISTANT_ONTHOLOGY_PATH", 
+    "/Users/gagegreg/Ontology" # Fallback to local dev path
+)
 
-MAX_CONTENT_SIZE = 200 * 1024  # 200KB limit for Drive docs
+# Instantiate engine globally
+ontology_engine = OntologyEngine(ASSISTANT_ONTOLOGY_PATH)
 
 # =============================================================================
 # Multi-User Configuration
@@ -195,7 +192,7 @@ def delete_user_tokens(email: str):
 # =============================================================================
 
 class AssistantGoogleClient:
-    """Unified Google client for Drive, Gmail, and Calendar."""
+    """Unified Google client for Gmail and Calendar."""
     
     def __init__(self, email: str):
         self.email = email
@@ -224,8 +221,6 @@ class AssistantGoogleClient:
             try:
                 # Service account scopes (no Gmail for SAs without domain-wide delegation)
                 sa_scopes = [
-                    'https://www.googleapis.com/auth/drive',
-                    'https://www.googleapis.com/auth/documents',
                     'https://www.googleapis.com/auth/calendar',
                 ]
                 sa_creds = service_account.Credentials.from_service_account_file(
@@ -278,18 +273,6 @@ class AssistantGoogleClient:
     def effective_creds(self):
         """Effective credentials, prioritizing per-user OAuth."""
         return self.user_creds or self.sa_creds
-
-    @property
-    def drive(self):
-        if not self._drive:
-            self._drive = build('drive', 'v3', credentials=self.effective_creds)
-        return self._drive
-    
-    @property
-    def docs(self):
-        if not self._docs:
-            self._docs = build('docs', 'v1', credentials=self.effective_creds)
-        return self._docs
     
     @property
     def gmail(self):
@@ -306,201 +289,8 @@ class AssistantGoogleClient:
         return self._calendar
     
     # -------------------------------------------------------------------------
-    # Drive Operations
+    # Removed Drive Operations
     # -------------------------------------------------------------------------
-    
-    def get_subfolder_id(self, folder_name: str) -> Optional[str]:
-        """Get the ID of a subfolder within AssistantRoot."""
-        if folder_name in self._folder_cache:
-            return self._folder_cache[folder_name]
-        
-        query = f"'{self.root_folder_id}' in parents and name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        results = self.drive.files().list(q=query, fields="files(id, name)").execute()
-        files = results.get('files', [])
-        
-        if files:
-            folder_id = files[0]['id']
-            self._folder_cache[folder_name] = folder_id
-            return folder_id
-        return None
-    
-    def list_docs_in_folder(self, folder_name: str) -> List[Dict[str, Any]]:
-        """List all Google Docs in a subfolder."""
-        folder_id = self.get_subfolder_id(folder_name)
-        if not folder_id:
-            return []
-        
-        query = f"'{folder_id}' in parents and mimeType = 'application/vnd.google-apps.document' and trashed = false"
-        results = self.drive.files().list(
-            q=query,
-            fields="files(id, name, modifiedTime)",
-            orderBy="modifiedTime desc"
-        ).execute()
-        
-        return results.get('files', [])
-    
-    def list_files_in_folder(self, folder_name: str) -> List[Dict[str, Any]]:
-        """List all files (any type) in a subfolder."""
-        folder_id = self.get_subfolder_id(folder_name)
-        if not folder_id:
-            return []
-        
-        query = f"'{folder_id}' in parents and trashed = false"
-        results = self.drive.files().list(
-            q=query,
-            fields="files(id, name, mimeType, modifiedTime)",
-            orderBy="modifiedTime desc"
-        ).execute()
-        
-        return results.get('files', [])
-    
-    def get_doc_by_name(self, folder_name: str, doc_name: str) -> Optional[str]:
-        """Get the ID of a doc by name within a folder (or 'base' for root)."""
-        if folder_name == "base":
-            folder_id = self.root_folder_id
-        else:
-            folder_id = self.get_subfolder_id(folder_name)
-            
-        if not folder_id:
-            return None
-        
-        query = f"'{folder_id}' in parents and name = '{doc_name}' and mimeType = 'application/vnd.google-apps.document' and trashed = false"
-        results = self.drive.files().list(q=query, fields="files(id)").execute()
-        files = results.get('files', [])
-        
-        return files[0]['id'] if files else None
-    
-    def read_doc_content(self, doc_id: str) -> str:
-        """Read the plain text content of a Google Doc."""
-        doc = self.docs.documents().get(documentId=doc_id).execute()
-        content = doc.get('body', {}).get('content', [])
-        
-        text_parts = []
-        for element in content:
-            if 'paragraph' in element:
-                for text_run in element['paragraph'].get('elements', []):
-                    if 'textRun' in text_run:
-                        text_parts.append(text_run['textRun'].get('content', ''))
-        
-        return ''.join(text_parts)
-    
-    def write_doc_content(self, doc_id: str, content: str):
-        """Replace the content of a Google Doc."""
-        # First, get the document to find the end index
-        doc = self.docs.documents().get(documentId=doc_id).execute()
-        end_index = doc.get('body', {}).get('content', [{}])[-1].get('endIndex', 1)
-        
-        requests = []
-        
-        # Delete existing content (if any beyond the initial newline)
-        if end_index > 2:
-            requests.append({
-                'deleteContentRange': {
-                    'range': {
-                        'startIndex': 1,
-                        'endIndex': end_index - 1
-                    }
-                }
-            })
-        
-        # Insert new content
-        if content:
-            requests.append({
-                'insertText': {
-                    'location': {'index': 1},
-                    'text': content
-                }
-            })
-        
-        if requests:
-            self.docs.documents().batchUpdate(
-                documentId=doc_id,
-                body={'requests': requests}
-            ).execute()
-    
-    def append_to_doc(self, doc_id: str, text: str):
-        """Append text to the end of a Google Doc."""
-        doc = self.docs.documents().get(documentId=doc_id).execute()
-        end_index = doc.get('body', {}).get('content', [{}])[-1].get('endIndex', 1)
-        
-        self.docs.documents().batchUpdate(
-            documentId=doc_id,
-            body={
-                'requests': [{
-                    'insertText': {
-                        'location': {'index': end_index - 1},
-                        'text': text
-                    }
-                }]
-            }
-        ).execute()
-    
-    def move_file(self, file_id: str, dest_folder_name: str) -> bool:
-        """Move a file to a different folder."""
-        dest_folder_id = self.get_subfolder_id(dest_folder_name)
-        if not dest_folder_id:
-            return False
-        
-        # Get current parents
-        file = self.drive.files().get(fileId=file_id, fields='parents').execute()
-        previous_parents = ",".join(file.get('parents', []))
-        
-        # Move the file
-        self.drive.files().update(
-            fileId=file_id,
-            addParents=dest_folder_id,
-            removeParents=previous_parents,
-            fields='id, parents'
-        ).execute()
-        
-        return True
-
-    def create_doc(self, folder_name: str, title: str, content: Optional[str] = None) -> str:
-        """Create a new Google Doc in a subfolder (or 'base' for root)."""
-        if folder_name == "base":
-            folder_id = self.root_folder_id
-        else:
-            folder_id = self.get_subfolder_id(folder_name)
-            
-        if not folder_id:
-            raise ValueError(f"Folder '{folder_name}' not found.")
-
-        file_metadata = {
-            'name': title,
-            'mimeType': 'application/vnd.google-apps.document',
-            'parents': [folder_id]
-        }
-        
-        doc = self.drive.files().create(body=file_metadata, fields='id').execute()
-        doc_id = doc.get('id')
-        
-        if content:
-            self.write_doc_content(doc_id, content)
-            
-        return doc_id
-    
-    def read_file_content(self, file_id: str) -> str:
-        """Read content from a file (handles Google Docs and other formats)."""
-        file_meta = self.drive.files().get(fileId=file_id, fields='mimeType').execute()
-        mime_type = file_meta.get('mimeType', '')
-        
-        if mime_type == 'application/vnd.google-apps.document':
-            return self.read_doc_content(file_id)
-        else:
-            # Export as plain text for other Google formats, or download directly
-            try:
-                content = self.drive.files().get_media(fileId=file_id).execute()
-                if isinstance(content, bytes):
-                    return content.decode('utf-8', errors='replace')
-                return str(content)
-            except Exception:
-                # Try exporting as plain text
-                content = self.drive.files().export(
-                    fileId=file_id, mimeType='text/plain'
-                ).execute()
-                if isinstance(content, bytes):
-                    return content.decode('utf-8', errors='replace')
-                return str(content)
 
 
 # =============================================================================
@@ -785,264 +575,91 @@ def _list_assistant_tools():
     return {
         "tools": [
             {
-                "name": "assistant_get_rules",
-                "description": "Returns the assistant's operating rules and behavioral guidelines. Call this first to understand constraints.",
-                "inputSchema": {"type": "object", "properties": {}},
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False,
-                "annotations": {
-                    "readOnlyHint": True,
-                    "destructiveHint": False,
-                    "idempotentHint": True
-                }
-            },
-            {
-                "name": "assistant_write_rules",
-                "description": "WARNING: Use extreme caution. This updates the assistant's core operating rules. Always read the current rules first, then modify and write back the full content.",
+                "name": "ontology_create_entity",
+                "description": "Create a new entity of any type in the ontology graph.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "content": {"type": "string", "description": "Full markdown content for the rules"}
+                        "entity_type": {"type": "string", "description": "Type of entity (e.g. Project, Task, Person, Event)"},
+                        "properties": {"type": "object", "description": "Key-value pairs of the entity's attributes. Do not include @id or @type."}
                     },
-                    "required": ["content"]
+                    "required": ["entity_type", "properties"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
                 "x-openai-isConsequential": True,
-                "isConsequential": True,
-                "annotations": {
-                    "readOnlyHint": False,
-                    "destructiveHint": True,
-                    "idempotentHint": True
-                }
+                "isConsequential": True
             },
             {
-                "name": "assistant_get_priorities",
-                "description": "Get current priorities. Call after assistant_get_rules to understand current focus.",
-                "inputSchema": {"type": "object", "properties": {}},
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False,
-                "annotations": {
-                    "readOnlyHint": True,
-                    "destructiveHint": False,
-                    "idempotentHint": True
-                }
-            },
-            {
-                "name": "assistant_write_priorities",
-                "description": "WARNING: Updates the assistant's high-level priorities. Always read current priorities first, then modify and write back the full content.",
+                "name": "ontology_update_entity",
+                "description": "Update properties of an existing entity in the ontology.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "content": {"type": "string", "description": "Full markdown content for priorities"}
+                        "entity_id": {"type": "string", "description": "The exact @id of the entity to update"},
+                        "properties": {"type": "object", "description": "Key-value pairs to update or merge."}
                     },
-                    "required": ["content"]
+                    "required": ["entity_id", "properties"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
                 "x-openai-isConsequential": True,
-                "isConsequential": True,
-                "annotations": {
-                    "readOnlyHint": False,
-                    "destructiveHint": True,
-                    "idempotentHint": True
-                }
+                "isConsequential": True
             },
             {
-                "name": "assistant_get_deadlines",
-                "description": "Get the deadlines file content. Use this to track important dates and milestones.",
-                "inputSchema": {"type": "object", "properties": {}},
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False,
-                "annotations": {
-                    "readOnlyHint": True,
-                    "destructiveHint": False,
-                    "idempotentHint": True
-                }
-            },
-            {
-                "name": "assistant_write_deadlines",
-                "description": "WARNING: Updates the deadlines file. Always read current deadlines first, then modify and write back the full content.",
+                "name": "ontology_create_relation",
+                "description": "Create a directed relation/edge between two entities in the graph.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "content": {"type": "string", "description": "Full markdown content for deadlines"}
+                        "from_id": {"type": "string", "description": "The @id of the source entity"},
+                        "relation_type": {"type": "string", "description": "The relation property name (e.g. partOf, dependsOn, blocks)"},
+                        "to_id": {"type": "string", "description": "The @id of the target entity to link to"}
                     },
-                    "required": ["content"]
+                    "required": ["from_id", "relation_type", "to_id"]
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
                 "x-openai-isConsequential": True,
-                "isConsequential": True,
-                "annotations": {
-                    "readOnlyHint": False,
-                    "destructiveHint": True,
-                    "idempotentHint": True
-                }
+                "isConsequential": True
             },
             {
-                "name": "assistant_get_resources",
-                "description": "Get reference resources and materials.",
-                "inputSchema": {"type": "object", "properties": {}},
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False,
-                "annotations": {
-                    "readOnlyHint": True,
-                    "destructiveHint": False,
-                    "idempotentHint": True
-                }
-            },
-            {
-                "name": "assistant_list_projects",
-                "description": "List all projects. Returns project IDs and names for use with assistant_get_project.",
-                "inputSchema": {"type": "object", "properties": {}},
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False,
-                "annotations": {
-                    "readOnlyHint": True,
-                    "destructiveHint": False,
-                    "idempotentHint": True
-                }
-            },
-            {
-                "name": "assistant_get_project",
-                "description": "Get the full content of a specific project document.",
+                "name": "ontology_query",
+                "description": "Search the graph for entities matching specific properties.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "project_id": {"type": "string", "description": "Project document ID from assistant_list_projects"}
-                    },
-                    "required": ["project_id"]
+                        "entity_type": {"type": "string", "description": "Type to filter by (Task, Project, Person)"},
+                        "filters": {
+                            "type": "object",
+                            "description": "Key-value pairs to exact-match on entity properties. Example: {\"status\": \"Blocked\"}"
+                        }
+                    }
                 },
                 "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False,
-                "annotations": {
-                    "readOnlyHint": True,
-                    "destructiveHint": False,
-                    "idempotentHint": True
-                }
-            },
-            {
-                "name": "assistant_list_inbox",
-                "description": "List files in the inbox waiting to be processed.",
-                "inputSchema": {"type": "object", "properties": {}},
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False,
-                "annotations": {
-                    "readOnlyHint": True,
-                    "destructiveHint": False,
-                    "idempotentHint": True
-                }
-            },
-            {
-                "name": "assistant_read_inbox_file",
-                "description": "Read the content of a file in the inbox.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "file_id": {"type": "string", "description": "File ID from assistant_list_inbox"}
-                    },
-                    "required": ["file_id"]
-                },
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
-                "x-openai-isConsequential": False,
-                "isConsequential": False,
-                "annotations": {
-                    "readOnlyHint": True,
-                    "destructiveHint": False,
-                    "idempotentHint": True
-                }
-            },
-            {
-                "name": "assistant_move_to_outbox",
-                "description": "Move a processed file from inbox to outbox.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "file_id": {"type": "string", "description": "File ID to move"}
-                    },
-                    "required": ["file_id"]
-                },
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": True,
-                "isConsequential": True,
-                "annotations": {
-                    "readOnlyHint": False,
-                    "destructiveHint": True,
-                    "idempotentHint": True
-                }
-            },
-            {
-                "name": "assistant_write_project",
-                "description": "Update a project document. Always read current content first, then modify and write back.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "project_id": {"type": "string", "description": "Project document ID"},
-                        "content": {"type": "string", "description": "Full markdown content for the project"}
-                    },
-                    "required": ["project_id", "content"]
-                },
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": True,
-                "isConsequential": True,
-                "annotations": {
-                    "readOnlyHint": False,
-                    "destructiveHint": True,
-                    "idempotentHint": True
-                }
-            },
-            {
-                "name": "assistant_create_project",
-                "description": "Create a new project document in the projects/ folder.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string", "description": "Project title (will be the Doc name)"},
-                        "content": {"type": "string", "description": "Initial markdown content (optional)"}
-                    },
-                    "required": ["title"]
-                },
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
-                "x-openai-isConsequential": True,
-                "isConsequential": True,
-                "annotations": {
-                    "readOnlyHint": False,
-                    "destructiveHint": True,
-                    "idempotentHint": True
-                }
-            },
-            {
-                "name": "assistant_append_log",
-                "description": "Add an entry to the activity log.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "entry": {"type": "string", "description": "Log entry text"}
-                    },
-                    "required": ["entry"]
-                },
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
                 "x-openai-isConsequential": False,
                 "isConsequential": False
             },
             {
-                "name": "assistant_log_session",
-                "description": "Log the current conversation session. Call at start with initial summary, update at end with final summary.",
+                "name": "ontology_get_related",
+                "description": "Traverse the graph to find all entities connected to a given entity ID.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "session_id": {"type": "string", "description": "Session ID (omit for new session, include to update existing)"},
-                        "summary": {"type": "string", "description": "Brief 1-2 sentence description of the conversation"},
-                        "status": {"type": "string", "enum": ["active", "completed"], "default": "active"}
+                        "entity_id": {"type": "string", "description": "The @id of the node to branch from"},
+                        "relation_field": {"type": "string", "description": "Optional specific relation field to check (e.g. partOf)"}
                     },
-                    "required": ["summary"]
+                    "required": ["entity_id"]
                 },
-                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:write:assistant"]}],
+                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
+                "x-openai-isConsequential": False,
+                "isConsequential": False
+            },
+            {
+                "name": "ontology_get_schema",
+                "description": "Returns the core.ttl schema file. Call this tool first to understand the valid classes (Project, Task, etc.) and properties (status, dueDate) available for use in the graph.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
+                },
+                "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:read:assistant"]}],
                 "x-openai-isConsequential": False,
                 "isConsequential": False
             },
@@ -1304,8 +921,13 @@ def _list_assistant_tools():
 async def handle_assistant_tool_call(name: str, args: Dict[str, Any], user_email: str) -> Dict[str, Any]:
     """Handle a tool call for the assistant."""
     
+    # Global accessible engine
+    engine = ontology_engine
+    
     try:
-        client = get_assistant_client(user_email)
+        # We still need the client if it's a gmail or calendar tool
+        if name.startswith("assistant_gmail_") or name.startswith("assistant_calendar_") or name == "assistant_google_account":
+            client = get_assistant_client(user_email)
     except ValueError as e:
         return {
             "isError": True,
@@ -1314,156 +936,69 @@ async def handle_assistant_tool_call(name: str, args: Dict[str, Any], user_email
     
     try:
         # ---------------------------------------------------------------------
-        # Drive Tools - Read
+        # Ontology Tools (Replacing Drive)
         # ---------------------------------------------------------------------
-        if name == "assistant_get_rules":
-            doc_id = client.get_doc_by_name("base", "rules")
-            if not doc_id:
-                return {"content": [{"type": "text", "text": "No rules document found. Create a doc named 'rules' in your root folder."}]}
-            content = client.read_doc_content(doc_id)
-            return {"content": [{"type": "text", "text": content}]}
-        
-        elif name == "assistant_write_rules":
-            content = args.get("content", "")
-            doc_id = client.get_doc_by_name("base", "rules")
-            if not doc_id:
-                doc_id = client.create_doc("base", "rules", content)
-                return {"content": [{"type": "text", "text": "Created 'rules' document and wrote content."}]}
-            client.write_doc_content(doc_id, content)
-            return {"content": [{"type": "text", "text": "Rules updated successfully."}]}
-
-        elif name == "assistant_get_priorities":
-            doc_id = client.get_doc_by_name("base", "priorities")
-            if not doc_id:
-                return {"content": [{"type": "text", "text": "No priorities document found in root folder."}]}
-            content = client.read_doc_content(doc_id)
-            return {"content": [{"type": "text", "text": content}]}
-        
-        elif name == "assistant_write_priorities":
-            content = args.get("content", "")
-            doc_id = client.get_doc_by_name("base", "priorities")
-            if not doc_id:
-                doc_id = client.create_doc("base", "priorities", content)
-                return {"content": [{"type": "text", "text": "Created 'priorities' document and wrote content."}]}
-            client.write_doc_content(doc_id, content)
-            return {"content": [{"type": "text", "text": "Priorities updated successfully."}]}
-
-        elif name == "assistant_get_deadlines":
-            doc_id = client.get_doc_by_name("base", "deadlines")
-            if not doc_id:
-                return {"content": [{"type": "text", "text": "No deadlines document found in root folder."}]}
-            content = client.read_doc_content(doc_id)
-            return {"content": [{"type": "text", "text": content}]}
-        
-        elif name == "assistant_write_deadlines":
-            content = args.get("content", "")
-            doc_id = client.get_doc_by_name("base", "deadlines")
-            if not doc_id:
-                doc_id = client.create_doc("base", "deadlines", content)
-                return {"content": [{"type": "text", "text": "Created 'deadlines' document and wrote content."}]}
-            client.write_doc_content(doc_id, content)
-            return {"content": [{"type": "text", "text": "Deadlines updated successfully."}]}
-
-        elif name == "assistant_get_resources":
-            doc_id = client.get_doc_by_name("resources", "resources")
-            if not doc_id:
-                return {"content": [{"type": "text", "text": "No resources document found."}]}
-            content = client.read_doc_content(doc_id)
-            return {"content": [{"type": "text", "text": content}]}
-        
-        elif name == "assistant_list_projects":
-            docs = client.list_docs_in_folder("projects")
-            projects = [{"id": d["id"], "name": d["name"], "modified": d.get("modifiedTime")} for d in docs]
-            return {"content": [{"type": "text", "text": safe_dumps(projects)}]}
-        
-        elif name == "assistant_get_project":
-            project_id = args.get("project_id")
-            content = client.read_doc_content(project_id)
-            return {"content": [{"type": "text", "text": content}]}
-        
-        # ---------------------------------------------------------------------
-        # Drive Tools - Inbox/Outbox
-        # ---------------------------------------------------------------------
-        elif name == "assistant_list_inbox":
-            files = client.list_files_in_folder("inbox")
-            items = [{"id": f["id"], "name": f["name"], "type": f.get("mimeType"), "modified": f.get("modifiedTime")} for f in files]
-            return {"content": [{"type": "text", "text": safe_dumps(items)}]}
-        
-        elif name == "assistant_read_inbox_file":
-            file_id = args.get("file_id")
-            content = client.read_file_content(file_id)
-            return {"content": [{"type": "text", "text": content}]}
-        
-        elif name == "assistant_move_to_outbox":
-            file_id = args.get("file_id")
-            success = client.move_file(file_id, "outbox")
+        if name == "ontology_create_entity":
+            entity_type = args.get("entity_type")
+            properties = args.get("properties", {})
+            
+            prefix = entity_type.lower()
+            new_id = f"byb:{prefix}/{uuid.uuid4().hex[:8]}"
+            
+            new_entity = {"@id": new_id, "@type": entity_type}
+            new_entity.update(properties)
+            
+            engine.upsert_entity(new_entity)
+            return {"content": [{"type": "text", "text": f"Entity created: {new_id}\n\n{safe_dumps(new_entity)}"}]}
+            
+        elif name == "ontology_update_entity":
+            entity_id = args.get("entity_id")
+            properties = args.get("properties", {})
+            
+            entity = engine.get_entity(entity_id)
+            if not entity:
+                return {"isError": True, "content": [{"type": "text", "text": f"Entity {entity_id} not found."}]}
+            
+            update_payload = {"@id": entity_id, "@type": entity.get("@type")}
+            update_payload.update(properties)
+            
+            engine.upsert_entity(update_payload)
+            return {"content": [{"type": "text", "text": f"Entity {entity_id} updated."}]}
+            
+        elif name == "ontology_create_relation":
+            from_id = args.get("from_id")
+            relation_type = args.get("relation_type")
+            to_id = args.get("to_id")
+            
+            if not engine.get_entity(from_id):
+                return {"isError": True, "content": [{"type": "text", "text": f"Source entity {from_id} not found."}]}
+            if not engine.get_entity(to_id):
+                return {"isError": True, "content": [{"type": "text", "text": f"Target entity {to_id} not found."}]}
+                
+            success = engine.relate_entities(from_id, relation_type, to_id)
             if success:
-                return {"content": [{"type": "text", "text": "File moved to outbox successfully."}]}
-            else:
-                return {"isError": True, "content": [{"type": "text", "text": "Failed to move file. Check if outbox folder exists."}]}
-        
-        # ---------------------------------------------------------------------
-        # Drive Tools - Write
-        # ---------------------------------------------------------------------
-        elif name == "assistant_write_project":
-            project_id = args.get("project_id")
-            content = args.get("content", "")
+                return {"content": [{"type": "text", "text": f"Relation created: {from_id} -[{relation_type}]-> {to_id}"}]}
+            return {"isError": True, "content": [{"type": "text", "text": "Failed to create relation."}]}
             
-            # Guardrail: Check content size
-            if len(content.encode('utf-8')) > MAX_CONTENT_SIZE:
-                return {"isError": True, "content": [{"type": "text", "text": f"Content exceeds maximum size of {MAX_CONTENT_SIZE // 1024}KB"}]}
+        elif name == "ontology_query":
+            filters = args.get("filters", {})
+            entity_type = args.get("entity_type")
+            if entity_type:
+                filters["@type"] = entity_type
+                
+            results = engine.query(filters)
+            return {"content": [{"type": "text", "text": safe_dumps(results)}]}
             
-            client.write_doc_content(project_id, content)
-            return {"content": [{"type": "text", "text": "Project updated successfully."}]}
-
-        elif name == "assistant_create_project":
-            title = args.get("title")
-            content = args.get("content")
+        elif name == "ontology_get_related":
+            entity_id = args.get("entity_id")
+            relation_field = args.get("relation_field")
             
-            try:
-                doc_id = client.create_doc("projects", title, content)
-                return {"content": [{"type": "text", "text": f"Project '{title}' created successfully. Doc ID: {doc_id}"}]}
-            except Exception as e:
-                return {"isError": True, "content": [{"type": "text", "text": f"Failed to create project: {e}"}]}
-        
-        elif name == "assistant_append_log":
-            entry = args.get("entry", "")
-            timestamp = datetime.now(timezone.utc).isoformat()
-            log_entry = f"\n[{timestamp}] {entry}"
+            results = engine.get_related(entity_id, relation_field)
+            return {"content": [{"type": "text", "text": safe_dumps(results)}]}
             
-            doc_id = client.get_doc_by_name("base", "assistant_log")
-            if not doc_id:
-                return {"isError": True, "content": [{"type": "text", "text": "Log document not found. Create 'assistant_log' in your root folder."}]}
-            
-            client.append_to_doc(doc_id, log_entry)
-            return {"content": [{"type": "text", "text": "Log entry added."}]}
-        
-        # ---------------------------------------------------------------------
-        # Session Logging
-        # ---------------------------------------------------------------------
-        elif name == "assistant_log_session":
-            session_id = args.get("session_id")
-            summary = args.get("summary", "")
-            status = args.get("status", "active")
-            
-            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-            
-            if not session_id:
-                # Generate new session ID
-                session_id = f"sess_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
-            
-            doc_id = client.get_doc_by_name("base", "sessions")
-            if not doc_id:
-                # Try alternative name
-                doc_id = client.get_doc_by_name("base", "session_log")
-            
-            if not doc_id:
-                return {"isError": True, "content": [{"type": "text", "text": "Sessions log not found. Create 'sessions' doc in your root folder."}]}
-            
-            log_entry = f"\n| {session_id} | {timestamp} | {user_email.split('@')[0]} | {summary} | {status} |"
-            client.append_to_doc(doc_id, log_entry)
-            
-            return {"content": [{"type": "text", "text": safe_dumps({"session_id": session_id, "status": status})}]}
+        elif name == "ontology_get_schema":
+            schema_text = engine.get_schema()
+            return {"content": [{"type": "text", "text": schema_text}]}
         
         # ---------------------------------------------------------------------
         # Gmail Tools
@@ -1779,11 +1314,9 @@ def _get_prompt(name: str):
                 "content": {
                     "type": "text",
                     "text": """Start a new assistant session:
-1. Call assistant_get_rules() to load operating guidelines
-2. Call assistant_get_priorities() to understand current focus
-3. Call assistant_list_projects() to see active work
-4. Call assistant_log_session(summary="Session started", status="active") to log this session
-5. Then respond to the user's request"""
+1. ALWAYS call `ontology_get_schema` first to understand the valid properties and classes in my brain.
+2. Call `ontology_query` to find any active Tasks or Projects that need attention.
+3. Help me prioritize and execute my objectives based on the graph's current state."""
                 }
             }]
         }
