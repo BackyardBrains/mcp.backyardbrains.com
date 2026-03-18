@@ -192,6 +192,10 @@
                     <input type="radio" id="apiMetabase" name="apiChoice" value="metabase">
                     <label for="apiMetabase">Metabase API (analytics data)</label>
                 </div>
+                <div class="api-option">
+                    <input type="radio" id="apiSchema" name="apiChoice" value="schema">
+                    <label for="apiSchema">Schema API (results data)</label>
+                </div>
             </div>
 
             <button id="loginBtn" class="btn">Login with Auth0</button>
@@ -238,6 +242,10 @@
             metabase: {
                 audience: 'https://mcp.backyardbrains.com/metabase',
                 scope: 'openid profile email mcp:read:metabase mcp:write:metabase'
+            },
+            schema: {
+                audience: 'https://schema.backyardbrains.com/api',
+                scope: 'openid profile email'
             }
         };
 
