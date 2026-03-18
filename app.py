@@ -1110,6 +1110,17 @@ async def get_token_page(request: Request):
                         </div>
                     </label>
                 </div>
+
+                <div class="radio-card">
+                    <input type="radio" id="apiSchema" name="apiChoice" value="schema">
+                    <label for="apiSchema">
+                        <div class="radio-circle"></div>
+                        <div class="radio-content">
+                            <span class="radio-title">Schema API</span>
+                            <span class="radio-desc">Results and Files Data</span>
+                        </div>
+                    </label>
+                </div>
             </div>
             
             <button onclick="login()" class="byb-btn">Login via Auth0</button>
@@ -1183,6 +1194,9 @@ async def auth_login(request: Request, api: str = "xero"):
     elif api == "xero":
         audience = AUTH0_XERO_AUDIENCE
         scope = f"{base_scopes} mcp:read:xero mcp:write:xero"
+    elif api == "schema":
+        audience = os.environ.get("AUTH0_SCHEMA_AUDIENCE", "https://schema.backyardbrains.com/api")
+        scope = f"{base_scopes} openid profile email"
     else:
         # Default to Assistant
         audience = AUTH0_ASSISTANT_AUDIENCE
