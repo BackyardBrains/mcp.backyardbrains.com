@@ -3,7 +3,8 @@ import jwt
 import httpx
 from jwt import PyJWKClient
 from fastapi import APIRouter, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse, JSONResponse
+import json
 
 router = APIRouter()
 
@@ -71,6 +72,28 @@ async def meta_gateway_any(request: Request):
     # 4) Proxy to upstream
     body = await request.body()
     
+    # Intercept tools/call for meta_authenticate BEFORE proxying
+    if body:
+        try:
+            req_json = json.loads(body)
+            if req_json.get("method") == "tools/call" and req_json.get("params", {}).get("name") == "meta_authenticate":
+                auth_url = "https://api.backyardbrains.com/api/meta/auth"
+                resp = {
+                    "jsonrpc": "2.0",
+                    "id": req_json.get("id"),
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"Your Meta Session has expired or needs to be linked. Please click the following link to authenticate with Meta:\n{auth_url}"
+                            }
+                        ]
+                    }
+                }
+                return JSONResponse(content=resp)
+        except Exception as e:
+            logger.warning(f"Failed to intercept tools/call for meta_authenticate: {e}")
+    
     # Forward client's Accept header so upstream knows what to return
     accept = request.headers.get("accept") or "application/json, text/event-stream"
     headers = {
@@ -128,7 +151,7 @@ async def meta_gateway_any(request: Request):
         # Intercept and modify tools/list or initialize if successful
         if r.status_code == 200 and "application/json" in upstream_content_type:
             try:
-                import json
+
                 # Check if the request was for tools/list or initialize
                 req_json = {}
                 if body:
@@ -153,6 +176,17 @@ async def meta_gateway_any(request: Request):
                     
                     if req_method == "tools/list" and "result" in resp_json and "tools" in resp_json["result"]:
                         process_tools(resp_json["result"]["tools"])
+                        
+                        # Inject custom authentication tool
+                        resp_json["result"]["tools"].append({
+                            "name": "meta_authenticate",
+                            "description": "Get the authentication URL to link or re-authenticate your Meta/Facebook Ads account. Use this if any Meta API calls fail with session or token errors.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        })
+                        
                         content = json.dumps(resp_json).encode("utf-8")
                     elif req_method == "initialize" and "result" in resp_json and "capabilities" in resp_json["result"]:
                         # Some servers might include tools in initialize, though rare in standard MCP
